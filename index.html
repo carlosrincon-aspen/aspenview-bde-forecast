@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AspenView — BDE Rolling 12-Month Sales &amp; Readiness Forecast</title>
+<style>
+  :root {
+    color-scheme: light;
+    --navy:    #0A1928;
+    --navy2:   #132336;
+    --navy3:   #1c3250;
+    --gold:    #E8B84B;
+    --gold2:   #d4a53d;
+    --softblue:#D9F1FB;
+    --softgreen:#E8F5E9;
+    --softred: #FDECEA;
+    --softgold:#FFF8E1;
+    --aureum:  #00BCD4;
+    --bg:      #F2F2F2;
+    --card:    #FFFFFF;
+    --border:  #E0E8F0;
+    --text:    #0A1928;
+    --muted:   #5a6a7a;
+    --success: #2e7d32;
+    --warn:    #b45309;
+    --danger:  #c62828;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; min-height: 100vh; }
+  #loginScreen { position: fixed; inset: 0; background: var(--navy); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 200; overflow-y: auto; padding: 24px 16px; }
+  .login-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .login-logo .brand { font-size: 22px; font-weight: 700; color: white; letter-spacing: 2px; }
+  .login-logo .brand span { color: var(--gold); }
+  .login-logo .tagline { font-size: 9px; color: rgba(255,255,255,0.5); letter-spacing: 2px; text-transform: uppercase; }
+  .login-title { font-size: 15px; color: rgba(255,255,255,0.6); margin: 8px 0 24px; letter-spacing: 0.5px; text-align: center; }
+  .login-box { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 28px 36px; text-align: center; max-width: 360px; }
+  .login-box .hint { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 18px; letter-spacing: 0.5px; }
+  .login-pick { background: rgba(232,184,75,0.1); border: 1px solid rgba(232,184,75,0.3); border-radius: 8px; padding: 11px 22px; cursor: pointer; color: white; font-size: 13px; font-weight: 700; margin: 6px; font-family: inherit; transition: all 0.15s; }
+  .login-pick:hover { background: rgba(232,184,75,0.22); border-color: var(--gold); }
+  .login-foot { font-size: 10px; color: rgba(255,255,255,0.25); margin-top: 18px; }
+
+  #appScreen { display: none; flex-direction: column; flex: 1; }
+  header { background: var(--navy); color: white; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; height: 54px; border-bottom: 3px solid var(--gold); }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-text .brand { font-size: 14px; font-weight: 700; color: white; letter-spacing: 1.5px; }
+  .logo-text .brand span { color: var(--gold); }
+  .logo-text .tagline { font-size: 7.5px; font-weight: 400; color: rgba(255,255,255,0.5); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px; }
+  .header-center { font-size: 13px; font-weight: 700; color: white; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .header-user { font-size: 11px; color: rgba(255,255,255,0.7); }
+  .logout-btn { font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 5px; padding: 4px 10px; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+  .logout-btn:hover { background: rgba(255,255,255,0.18); color: white; }
+  .zoho-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; padding: 3px 9px; border-radius: 20px; font-weight: 700; cursor: pointer; }
+  .zoho-pill.on  { background: rgba(46,125,50,0.18); color: #b6e8b9; border: 1px solid rgba(46,125,50,0.4); }
+  .zoho-pill.off { background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.65); border: 1px solid rgba(255,255,255,0.18); }
+
+  .topnav { display: flex; gap: 4px; padding: 8px 18px; background: var(--navy2); overflow-x: auto; flex-shrink: 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .topnav-btn { padding: 7px 14px; border-radius: 5px; border: none; cursor: pointer; font-size: 11.5px; font-weight: 700; font-family: inherit; transition: all 0.15s; white-space: nowrap; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
+  .topnav-btn:hover { background: rgba(255,255,255,0.16); color: white; }
+  .topnav-btn.active { background: var(--gold); color: var(--navy); }
+
+  .main { flex: 1; overflow-y: auto; padding: 18px 22px; }
+  .page-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid var(--border); }
+  .page-title h1 { font-size: 18px; font-weight: 700; color: var(--navy); }
+  .page-title .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(10,25,40,0.06); }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; }
+  .card-title { font-size: 13px; font-weight: 700; color: var(--navy); }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+  .btn { padding: 6px 12px; border-radius: 5px; border: none; cursor: pointer; font-size: 11.5px; font-weight: 700; transition: all 0.15s; font-family: inherit; }
+  .btn-primary { background: var(--navy); color: white; }
+  .btn-primary:hover { background: var(--navy2); }
+  .btn-gold { background: var(--gold); color: var(--navy); }
+  .btn-gold:hover { background: var(--gold2); }
+  .btn-ghost { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--border); color: var(--navy); }
+  .btn-danger { background: #fdecea; color: var(--danger); }
+  .btn-sm { padding: 4px 9px; font-size: 11px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); }
+  .stat-value { font-size: 26px; font-weight: 700; color: var(--navy); margin: 4px 0 1px; }
+  .stat-sub { font-size: 10.5px; color: var(--muted); }
+  .stat-card.aureum { border-left: 3px solid var(--aureum); }
+  .stat-card.gold   { border-left: 3px solid var(--gold); }
+  .stat-card.good   { border-left: 3px solid var(--success); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: var(--bg); padding: 8px 10px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #fafbfc; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .num-bold { font-weight: 700; color: var(--navy); }
+
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+  .pill-blue   { background: var(--softblue); color: #0d47a1; }
+  .pill-gold   { background: var(--softgold); color: #b45309; }
+  .pill-green  { background: var(--softgreen); color: var(--success); }
+  .pill-red    { background: var(--softred); color: var(--danger); }
+  .pill-aureum { background: #B2EBF2; color: #00838f; }
+  .pill-gray   { background: var(--bg); color: var(--muted); }
+
+  .scroll-x { overflow-x: auto; }
+  .grid-tbl { font-size: 11.5px; min-width: 1100px; }
+  .grid-tbl th { font-size: 9.5px; padding: 6px 7px; }
+  .grid-tbl td { padding: 6px 7px; }
+  .grid-tbl .cell-hc { text-align: center; font-variant-numeric: tabular-nums; }
+  .grid-tbl .cell-hc.gt10k { background: #E8F5E9; color: #1b5e20; font-weight: 700; }
+  .grid-tbl .cell-hc.lt10k { background: #FDECEA; color: #b71c1c; font-weight: 700; }
+  .grid-tbl .cell-hc.super { background: #B2EBF2; color: #006064; font-weight: 700; }
+  .grid-tbl .row-super { background: rgba(0,188,212,0.05); }
+  .grid-tbl input { width: 50px; padding: 3px 5px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 4px; text-align: right; font-variant-numeric: tabular-nums; font-family: inherit; background: white; }
+  .grid-tbl input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,184,75,0.2); }
+  .grid-tbl input.margin { width: 50px; }
+  .grid-tbl input.price { width: 80px; }
+
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted); margin-top: 8px; align-items: center; }
+  .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
+
+  .anchor-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; font-size: 12px; }
+  .anchor-row label { font-weight: 700; color: var(--navy); }
+  .anchor-row select { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 5px; background: white; font-family: inherit; color: var(--navy); cursor: pointer; }
+  .anchor-row select:focus { outline: none; border-color: var(--gold); }
+
+  .acc-bands { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
+  .acc-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; text-align: center; }
+  .acc-card.m0 { border-top: 3px solid var(--success); }
+  .acc-card.m1 { border-top: 3px solid var(--gold); }
+  .acc-card.m2 { border-top: 3px solid var(--danger); }
+  .acc-card .acc-h { font-size: 10px; font-weight: 700; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; }
+  .acc-card .acc-v { font-size: 28px; font-weight: 700; color: var(--navy); margin: 4px 0 2px; }
+  .acc-card .acc-b { font-size: 11px; color: var(--muted); }
+  .acc-card .acc-n { font-size: 10px; color: var(--muted); margin-top: 4px; font-style: italic; }
+
+  .var-cell { font-weight: 700; }
+  .var-green  { color: var(--success); }
+  .var-yellow { color: var(--warn); }
+  .var-red    { color: var(--danger); }
+
+  .modal-overlay { position: fixed; inset: 0; background: rgba(10,25,40,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: white; border-radius: 10px; padding: 22px; width: 520px; max-width: 92vw; max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(10,25,40,0.25); }
+  .modal h3 { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 14px; }
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 10px; font-weight: 700; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 7px 10px; border: 1px solid var(--border); border-radius: 5px; font-size: 12.5px; font-family: inherit; color: var(--text); background: white; outline: none; }
+  .form-group input:focus, .form-group textarea:focus, .form-group select:focus { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,184,75,0.2); }
+  .form-group textarea { resize: vertical; min-height: 70px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .toolbar input[type="text"], .toolbar select { padding: 5px 9px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 5px; font-family: inherit; background: white; color: var(--text); outline: none; }
+  .toolbar input[type="text"]:focus, .toolbar select:focus { border-color: var(--gold); }
+  .toolbar .spacer { flex: 1; }
+
+  .empty { text-align: center; padding: 30px 20px; color: var(--muted); font-size: 12px; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: #c8d6e5; border-radius: 3px; }
+
+  @media (max-width: 880px) {
+    .acc-bands { grid-template-columns: 1fr; }
+    .form-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+  <div class="login-logo">
+    <svg width="44" height="40" viewBox="0 0 50 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <ellipse cx="13" cy="12" rx="4.2" ry="7.5" stroke="white" stroke-width="2.2"/>
+      <line x1="13" y1="19.5" x2="13" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+      <ellipse cx="25" cy="9" rx="4.8" ry="8.5" stroke="white" stroke-width="2.2"/>
+      <line x1="25" y1="17.5" x2="25" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+      <ellipse cx="37" cy="12" rx="4.2" ry="7.5" stroke="white" stroke-width="2.2"/>
+      <line x1="37" y1="19.5" x2="37" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M 3 31 Q 25 42 47 31" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <div class="brand">ASPEN<span>VIEW</span></div>
+      <div class="tagline">Technology Partners</div>
+    </div>
+  </div>
+  <div class="login-title">BDE Rolling 12-Month Sales &amp; Readiness Forecast</div>
+  <div class="login-box">
+    <div class="hint">Sign in with your AspenView Google account</div>
+    <div id="g_id_onload" data-client_id="REPLACE_WITH_GOOGLE_CLIENT_ID" data-callback="handleCredentialResponse" data-auto_select="false"></div>
+    <div class="g_id_signin" data-type="standard" data-shape="pill" data-theme="filled_blue" data-text="signin_with" data-size="large" data-logo_alignment="center" data-width="260"></div>
+    <div id="loginError" style="margin-top:14px;font-size:12px;color:#ff8a80;min-height:18px"></div>
+  </div>
+  <div class="login-foot">Only @aspenview.com accounts are authorized</div>
+</div>
+
+<!-- APP -->
+<div id="appScreen">
+  <header>
+    <div class="logo">
+      <svg width="34" height="30" viewBox="0 0 50 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="13" cy="12" rx="4.2" ry="7.5" stroke="white" stroke-width="2.2"/>
+        <line x1="13" y1="19.5" x2="13" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <ellipse cx="25" cy="9" rx="4.8" ry="8.5" stroke="white" stroke-width="2.2"/>
+        <line x1="25" y1="17.5" x2="25" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <ellipse cx="37" cy="12" rx="4.2" ry="7.5" stroke="white" stroke-width="2.2"/>
+        <line x1="37" y1="19.5" x2="37" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M 3 31 Q 25 42 47 31" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div class="logo-text">
+        <div class="brand">ASPEN<span>VIEW</span></div>
+        <div class="tagline">Technology Partners</div>
+      </div>
+    </div>
+    <div class="header-center">BDE Rolling 12-Month Sales &amp; Readiness Forecast</div>
+    <div class="header-right">
+      <span class="zoho-pill off" id="zohoPill" onclick="toggleZoho()">Zoho · Disconnected</span>
+      <span class="header-user" id="headerUser"></span>
+      <button class="logout-btn" onclick="logout()">&#8592; Log Out</button>
+    </div>
+  </header>
+  <div class="topnav" id="topnav"></div>
+  <main class="main" id="mainContent"></main>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" style="display:none">
+  <div class="modal" id="modal"></div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────────────────────
+var ZOHO_CLIENT_ID  = 'REPLACE_WITH_ZOHO_CLIENT_ID';
+var ZOHO_REDIRECT   = window.location.origin + window.location.pathname;
+var ZOHO_API        = 'https://www.zohoapis.com/crm/v3';
+
+// Email → role mapping. Edit emails here to grant manager access.
+// Anyone else with an @aspenview.com account signs in as a BDE by default.
+var USERS = {
+  don:     { id: 'don',     name: 'Don',     email: 'don@aspenview.com',     role: 'manager', initials: 'DN' },
+  michael: { id: 'michael', name: 'Michael', email: 'michael@aspenview.com', role: 'manager', initials: 'MD' }
+};
+
+var TABS = [
+  { id: 'overview',    label: 'Overview' },
+  { id: 'aureum',      label: 'Aureum Demand Forecast' },
+  { id: 'threemo',     label: '3 mo. revenue' },
+  { id: 'accuracy',    label: 'Forecast Accuracy' },
+  { id: 'super',       label: 'Super-Deals' },
+  { id: 'fulfillment', label: 'Fulfillment View' },
+  { id: 'mrr',         label: 'MRR Forecast 2026' },
+  { id: 'active',      label: 'Active Customers - Actuals' },
+  { id: 'margin',      label: 'Margin Rules' },
+  { id: 'settings',    label: 'Settings' }
+];
+
+var ALL_MONTHS = ['2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03'];
+
+var STAGES = [
+  { id: 'SQL',                          label: 'Stage 1 - SQL',           cls: 'pill-gold',  winRate: 0.20 },
+  { id: 'Commercial Design',            label: 'Commercial Design',       cls: 'pill-gold',  winRate: 0.30 },
+  { id: 'Recruitment (Path 2.1)',       label: 'Path 2.1 - Recruitment',  cls: 'pill-blue',  winRate: 0.50 },
+  { id: 'Professional Services (Path 2.2)', label: 'Path 2.2 - PS',       cls: 'pill-blue',  winRate: 0.50 },
+  { id: 'Pricing',                      label: 'Stage 3 - Pricing',       cls: 'pill-blue',  winRate: 0.75 },
+  { id: 'Paper Process',                label: 'Stage 4 - Paper',         cls: 'pill-green', winRate: 0.90 },
+  { id: 'Closed Won',                   label: 'Stage 5 - Closed Won',    cls: 'pill-green', winRate: 1.00 },
+  { id: 'Closed Lost',                  label: 'Closed Lost',             cls: 'pill-red',   winRate: 0.00 }
+];
+
+var STATUS_PILL = {
+  'Aureum Active Account': 'pill-aureum',
+  'Active Client':         'pill-green',
+  'Expanding':             'pill-blue',
+  'Pipeline Account':      'pill-gold',
+  'Closed Lost':           'pill-red'
+};
+
+var DEFAULT_MARGIN_RULES = [
+  { dealType: 'Recruitment (Path 2.1)',          margin: 0.35, note: 'Default for staffing engagements' },
+  { dealType: 'Professional Services (Path 2.2)', margin: 0.45, note: 'PS / solutioning work — higher margin' },
+  { dealType: 'Commercial Design',                margin: 0.38, note: 'Mid-stage; not yet priced' },
+  { dealType: 'Pricing',                          margin: 0.40, note: 'Live pricing conversation' },
+  { dealType: 'Paper Process',                    margin: 0.42, note: 'Contracts in flight' },
+  { dealType: 'Closed Won',                       margin: 0.42, note: 'Booked' },
+  { dealType: 'SQL',                              margin: 0.30, note: 'Early-stage; conservative default' },
+  { dealType: 'Aureum / Super-Deal',              margin: 0.40, note: 'Override applied when totalHC ≥ 50' },
+  { dealType: 'Default',                          margin: 0.35, note: 'Fallback when no other rule matches' }
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SEED DEALS (from the AspenView Rolling 12-Month Sales & Readiness Forecast, APR'26 — 78 deals)
+// ─────────────────────────────────────────────────────────────────────────────
+var SEED_DEALS = [{"status":"Aureum Active Account","client":"KAGR","totalHC":0,"dealName":"KAGR - Tech Lead","stage":"Closed Won","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":9900,"winRate":0.5,"winRateAdj":0.75,"activationMonth":""},{"status":"Active Client","client":"Golden West","totalHC":0,"dealName":"GWFC -Data ","stage":"Closed Won","location":"Argentina","firstBillableMonth":"APR'26","monthlyHC":{},"pricing":28177,"winRate":1,"winRateAdj":1,"activationMonth":""},{"status":"Expanding","client":"Hexcel","totalHC":5,"dealName":"Hexcel - Enterprise Cockpit","stage":"Paper Process","location":"LATAM","firstBillableMonth":"MAY'26","monthlyHC":{"2026-06":5},"pricing":50000,"winRate":0.5,"winRateAdj":0.9,"activationMonth":"Jun 2026"},{"status":"Aureum Active Account","client":"Anillne","totalHC":2,"dealName":"Anillne - Servicenow / AI","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":2},"pricing":19000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Flowserve","totalHC":0,"dealName":"FLowserve - Data Architects","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":0,"winRate":0.5,"winRateAdj":0.2,"activationMonth":""},{"status":"Pipeline Account","client":"Flowserve","totalHC":6,"dealName":"FLowserve - Oracle CQQ","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN\"26","monthlyHC":{"2026-06":2,"2026-09":2,"2026-11":2},"pricing":60000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Zilliant","totalHC":257,"dealName":"MDP - Zilliant","stage":"Pricing","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-07":50,"2026-08":50,"2026-09":50,"2026-10":50,"2026-11":57},"pricing":1978900,"winRate":0.5,"winRateAdj":0.9,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"BLVD ","totalHC":3,"dealName":"BLVD - BA Resources","stage":"Commercial Design","location":"Dallas","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1,"2026-09":2},"pricing":30000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Camping World","totalHC":9,"dealName":"Camping World - Dev App","stage":"SQL","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":3,"2026-08":3,"2026-09":3},"pricing":90000,"winRate":0.2,"winRateAdj":0.2,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Western Union","totalHC":1,"dealName":"Western Union- Data","stage":"Paper Process","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":96040,"winRate":0.2,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Purpose Pay","totalHC":3,"dealName":"Purpose Pay","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":3},"pricing":30000,"winRate":0.75,"winRateAdj":0.5,"activationMonth":"Jul 2026"},{"status":"Expanding","client":"SRM ","totalHC":4,"dealName":"SRM - Data","stage":"SQL","location":"LATAM","firstBillableMonth":"JUN\"26","monthlyHC":{"2026-06":2,"2026-10":2},"pricing":40000,"winRate":0.2,"winRateAdj":0.5,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"e360","totalHC":0,"dealName":"e360-Dev Ops","stage":"SQL","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":0,"winRate":0.2,"winRateAdj":0.2,"activationMonth":""},{"status":"Pipeline Account","client":"Sam's Club","totalHC":2,"dealName":"Sam's Club - Henny Penny","stage":"Professional Services (Path 2.2)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":2},"pricing":20000,"winRate":0.3,"winRateAdj":0.5,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":27,"dealName":"ISTARI - Global Expansion","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-07":9,"2026-09":9,"2026-10":9,"2026-12":27},"pricing":270000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Bepsin Global","totalHC":45,"dealName":"Bepsin Global - Bank","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN\"26","monthlyHC":{"2026-08":15,"2026-10":15,"2026-12":15},"pricing":450000,"winRate":0.2,"winRateAdj":0.5,"activationMonth":"Aug 2026"},{"status":"Pipeline Account","client":"Bepsin Global","totalHC":60,"dealName":"Bepsin Global - Project Work","stage":"SQL","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-09":30,"2026-11":30,"2026-12":60},"pricing":600000,"winRate":0.2,"winRateAdj":0.5,"activationMonth":"Sep 2026"},{"status":"Pipeline Account","client":"Bepsin Global","totalHC":100,"dealName":"Bepsin Global - Talent Backlog","stage":"SQL","location":"LATAM","firstBillableMonth":"SEP'26","monthlyHC":{"2026-09":100},"pricing":1000000,"winRate":0.2,"winRateAdj":0.5,"activationMonth":"Sep 2026"},{"status":"Pipeline Account","client":"Celestica ","totalHC":6,"dealName":"Celestica - Seph","stage":"SQL","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":6},"pricing":60000,"winRate":0.2,"winRateAdj":0.05,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Celestica ","totalHC":3,"dealName":"Celestica - Staff Aug (existing teams)","stage":"SQL","location":"LATAM","firstBillableMonth":"AUG'26","monthlyHC":{"2026-08":3},"pricing":30000,"winRate":0.2,"winRateAdj":0.05,"activationMonth":"Aug 2026"},{"status":"Pipeline Account","client":"Celestica ","totalHC":0,"dealName":"Celestica - Mexico Staff Aug","stage":"SQL","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":0,"winRate":0.2,"winRateAdj":0.05,"activationMonth":""},{"status":"Pipeline Account","client":"Away Travel","totalHC":0,"dealName":"Away Travel -Deal 1","stage":"SQL","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":0,"winRate":0.2,"winRateAdj":0.1,"activationMonth":""},{"status":"Pipeline Account","client":"Intealth","totalHC":1,"dealName":"Intealth - Info Security","stage":"Paper Process","location":"LATAM","firstBillableMonth":"MAY'26","monthlyHC":{"2026-06":1},"pricing":18874,"winRate":0.5,"winRateAdj":0.9,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Royal Bank of Canada - Deal 1","totalHC":3,"dealName":"Royal Bank of Canada","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":3},"pricing":30000,"winRate":0.5,"winRateAdj":0.2,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"One Main Financial","totalHC":25,"dealName":"One Main Financial - SOC/ISTARI","stage":"Pricing","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":25},"pricing":250000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"White Cap ","totalHC":3,"dealName":"White Cap - Deal 1","stage":"SQL","location":"LATAM","firstBillableMonth":"AUG'26","monthlyHC":{"2026-08":3},"pricing":30000,"winRate":0.2,"winRateAdj":0.2,"activationMonth":"Aug 2026"},{"status":"Expanding","client":"ISTARI","totalHC":0,"dealName":"ISTARI - Advisor","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":0,"winRate":0.75,"winRateAdj":0.8,"activationMonth":""},{"status":"Expanding","client":"CGI ","totalHC":245,"dealName":"CGI - Migo IQ (Phase 1)","stage":"Pricing","location":"LATAM","firstBillableMonth":"JUn'26","monthlyHC":{"2026-06":35,"2026-07":70,"2026-08":70,"2026-09":70},"pricing":980000,"winRate":0.5,"winRateAdj":0.9,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":1,"dealName":"ISTARI- Cyera","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Technologent ","totalHC":350,"dealName":"MGM RFP","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"AUG'26","monthlyHC":{"2026-08":350},"pricing":3500000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Aug 2026"},{"status":"Pipeline Account","client":"DK Confidential","totalHC":105,"dealName":"DK Confidential (ISTARI)","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":15,"2026-07":30,"2026-09":30,"2026-11":30},"pricing":1050000,"winRate":0.2,"winRateAdj":0.7,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":0,"dealName":"ISTARI-Europe RFP","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":0,"winRate":0.75,"winRateAdj":0.5,"activationMonth":""},{"status":"Expanding","client":"Aniline","totalHC":6,"dealName":"Aniline-SAIQ Korn Ferry","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":2,"2026-07":2,"2026-09":2},"pricing":57000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"Aniline","totalHC":1,"dealName":"Aniline-SAIQ Partners Rollout","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":9500,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"Aniline","totalHC":75,"dealName":"Aniline-SAIQ CRM Rollout ServiceNow","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":15,"2026-07":15,"2026-08":15,"2026-11":15,"2026-12":15},"pricing":712000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"Aniline","totalHC":1,"dealName":"Aniline-SAIQ CSM-Elite Partners","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-07":1},"pricing":9500,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"3CI","totalHC":4,"dealName":"3Ci - Front End Engineer","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":2,"2026-10":2},"pricing":40000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"3CI","totalHC":4,"dealName":"3Ci - Quality Automation Engineer","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":2,"2026-10":2},"pricing":40000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"3CI","totalHC":4,"dealName":"3Ci - Project Manager","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":2,"2026-11":2},"pricing":40000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"3CI","totalHC":4,"dealName":"3Ci - Full Stack Engineers","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":2,"2026-11":2},"pricing":40000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"SYN Ventures","totalHC":18,"dealName":"SYN Ventures - PortCo's (Clone)","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":9,"2026-10":9},"pricing":180000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jul 2026"},{"status":"Expanding","client":"CGI ","totalHC":300,"dealName":"CGI - Migo IQ (Phase 2)","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"AUG'26","monthlyHC":{"2026-08":150,"2026-11":150},"pricing":1200000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Aug 2026"},{"status":"Expanding","client":"CGI","totalHC":1,"dealName":"CGI-Scotiabank","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Western Union","totalHC":45,"dealName":"Western Union - VMS","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":15,"2026-09":15,"2026-11":15},"pricing":450000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Expanding","client":"Golden West","totalHC":8,"dealName":"Golden West - Full IT","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":8},"pricing":80000,"winRate":0.5,"winRateAdj":0.6,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Freshworks","totalHC":6,"dealName":"Freshworks - Latam","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":3,"2026-12":3},"pricing":60000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Expandia","totalHC":8,"dealName":"Expandia","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":8},"pricing":24000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"MDP","totalHC":75,"dealName":"MDP-- Carnegie Learning","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":75},"pricing":750000,"winRate":0.5,"winRateAdj":0.9,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"TMS","totalHC":6,"dealName":"TMS - US Foods","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":2,"2026-09":2,"2026-11":2},"pricing":60000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Innoviva ","totalHC":3,"dealName":"Innoviva - AI Automation","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-08":3},"pricing":14950,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Aug 2026"},{"status":"Expanding","client":"ISTARI","totalHC":1,"dealName":"ISTARI - AI Security","stage":"Closed Won","location":"USA","firstBillableMonth":"MAY'26","monthlyHC":{"2026-06":1},"pricing":27200,"winRate":0.5,"winRateAdj":1,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"CGI","totalHC":2,"dealName":"CGI - Brazil","stage":"Recruitment (Path 2.1)","location":"Brazil","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":2},"pricing":20000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Expanding","client":"ISTARI","totalHC":1,"dealName":"ISTARI - Cyber Ark","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":8800,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"IData Global","totalHC":2,"dealName":"IData Global - Data Team","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":2},"pricing":40000,"winRate":0.5,"winRateAdj":0.2,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Village Farms","totalHC":3,"dealName":"Village Farms - Outcome Backlog","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":3},"pricing":30000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":27,"dealName":"ISTARI Global Europe","stage":"Recruitment (Path 2.1)","location":"Europe","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":9,"2026-09":9,"2026-11":9},"pricing":270000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Ombrik","totalHC":1,"dealName":"Ombrik - GTM","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":1,"dealName":"ISTARI - OT (Operational Technology)","stage":"Recruitment (Path 2.1)","location":"USA","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":32000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"MDP","totalHC":8,"dealName":"MDP - Portfolio (Data Brick)","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-07":8},"pricing":80000,"winRate":0.2,"winRateAdj":0.2,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"StackGen","totalHC":1,"dealName":"StackGen","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Think Reservations","totalHC":6,"dealName":"Think Reservations","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":53400,"winRate":0.5,"winRateAdj":0.4,"activationMonth":""},{"status":"Expanding","client":"Hexcel","totalHC":2,"dealName":"Hexcel -Backfill","stage":"Paper Process","location":"LATAM","firstBillableMonth":"MAY'26","monthlyHC":{"2026-06":1},"pricing":20000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"Hexcel","totalHC":3,"dealName":"Hexcel- Data Reporting EU","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"MAY'26","monthlyHC":{"2026-06":3},"pricing":40000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Inspiration Global","totalHC":5,"dealName":"inspiration Global","stage":"Recruitment (Path 2.1)","location":"Ecuador ","firstBillableMonth":"JUN'26","monthlyHC":{"2026-07":4},"pricing":40000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Virtusa","totalHC":4,"dealName":"Virtusa - Databriicks","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":4},"pricing":40000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":1,"dealName":"Ball Corp- Snr Manager, Security Architecture ","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":1,"dealName":"Ball Corp- Director of Security GRC","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":1,"dealName":"Dir/Snr Mgr Cyber Defense Operations","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":1,"dealName":"Security Engineer, Vulnerability","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":2,"dealName":"ISTARI-IAM","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":2},"pricing":5000,"winRate":0.5,"winRateAdj":0.3,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":2,"dealName":"ISTARI - GRC","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":2},"pricing":5000,"winRate":0.5,"winRateAdj":0.3,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"ISTARI","totalHC":3,"dealName":"ISTARI - Secruity Enginner","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":3},"pricing":5000,"winRate":0.5,"winRateAdj":0.3,"activationMonth":"Jun 2026"},{"status":"Expanding","client":"Hexcel","totalHC":8,"dealName":"Hexcell - Cockpit 2.0","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":8},"pricing":11800,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"MDP- MoneyGram","totalHC":0,"dealName":"MDP- Money Gram","stage":"Commercial Design","location":"LATAM/EUROPE","firstBillableMonth":"JUL'26","monthlyHC":{"2026-07":4},"pricing":10000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jul 2026"},{"status":"Pipeline Account","client":"Alambda Systems","totalHC":1,"dealName":"Alambda Systems - QA Testing","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{},"pricing":10000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":""},{"status":"Pipeline Account","client":"Laurel ","totalHC":1,"dealName":"Laurel SAP Hana Integration","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-06":1},"pricing":10000,"winRate":0.5,"winRateAdj":0.5,"activationMonth":"Jun 2026"},{"status":"Pipeline Account","client":"Hunington Bank","totalHC":0,"dealName":"Hunington Back - Cadence Bank Merger","stage":"Commercial Design","location":"LATAM","firstBillableMonth":"0.0","monthlyHC":{},"pricing":10000,"winRate":0.5,"winRateAdj":0,"activationMonth":""},{"status":"Expanding","client":"Hexcel","totalHC":1,"dealName":"Hexcel - Business Analyst","stage":"Recruitment (Path 2.1)","location":"LATAM","firstBillableMonth":"JUN'26","monthlyHC":{"2026-04":1},"pricing":13883,"winRate":0.5,"winRateAdj":0.75,"activationMonth":"Jun 2026"}];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+var currentUser = null;
+var currentTab  = 'overview';
+
+function load(k, d) {
+  try { var v = JSON.parse(localStorage.getItem('bde_' + k)); return (v === null || v === undefined) ? d : v; }
+  catch(e) { return d; }
+}
+function save(k, v) { localStorage.setItem('bde_' + k, JSON.stringify(v)); }
+
+function getDeals()        { return load('deals',  SEED_DEALS); }
+function setDeals(d)       { save('deals', d); }
+function getMarginRules()  { return load('margin_rules', DEFAULT_MARGIN_RULES); }
+function setMarginRules(r) { save('margin_rules', r); }
+function getSnapshots()    { return load('snapshots', []); }
+function setSnapshots(s)   { save('snapshots', s); }
+function getActuals()      { return load('actuals', {}); }
+function setActuals(a)     { save('actuals', a); }
+function getAnchorMonth()  { return load('anchor_month', currentMonthKey()); }
+function setAnchorMonth(m) { save('anchor_month', m); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────────────────────────
+function handleCredentialResponse(resp) {
+  try {
+    var payload = JSON.parse(atob(resp.credential.split('.')[1]));
+    if (!/@aspenview\.com$/i.test(payload.email || '')) {
+      document.getElementById('loginError').textContent = 'Only @aspenview.com accounts are authorized.';
+      return;
+    }
+    var match = null;
+    Object.keys(USERS).forEach(function(k) { if (USERS[k].email.toLowerCase() === payload.email.toLowerCase()) match = USERS[k]; });
+    if (!match) {
+      match = { id: payload.email, name: payload.name || payload.email, email: payload.email, role: 'bde', initials: (payload.given_name||'?').substring(0,1) + (payload.family_name||'').substring(0,1) };
+    }
+    loginAs(match);
+  } catch (e) {
+    document.getElementById('loginError').textContent = 'Sign-in failed: ' + e.message;
+  }
+}
+function loginAs(u) {
+  currentUser = u;
+  save('current_user', u);
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display   = 'flex';
+  document.getElementById('headerUser').textContent    = u.name + ' · ' + (u.role === 'manager' ? 'Manager' : 'BDE');
+  renderTopNav();
+  renderTab();
+  refreshZohoPill();
+  ensureMonthlySnapshot();
+}
+function logout() {
+  currentUser = null;
+  save('current_user', null);
+  document.getElementById('appScreen').style.display   = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ZOHO INTEGRATION
+// ─────────────────────────────────────────────────────────────────────────────
+function getZohoToken() {
+  var t = localStorage.getItem('zoho_token');
+  var exp = parseInt(localStorage.getItem('zoho_token_exp') || '0');
+  return (t && Date.now() < exp) ? t : null;
+}
+function checkZohoTokenFromUrl() {
+  var hash = window.location.hash || '';
+  if (hash.indexOf('access_token') === -1) return;
+  var params = {};
+  hash.replace(/^#/, '').split('&').forEach(function(p) { var kv = p.split('='); params[kv[0]] = kv[1] ? decodeURIComponent(kv[1]) : ''; });
+  if (params.access_token) {
+    localStorage.setItem('zoho_token', params.access_token);
+    localStorage.setItem('zoho_token_exp', String(Date.now() + (parseInt(params.expires_in || '3600') * 1000)));
+    history.replaceState(null, '', window.location.pathname);
+  }
+}
+function connectZoho() {
+  if (ZOHO_CLIENT_ID === 'REPLACE_WITH_ZOHO_CLIENT_ID') {
+    alert('Zoho not configured yet. See Settings → Zoho integration.');
+    return;
+  }
+  var url = 'https://accounts.zoho.com/oauth/v2/auth?response_type=token' +
+    '&client_id=' + ZOHO_CLIENT_ID +
+    '&scope=' + encodeURIComponent('ZohoCRM.modules.Deals.READ,ZohoCRM.modules.Accounts.READ') +
+    '&redirect_uri=' + encodeURIComponent(ZOHO_REDIRECT) +
+    '&access_type=online';
+  window.location.href = url;
+}
+function disconnectZoho() {
+  localStorage.removeItem('zoho_token');
+  localStorage.removeItem('zoho_token_exp');
+  refreshZohoPill();
+}
+function toggleZoho() { getZohoToken() ? (confirm('Disconnect Zoho?') && disconnectZoho()) : connectZoho(); }
+function refreshZohoPill() {
+  var p = document.getElementById('zohoPill');
+  if (getZohoToken()) { p.className = 'zoho-pill on';  p.textContent = 'Zoho · Connected'; }
+  else                { p.className = 'zoho-pill off'; p.textContent = 'Zoho · Disconnected'; }
+}
+function zohoGet(token, path, cb) {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', ZOHO_API + path, true);
+  xhr.setRequestHeader('Authorization', 'Zoho-oauthtoken ' + token);
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState !== 4) return;
+    if (xhr.status === 200) { try { cb(null, JSON.parse(xhr.responseText)); } catch(e) { cb(e); } }
+    else if (xhr.status === 204) cb(null, { data: [] });
+    else cb(new Error(xhr.status + ': ' + xhr.responseText));
+  };
+  xhr.send();
+}
+function syncZohoDeals() {
+  var token = getZohoToken();
+  if (!token) { alert('Connect Zoho first.'); return; }
+  var btn = document.getElementById('zohoSyncBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  zohoGet(token, '/Deals?fields=Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description&per_page=200', function(err, d) {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Sync from Zoho'; }
+    if (err) { alert('Sync failed: ' + err.message); return; }
+    var mapped = (d.data || []).map(function(r) {
+      return {
+        status: 'Pipeline Account',
+        client: (r.Account_Name && r.Account_Name.name) || '',
+        dealName: r.Deal_Name || '',
+        stage: normalizeStage(r.Stage),
+        location: 'LATAM',
+        firstBillableMonth: r.Closing_Date ? r.Closing_Date.slice(0,7) : '',
+        monthlyHC: {},
+        pricing: parseFloat(r.Amount) || 0,
+        winRate: 0.5,
+        winRateAdj: (parseFloat(r.Probability) || 0) / 100,
+        activationMonth: r.Closing_Date ? r.Closing_Date.slice(0,7) : '',
+        totalHC: 0,
+        commercialDescription: r.Description || '',
+        zohoId: r.id || ''
+      };
+    });
+    if (!confirm('Pulled ' + mapped.length + ' deals from Zoho. Replace current deals? (Snapshots are preserved.)')) return;
+    setDeals(mapped);
+    save('last_zoho_sync', new Date().toISOString());
+    renderTab();
+    alert('Zoho sync complete: ' + mapped.length + ' deals.');
+  });
+}
+function normalizeStage(s) {
+  if (!s) return 'SQL';
+  var x = s.toLowerCase();
+  if (/closed won/.test(x))  return 'Closed Won';
+  if (/closed lost/.test(x)) return 'Closed Lost';
+  if (/recruit|2\.1/.test(x))  return 'Recruitment (Path 2.1)';
+  if (/services|2\.2/.test(x)) return 'Professional Services (Path 2.2)';
+  if (/commercial/.test(x))  return 'Commercial Design';
+  if (/pricing/.test(x))     return 'Pricing';
+  if (/paper|contract/.test(x)) return 'Paper Process';
+  return 'SQL';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+function currentMonthKey() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+}
+function monthKeyAfter(key, n) {
+  var p = key.split('-'); var y = parseInt(p[0]), m = parseInt(p[1]) - 1 + n;
+  y += Math.floor(m / 12); m = ((m % 12) + 12) % 12;
+  return y + '-' + ('0' + (m + 1)).slice(-2);
+}
+function monthLabel(key) {
+  var p = key.split('-'); var d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, 1);
+  return d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+}
+function fmt$(n)    { if (!n) return '$0'; return '$' + Math.round(n).toLocaleString('en-US'); }
+function fmt$k(n)   { if (!n) return '$0'; if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M'; if (Math.abs(n) >= 1e3) return '$' + Math.round(n/1e3) + 'K'; return '$' + Math.round(n); }
+function fmtPct(n)  { if (n === null || n === undefined || isNaN(n)) return '—'; return (n * 100).toFixed(0) + '%'; }
+function fmtPct1(n) { if (n === null || n === undefined || isNaN(n)) return '—'; return (n * 100).toFixed(1) + '%'; }
+function esc(s)     { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+function isSuperDeal(d) { return (d.totalHC || sumMonths(d.monthlyHC)) >= 50; }
+function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
+function getMarginFor(deal) {
+  if (deal.marginOverride !== undefined && deal.marginOverride !== null && deal.marginOverride !== '') return parseFloat(deal.marginOverride);
+  var rules = getMarginRules();
+  if (isSuperDeal(deal)) { var r = rules.find(function(r){ return r.dealType === 'Aureum / Super-Deal'; }); if (r) return r.margin; }
+  var match = rules.find(function(r) { return r.dealType === deal.stage; });
+  if (match) return match.margin;
+  var fb = rules.find(function(r) { return r.dealType === 'Default'; });
+  return fb ? fb.margin : 0.35;
+}
+function getWinRateFor(deal) {
+  if (deal.winRateAdj !== undefined && deal.winRateAdj !== null && deal.winRateAdj !== '') return parseFloat(deal.winRateAdj);
+  var s = STAGES.find(function(s){ return s.id === deal.stage; });
+  return s ? s.winRate : 0.3;
+}
+function stagePill(stage) {
+  var s = STAGES.find(function(s){ return s.id === stage; });
+  var label = s ? s.label : stage;
+  var cls = s ? s.cls : 'pill-gray';
+  return '<span class="pill ' + cls + '">' + esc(label) + '</span>';
+}
+function statusPill(st) {
+  var cls = STATUS_PILL[st] || 'pill-gray';
+  return '<span class="pill ' + cls + '">' + esc(st) + '</span>';
+}
+function dealRevenueForMonth(deal, monthKey) {
+  var hc = (deal.monthlyHC || {})[monthKey] || 0;
+  return hc * (deal.pricing && deal.totalHC ? (deal.pricing / Math.max(1, sumMonths(deal.monthlyHC) || deal.totalHC)) : (deal.pricing || 0));
+}
+// Per-resource MRR derived from pricing / total HC in plan (or pricing if HC unknown)
+function pricePerHead(deal) {
+  var totHc = sumMonths(deal.monthlyHC) || deal.totalHC;
+  if (totHc > 0 && deal.pricing > 0) return deal.pricing / totHc;
+  return deal.pricing || 0;
+}
+function projectedRevenue(deal, monthKey)  { return ((deal.monthlyHC || {})[monthKey] || 0) * pricePerHead(deal); }
+function adjustedRevenue(deal, monthKey)   { return projectedRevenue(deal, monthKey) * getWinRateFor(deal); }
+function marginDollarsAdj(deal, monthKey)  { return adjustedRevenue(deal, monthKey) * getMarginFor(deal); }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SNAPSHOTS (for forecast accuracy)
+// ─────────────────────────────────────────────────────────────────────────────
+function ensureMonthlySnapshot() {
+  var snaps = getSnapshots();
+  var key = currentMonthKey();
+  if (snaps.find(function(s){ return s.snapshotMonth === key; })) return;
+  var deals = getDeals();
+  var snap = { snapshotMonth: key, takenAt: new Date().toISOString(), perDeal: {} };
+  deals.forEach(function(d) {
+    snap.perDeal[d.dealName] = {
+      hc:      { m0: (d.monthlyHC||{})[key] || 0, m1: (d.monthlyHC||{})[monthKeyAfter(key,1)] || 0, m2: (d.monthlyHC||{})[monthKeyAfter(key,2)] || 0 },
+      rev:     { m0: projectedRevenue(d, key), m1: projectedRevenue(d, monthKeyAfter(key,1)), m2: projectedRevenue(d, monthKeyAfter(key,2)) },
+      adjRev:  { m0: adjustedRevenue(d, key),  m1: adjustedRevenue(d, monthKeyAfter(key,1)),  m2: adjustedRevenue(d, monthKeyAfter(key,2)) },
+      margin$: { m0: marginDollarsAdj(d, key), m1: marginDollarsAdj(d, monthKeyAfter(key,1)), m2: marginDollarsAdj(d, monthKeyAfter(key,2)) }
+    };
+  });
+  snaps.push(snap);
+  setSnapshots(snaps);
+}
+// Compute accuracy bands: for each historical snapshot, compare its predictions for
+// target month X (where X is one of the snapshot's M0/M1/M2 horizons) against the
+// recorded actuals for X. Aggregate (mean ± std-dev) across all snapshots per horizon.
+function computeAccuracyBands() {
+  var snaps   = getSnapshots();
+  var actuals = getActuals();
+  var per     = { m0: [], m1: [], m2: [] };
+  snaps.forEach(function(s) {
+    ['m0','m1','m2'].forEach(function(h, i) {
+      var targetMonth = monthKeyAfter(s.snapshotMonth, i);
+      var act = actuals[targetMonth];
+      if (!act) return;
+      var fcastRev = Object.values(s.perDeal).reduce(function(t, p) { return t + (p.adjRev[h] || 0); }, 0);
+      var actRev   = act.adjRev || 0;
+      if (fcastRev <= 0 && actRev <= 0) return;
+      var maxRev = Math.max(fcastRev, actRev, 1);
+      var err = Math.abs(fcastRev - actRev) / maxRev;
+      per[h].push({ snapshot: s.snapshotMonth, target: targetMonth, fcast: fcastRev, actual: actRev, errPct: err, accPct: 1 - err });
+    });
+  });
+  function bandFor(arr, defaultAcc, defaultBand) {
+    if (!arr.length) return { acc: defaultAcc, band: defaultBand, n: 0, isDefault: true };
+    var mean = arr.reduce(function(t, x) { return t + x.accPct; }, 0) / arr.length;
+    var sd = Math.sqrt(arr.reduce(function(t, x) { return t + Math.pow(x.accPct - mean, 2); }, 0) / arr.length);
+    return { acc: mean, band: sd, n: arr.length, isDefault: false };
+  }
+  return {
+    m0: bandFor(per.m0, 0.80, 0.05),
+    m1: bandFor(per.m1, 0.75, 0.10),
+    m2: bandFor(per.m2, 0.30, 0.20),
+    history: per
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOP NAV + ROUTING
+// ─────────────────────────────────────────────────────────────────────────────
+function renderTopNav() {
+  document.getElementById('topnav').innerHTML = TABS.map(function(t) {
+    return '<button class="topnav-btn' + (currentTab === t.id ? ' active' : '') + '" onclick="selectTab(\'' + t.id + '\')">' + esc(t.label) + '</button>';
+  }).join('');
+}
+function selectTab(id) { currentTab = id; renderTopNav(); renderTab(); window.scrollTo(0, 0); }
+function renderTab() {
+  if (currentTab === 'overview')    return renderOverview();
+  if (currentTab === 'aureum')      return renderAureumGrid();
+  if (currentTab === 'threemo')     return render3MoRevenue();
+  if (currentTab === 'accuracy')    return renderForecastAccuracy();
+  if (currentTab === 'super')       return renderSuperDeals();
+  if (currentTab === 'fulfillment') return renderFulfillmentView();
+  if (currentTab === 'mrr')         return renderMRRForecast();
+  if (currentTab === 'active')      return renderActiveCustomers();
+  if (currentTab === 'margin')      return renderMarginRules();
+  if (currentTab === 'settings')    return renderSettings();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: OVERVIEW
+// ─────────────────────────────────────────────────────────────────────────────
+function renderOverview() {
+  var deals    = getDeals();
+  var anchor   = getAnchorMonth();
+  var months   = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
+  var totals   = { hc: [0,0,0], proj: [0,0,0], adj: [0,0,0], margin$: [0,0,0] };
+  deals.forEach(function(d) {
+    months.forEach(function(m, i) {
+      totals.hc[i]      += (d.monthlyHC || {})[m] || 0;
+      totals.proj[i]    += projectedRevenue(d, m);
+      totals.adj[i]     += adjustedRevenue(d, m);
+      totals.margin$[i] += marginDollarsAdj(d, m);
+    });
+  });
+  var totalAdj      = totals.adj.reduce(function(s,v){ return s + v; }, 0);
+  var totalMargin   = totals.margin$.reduce(function(s,v){ return s + v; }, 0);
+  var totalHc       = totals.hc.reduce(function(s,v){ return s + v; }, 0);
+  var totalDeals    = deals.length;
+  var pipelineDeals = deals.filter(function(d){ return /Pipeline|SQL|Commercial|Recruit|Pricing|Paper|Services/.test(d.stage + ' ' + d.status); }).length;
+  var aureumDeals   = deals.filter(isSuperDeal).length;
+  var bands         = computeAccuracyBands();
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Overview</h1><div class="sub">Anchor month: <b>' + monthLabel(anchor) + '</b> &middot; Rolling 3-month window</div></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+
+  html += '<div class="stat-grid">';
+  html += statCard('Total Deals',     totalDeals,                   pipelineDeals + ' in pipeline · ' + aureumDeals + ' super-deals', 'gold');
+  html += statCard('Forecasted HC (3mo)', totalHc,                   monthLabel(months[0]) + ' → ' + monthLabel(months[2]), 'aureum');
+  html += statCard('Adj. Revenue (3mo)',  fmt$k(totalAdj),           'Win-rate-adjusted', 'good');
+  html += statCard('Margin $ (3mo)',      fmt$k(totalMargin),        'Adjusted × Margin %', 'good');
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Rolling 3-Month Window</span><span class="card-sub">' + monthLabel(months[0]) + ' &middot; ' + monthLabel(months[1]) + ' &middot; ' + monthLabel(months[2]) + '</span></div>';
+  html += '<table><thead><tr><th>Metric</th><th class="num">' + monthLabel(months[0]) + '</th><th class="num">' + monthLabel(months[1]) + '</th><th class="num">' + monthLabel(months[2]) + '</th><th class="num">3-mo Total</th></tr></thead><tbody>';
+  html += '<tr><td>Forecasted Headcount</td>' + totals.hc.map(function(v){ return '<td class="num num-bold">' + v + '</td>'; }).join('') + '<td class="num num-bold">' + totalHc + '</td></tr>';
+  html += '<tr><td>Projected Revenue</td>'   + totals.proj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totals.proj.reduce(function(s,v){return s+v;},0)) + '</td></tr>';
+  html += '<tr><td>Adj. Revenue (× win rate)</td>' + totals.adj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalAdj) + '</td></tr>';
+  html += '<tr><td>Margin $ (× margin %)</td>' + totals.margin$.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalMargin) + '</td></tr>';
+  html += '</tbody></table></div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Reliability by Horizon</span><span class="card-sub">' + (bands.m0.isDefault ? 'Default values — accumulates as snapshots build up' : 'Computed from ' + bands.m0.n + '/' + bands.m1.n + '/' + bands.m2.n + ' historical snapshots') + '</span></div>';
+  html += '<div class="acc-bands">';
+  html += accCard('m0', 'Current Month (M0)', bands.m0);
+  html += accCard('m1', '+1 Month (M+1)',     bands.m1);
+  html += accCard('m2', '+2 Months (M+2)',    bands.m2);
+  html += '</div></div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+function statCard(label, val, sub, kind) {
+  return '<div class="stat-card ' + (kind||'') + '"><div class="stat-label">' + esc(label) + '</div><div class="stat-value">' + esc(val) + '</div><div class="stat-sub">' + esc(sub) + '</div></div>';
+}
+function accCard(cls, label, b) {
+  return '<div class="acc-card ' + cls + '"><div class="acc-h">' + esc(label) + '</div>' +
+    '<div class="acc-v">' + fmtPct(b.acc) + '</div>' +
+    '<div class="acc-b">± ' + fmtPct(b.band) + '</div>' +
+    '<div class="acc-n">' + (b.isDefault ? 'Default (no history yet)' : b.n + ' snapshots') + '</div></div>';
+}
+function anchorSelectHtml() {
+  var cur = getAnchorMonth();
+  var opts = ALL_MONTHS.map(function(m) { return '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + monthLabel(m) + '</option>'; }).join('');
+  return '<select onchange="setAnchorMonth(this.value); renderTab();">' + opts + '</select>';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: AUREUM DEMAND FORECAST (main grid)
+// ─────────────────────────────────────────────────────────────────────────────
+var aureumFilter = { search: '', status: '', stage: '', superOnly: false };
+function renderAureumGrid() {
+  var deals  = getDeals();
+  var anchor = getAnchorMonth();
+  var months = [];
+  var idx = ALL_MONTHS.indexOf(anchor);
+  if (idx < 0) idx = 0;
+  for (var i = 0; i < 9 && idx + i < ALL_MONTHS.length; i++) months.push(ALL_MONTHS[idx + i]);
+
+  var filtered = deals.filter(function(d) {
+    if (aureumFilter.search && (d.dealName + ' ' + d.client).toLowerCase().indexOf(aureumFilter.search.toLowerCase()) < 0) return false;
+    if (aureumFilter.status && d.status !== aureumFilter.status) return false;
+    if (aureumFilter.stage  && d.stage  !== aureumFilter.stage)  return false;
+    if (aureumFilter.superOnly && !isSuperDeal(d)) return false;
+    return true;
+  });
+
+  var statusOpts = [''].concat(Object.keys(STATUS_PILL)).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.status ? ' selected' : '') + '>' + (s || 'All statuses') + '</option>'; }).join('');
+  var stageOpts  = [''].concat(STAGES.map(function(s){ return s.id; })).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.stage ? ' selected' : '') + '>' + (s || 'All stages') + '</option>'; }).join('');
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">Headcount per month · Pricing · Margin · Win rate</div></div>';
+  html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
+  html += '<button class="btn btn-gold btn-sm" onclick="openDealModal(null)">+ New Deal</button></div></div>';
+
+  html += '<div class="toolbar">';
+  html += '<input type="text" placeholder="Search deal or client…" value="' + esc(aureumFilter.search) + '" oninput="aureumFilter.search=this.value; renderAureumGrid()">';
+  html += '<select onchange="aureumFilter.status=this.value; renderAureumGrid()">' + statusOpts + '</select>';
+  html += '<select onchange="aureumFilter.stage=this.value; renderAureumGrid()">' + stageOpts + '</select>';
+  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (aureumFilter.superOnly ? ' checked' : '') + ' onchange="aureumFilter.superOnly=this.checked; renderAureumGrid()"> Super-deals only</label>';
+  html += '<span class="spacer"></span>';
+  html += '<span style="font-size:11px;color:var(--muted)">Showing ' + filtered.length + ' / ' + deals.length + ' deals</span>';
+  html += '</div>';
+
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
+  html += '<th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th>Loc</th><th>1st Bill.</th>';
+  months.forEach(function(m){ html += '<th class="num">' + monthLabel(m) + '</th>'; });
+  html += '<th class="num">Pricing</th><th class="num">Win %</th><th class="num">Margin %</th><th></th>';
+  html += '</tr></thead><tbody>';
+
+  filtered.forEach(function(d) {
+    var dealIdx = deals.indexOf(d);
+    var sup = isSuperDeal(d);
+    html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
+    html += '<td>' + statusPill(d.status) + '</td>';
+    html += '<td>' + esc(d.client) + '</td>';
+    html += '<td><b>' + esc(d.dealName) + '</b>' + (sup ? ' <span class="pill pill-aureum" style="margin-left:4px">Aureum</span>' : '') + '</td>';
+    html += '<td>' + stagePill(d.stage) + '</td>';
+    html += '<td style="color:var(--muted)">' + esc(d.location) + '</td>';
+    html += '<td style="color:var(--muted)">' + esc(d.firstBillableMonth) + '</td>';
+    var pricePerH = pricePerHead(d);
+    months.forEach(function(m) {
+      var hc = (d.monthlyHC || {})[m] || 0;
+      var cls = '';
+      if (hc > 0) {
+        if (sup) cls = 'super';
+        else if (pricePerH >= 10000) cls = 'gt10k';
+        else if (pricePerH > 0 && pricePerH < 10000) cls = 'lt10k';
+      }
+      html += '<td class="cell-hc ' + cls + '"><input type="number" min="0" value="' + (hc || '') + '" onchange="updateDealHC(' + dealIdx + ', \'' + m + '\', this.value)" placeholder="0"></td>';
+    });
+    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.pricing || '') + '" onchange="updateDealField(' + dealIdx + ', \'pricing\', this.value)"></td>';
+    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
+    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getMarginFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'marginOverride\', this.value/100)"></td>';
+    html += '<td><button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')">&#9998;</button></td>';
+    html += '</tr>';
+  });
+
+  // Totals row
+  var tot = { hc: months.map(function(){ return 0; }) };
+  filtered.forEach(function(d){ months.forEach(function(m, i){ tot.hc[i] += (d.monthlyHC || {})[m] || 0; }); });
+  html += '<tr style="background:var(--navy);color:white;font-weight:700">';
+  html += '<td colspan="6" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
+  tot.hc.forEach(function(v) { html += '<td class="num" style="color:white">' + v + '</td>'; });
+  html += '<td colspan="4"></td></tr>';
+
+  html += '</tbody></table></div></div>';
+
+  html += '<div class="legend">';
+  html += '<span><span class="sw" style="background:#B2EBF2"></span>Super-Deal / Aureum (≥50 HC)</span>';
+  html += '<span><span class="sw" style="background:#E8F5E9"></span>≥ $10K per head</span>';
+  html += '<span><span class="sw" style="background:#FDECEA"></span>&lt; $10K per head</span>';
+  html += '<span style="margin-left:auto;font-style:italic">All cells editable · changes auto-save</span>';
+  html += '</div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+function updateDealHC(idx, monthKey, value) {
+  var deals = getDeals();
+  var d = deals[idx]; if (!d) return;
+  d.monthlyHC = d.monthlyHC || {};
+  var v = parseInt(value);
+  if (!v || isNaN(v) || v <= 0) delete d.monthlyHC[monthKey];
+  else d.monthlyHC[monthKey] = v;
+  d.totalHC = sumMonths(d.monthlyHC);
+  setDeals(deals);
+}
+function updateDealField(idx, field, value) {
+  var deals = getDeals();
+  var d = deals[idx]; if (!d) return;
+  d[field] = value === '' || isNaN(parseFloat(value)) ? '' : parseFloat(value);
+  setDeals(deals);
+}
+function openDealModal(idx) {
+  var deals = getDeals();
+  var d = idx === null ? { status:'Pipeline Account', client:'', dealName:'', stage:'SQL', location:'LATAM', firstBillableMonth:'', monthlyHC:{}, pricing:0, winRate:0.5, winRateAdj:0.5, totalHC:0, activationMonth:'' } : deals[idx];
+  var statusOpts = Object.keys(STATUS_PILL).map(function(s){ return '<option value="' + esc(s) + '"' + (s === d.status ? ' selected' : '') + '>' + s + '</option>'; }).join('');
+  var stageOpts  = STAGES.map(function(s){ return '<option value="' + esc(s.id) + '"' + (s.id === d.stage ? ' selected' : '') + '>' + s.label + '</option>'; }).join('');
+  var html = '';
+  html += '<h3>' + (idx === null ? 'New Deal' : 'Edit Deal') + '</h3>';
+  html += '<div class="form-row"><div class="form-group"><label>Client</label><input id="m_client" value="' + esc(d.client) + '"></div>';
+  html += '<div class="form-group"><label>Deal Name</label><input id="m_dealName" value="' + esc(d.dealName) + '"></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Status</label><select id="m_status">' + statusOpts + '</select></div>';
+  html += '<div class="form-group"><label>Stage</label><select id="m_stage">' + stageOpts + '</select></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Location</label><input id="m_location" value="' + esc(d.location) + '"></div>';
+  html += '<div class="form-group"><label>First Billable Month</label><input id="m_fbm" value="' + esc(d.firstBillableMonth) + '"></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Total Pricing ($)</label><input type="number" id="m_pricing" value="' + (d.pricing || 0) + '"></div>';
+  html += '<div class="form-group"><label>Adjusted Win Rate (0-1)</label><input type="number" min="0" max="1" step="0.05" id="m_winRate" value="' + (d.winRateAdj || 0.5) + '"></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Margin % Override (blank = use rule)</label><input type="number" min="0" max="100" step="1" id="m_margin" value="' + (d.marginOverride !== undefined && d.marginOverride !== '' ? Math.round(d.marginOverride * 100) : '') + '" placeholder="—"></div>';
+  html += '<div class="form-group"><label>Activation Month</label><input id="m_activation" value="' + esc(d.activationMonth || '') + '"></div></div>';
+  html += '<div class="form-group"><label>Commercial Description (from Zoho)</label><textarea id="m_desc">' + esc(d.commercialDescription || '') + '</textarea></div>';
+  html += '<div class="modal-actions">';
+  if (idx !== null) html += '<button class="btn btn-danger" onclick="deleteDeal(' + idx + ')">Delete</button>';
+  html += '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>';
+  html += '<button class="btn btn-gold" onclick="saveDeal(' + (idx === null ? 'null' : idx) + ')">Save</button>';
+  html += '</div>';
+  openModal(html);
+}
+function saveDeal(idx) {
+  var deals = getDeals();
+  var d = idx === null ? { monthlyHC: {} } : deals[idx];
+  d.client    = document.getElementById('m_client').value.trim();
+  d.dealName  = document.getElementById('m_dealName').value.trim();
+  d.status    = document.getElementById('m_status').value;
+  d.stage     = document.getElementById('m_stage').value;
+  d.location  = document.getElementById('m_location').value.trim();
+  d.firstBillableMonth = document.getElementById('m_fbm').value.trim();
+  d.pricing   = parseFloat(document.getElementById('m_pricing').value) || 0;
+  d.winRateAdj = parseFloat(document.getElementById('m_winRate').value) || 0;
+  var mo = document.getElementById('m_margin').value;
+  d.marginOverride = mo === '' ? undefined : (parseFloat(mo) || 0) / 100;
+  d.activationMonth = document.getElementById('m_activation').value.trim();
+  d.commercialDescription = document.getElementById('m_desc').value;
+  if (idx === null) deals.push(d);
+  setDeals(deals);
+  closeModal();
+  renderTab();
+}
+function deleteDeal(idx) {
+  if (!confirm('Delete this deal?')) return;
+  var deals = getDeals(); deals.splice(idx, 1); setDeals(deals); closeModal(); renderTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: 3 mo. revenue (rolling)
+// ─────────────────────────────────────────────────────────────────────────────
+function render3MoRevenue() {
+  var deals  = getDeals();
+  var anchor = getAnchorMonth();
+  var months = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>3 mo. revenue</h1><div class="sub">Rolling 3-month window — each month, advance Anchor by one</div></div>';
+  html += '<div class="anchor-row"><label>Anchor month:</label>' + anchorSelectHtml() + '</div></div>';
+
+  // Filter deals that have any HC in window OR are active accounts
+  var rows = deals.filter(function(d) {
+    return months.some(function(m){ return ((d.monthlyHC || {})[m] || 0) > 0; });
+  });
+
+  var tot = { proj:[0,0,0], adj:[0,0,0], mar:[0,0,0], hc:[0,0,0] };
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead>';
+  html += '<tr><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Deal</th><th rowspan="2">Stage</th><th rowspan="2" class="num">Win %</th><th rowspan="2" class="num">MRR / Head</th>';
+  months.forEach(function(m){ html += '<th colspan="4" style="text-align:center;background:#1c3250;color:white">' + monthLabel(m) + '</th>'; });
+  html += '<th rowspan="2" class="num" style="background:var(--navy);color:white">Total Adj.</th></tr>';
+  html += '<tr>';
+  months.forEach(function(){
+    html += '<th class="num">HC</th><th class="num">Proj. Rev</th><th class="num">Adj. Rev</th><th class="num">Margin $</th>';
+  });
+  html += '</tr></thead><tbody>';
+
+  rows.forEach(function(d) {
+    var pph = pricePerHead(d);
+    var wr  = getWinRateFor(d);
+    html += '<tr>';
+    html += '<td>' + statusPill(d.status) + '</td>';
+    html += '<td>' + esc(d.client) + '</td>';
+    html += '<td><b>' + esc(d.dealName) + '</b></td>';
+    html += '<td>' + stagePill(d.stage) + '</td>';
+    html += '<td class="num">' + fmtPct(wr) + '</td>';
+    html += '<td class="num">' + fmt$k(pph) + '</td>';
+    var dealTotalAdj = 0;
+    months.forEach(function(m, i) {
+      var hc   = (d.monthlyHC || {})[m] || 0;
+      var proj = hc * pph;
+      var adj  = proj * wr;
+      var mar  = adj * getMarginFor(d);
+      tot.hc[i] += hc; tot.proj[i] += proj; tot.adj[i] += adj; tot.mar[i] += mar;
+      dealTotalAdj += adj;
+      html += '<td class="num">' + (hc || '—') + '</td>';
+      html += '<td class="num">' + (proj ? fmt$k(proj) : '—') + '</td>';
+      html += '<td class="num num-bold">' + (adj ? fmt$k(adj) : '—') + '</td>';
+      html += '<td class="num" style="color:var(--success)">' + (mar ? fmt$k(mar) : '—') + '</td>';
+    });
+    html += '<td class="num num-bold">' + fmt$k(dealTotalAdj) + '</td>';
+    html += '</tr>';
+  });
+
+  html += '<tr style="background:var(--navy);color:white;font-weight:700">';
+  html += '<td colspan="6" style="color:white">TOTALS — ' + rows.length + ' deals in window</td>';
+  for (var i = 0; i < 3; i++) {
+    html += '<td class="num" style="color:white">' + tot.hc[i] + '</td>';
+    html += '<td class="num" style="color:white">' + fmt$k(tot.proj[i]) + '</td>';
+    html += '<td class="num" style="color:white">' + fmt$k(tot.adj[i]) + '</td>';
+    html += '<td class="num" style="color:var(--gold)">' + fmt$k(tot.mar[i]) + '</td>';
+  }
+  html += '<td class="num" style="color:white">' + fmt$k(tot.adj.reduce(function(s,v){return s+v;},0)) + '</td>';
+  html += '</tr></tbody></table></div></div>';
+
+  // Bottom summary
+  html += '<div class="stat-grid">';
+  html += statCard('3-Mo Projected Rev', fmt$k(tot.proj.reduce(function(s,v){return s+v;},0)), 'Raw pipeline × HC × MRR/head');
+  html += statCard('3-Mo Adj. Rev',      fmt$k(tot.adj.reduce(function(s,v){return s+v;},0)),  '× Win rate', 'gold');
+  html += statCard('3-Mo Margin $',      fmt$k(tot.mar.reduce(function(s,v){return s+v;},0)),  '× Margin % (per Margin Rules tab)', 'good');
+  html += '</div>';
+
+  html += '<div class="legend"><span style="font-style:italic">Move the anchor month forward each month to roll the window. Margin % defaults from Margin Rules tab; can be overridden per deal in Aureum Demand Forecast.</span></div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: FORECAST ACCURACY
+// ─────────────────────────────────────────────────────────────────────────────
+function renderForecastAccuracy() {
+  var snaps   = getSnapshots();
+  var actuals = getActuals();
+  var bands   = computeAccuracyBands();
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · Snapshots auto-taken on the first session each month</div></div>';
+  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
+
+  html += '<div class="acc-bands">';
+  html += accCard('m0', 'Current Month (M0)', bands.m0);
+  html += accCard('m1', '+1 Month (M+1)',     bands.m1);
+  html += accCard('m2', '+2 Months (M+2)',    bands.m2);
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Historical Snapshots</span><span class="card-sub">' + snaps.length + ' snapshots</span></div>';
+  if (!snaps.length) {
+    html += '<div class="empty">No snapshots yet. One will be auto-taken on your first session each month, or click "Force Snapshot Now" above.</div>';
+  } else {
+    html += '<table><thead><tr><th>Snapshot Month</th><th>Taken At</th><th>Deals</th><th class="num">M0 Forecast Adj.</th><th class="num">M+1 Forecast Adj.</th><th class="num">M+2 Forecast Adj.</th></tr></thead><tbody>';
+    snaps.slice().reverse().forEach(function(s) {
+      var sum = ['m0','m1','m2'].map(function(h) {
+        return Object.values(s.perDeal).reduce(function(t,p){ return t + (p.adjRev[h] || 0); }, 0);
+      });
+      html += '<tr><td><b>' + monthLabel(s.snapshotMonth) + '</b></td>';
+      html += '<td style="color:var(--muted);font-size:11px">' + new Date(s.takenAt).toLocaleString() + '</td>';
+      html += '<td>' + Object.keys(s.perDeal).length + '</td>';
+      html += '<td class="num">' + fmt$k(sum[0]) + '</td>';
+      html += '<td class="num">' + fmt$k(sum[1]) + '</td>';
+      html += '<td class="num">' + fmt$k(sum[2]) + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Actuals Recorded</span><span class="card-sub">Used to compute accuracy bands</span></div>';
+  var monthsKeys = Object.keys(actuals).sort();
+  if (!monthsKeys.length) {
+    html += '<div class="empty">No actuals yet. Record actuals as months close so the bands learn from your real outcomes.</div>';
+  } else {
+    html += '<table><thead><tr><th>Month</th><th class="num">Actual HC</th><th class="num">Actual Adj. Revenue</th><th class="num">Variance vs M0 Forecast</th><th></th></tr></thead><tbody>';
+    monthsKeys.forEach(function(mk) {
+      var a = actuals[mk] || {};
+      var snap = snaps.find(function(s){ return s.snapshotMonth === mk; });
+      var fc = snap ? Object.values(snap.perDeal).reduce(function(t,p){ return t + (p.adjRev.m0 || 0); }, 0) : 0;
+      var varDollars = fc ? (a.adjRev - fc) : 0;
+      var varPct = fc ? (varDollars / fc) : 0;
+      var vc = Math.abs(varPct) < 0.05 ? 'var-green' : Math.abs(varPct) < 0.15 ? 'var-yellow' : 'var-red';
+      html += '<tr><td>' + monthLabel(mk) + '</td><td class="num">' + (a.hc || '—') + '</td>';
+      html += '<td class="num">' + fmt$k(a.adjRev || 0) + '</td>';
+      html += '<td class="num var-cell ' + vc + '">' + (fc ? (varPct >= 0 ? '+' : '') + fmtPct1(varPct) : '—') + '</td>';
+      html += '<td><button class="btn btn-ghost btn-sm" onclick="openActualsModal(\'' + mk + '\')">&#9998;</button></td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">How accuracy bands are computed</span></div>';
+  html += '<div style="font-size:12.5px;color:var(--muted);line-height:1.65">';
+  html += 'Every month the app snapshots the rolling 3-month forecast (M0 / M+1 / M+2). When you record actuals for a closed month, the app compares each prior snapshot\'s prediction for that month against the actual, and aggregates the per-horizon error as <b>mean ± std-dev</b> across all snapshots that had that horizon pointing at a now-closed month.';
+  html += '<br><br>Before history accumulates, the bands fall back to the targets defined for this project: <b>M0 = 80% ±5</b>, <b>M+1 = 75% ±10</b>, <b>M+2 = 30% ±20</b>.';
+  html += '<br><br><b>Not a performance metric.</b> The goal is to give Finance a credible range for cash-flow planning, not to grade the forecaster.';
+  html += '</div></div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+function forceSnapshot() {
+  var snaps = getSnapshots();
+  snaps = snaps.filter(function(s){ return s.snapshotMonth !== currentMonthKey(); });
+  setSnapshots(snaps);
+  ensureMonthlySnapshot();
+  renderTab();
+}
+function openActualsModal(mk) {
+  var actuals = getActuals();
+  var key = mk || currentMonthKey();
+  var a = actuals[key] || {};
+  var html = '';
+  html += '<h3>Record Actuals — ' + monthLabel(key) + '</h3>';
+  html += '<div class="form-group"><label>Month (YYYY-MM)</label><input id="a_month" value="' + esc(key) + '"></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Actual Headcount</label><input type="number" id="a_hc" value="' + (a.hc || 0) + '"></div>';
+  html += '<div class="form-group"><label>Actual Adj. Revenue ($)</label><input type="number" id="a_adj" value="' + (a.adjRev || 0) + '"></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Actual Margin $</label><input type="number" id="a_mar" value="' + (a.margin$ || 0) + '"></div>';
+  html += '<div class="form-group"><label>Notes</label><input id="a_notes" value="' + esc(a.notes || '') + '"></div></div>';
+  html += '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="saveActuals()">Save</button></div>';
+  openModal(html);
+}
+function saveActuals() {
+  var actuals = getActuals();
+  var mk = document.getElementById('a_month').value.trim();
+  actuals[mk] = {
+    hc:      parseFloat(document.getElementById('a_hc').value)  || 0,
+    adjRev:  parseFloat(document.getElementById('a_adj').value) || 0,
+    margin$: parseFloat(document.getElementById('a_mar').value) || 0,
+    notes:   document.getElementById('a_notes').value
+  };
+  setActuals(actuals);
+  closeModal();
+  renderTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: SUPER-DEALS
+// ─────────────────────────────────────────────────────────────────────────────
+function renderSuperDeals() {
+  var deals = getDeals().filter(isSuperDeal);
+  var html = '';
+  html += '<div class="page-title"><div><h1>Super-Deals</h1><div class="sub">Aureum-tier engagements (≥ 50 HC). Disruptive growth, treated as separate cash-flow lane.</div></div></div>';
+  html += '<div class="stat-grid">';
+  html += statCard('Super-Deals', deals.length, 'Deals with ≥ 50 total HC', 'aureum');
+  html += statCard('Total Forecasted HC', deals.reduce(function(s,d){ return s + sumMonths(d.monthlyHC); }, 0), 'Across all months', 'aureum');
+  html += statCard('Adj. Pipeline $',     fmt$k(deals.reduce(function(s,d){ return s + (d.pricing || 0) * getWinRateFor(d); }, 0)), 'Pricing × Win Rate', 'gold');
+  html += statCard('Adj. Margin $',       fmt$k(deals.reduce(function(s,d){ return s + (d.pricing || 0) * getWinRateFor(d) * getMarginFor(d); }, 0)), 'Pricing × Win × Margin %', 'good');
+  html += '</div>';
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
+  html += '<th>Client</th><th>Deal</th><th>Stage</th><th class="num">Total HC</th><th class="num">Peak HC</th><th class="num">Pricing</th><th class="num">Win %</th><th class="num">Margin %</th><th class="num">Adj. Rev</th><th class="num">Margin $</th><th class="num">Activation</th>';
+  html += '</tr></thead><tbody>';
+  deals.sort(function(a,b){ return (b.pricing||0)*getWinRateFor(b) - (a.pricing||0)*getWinRateFor(a); }).forEach(function(d) {
+    var peakHc = Math.max.apply(null, Object.values(d.monthlyHC || {0:0}));
+    var adj = (d.pricing||0) * getWinRateFor(d);
+    var mar = adj * getMarginFor(d);
+    html += '<tr class="row-super">';
+    html += '<td>' + esc(d.client) + '</td>';
+    html += '<td><b>' + esc(d.dealName) + '</b></td>';
+    html += '<td>' + stagePill(d.stage) + '</td>';
+    html += '<td class="num num-bold">' + sumMonths(d.monthlyHC) + '</td>';
+    html += '<td class="num">' + peakHc + '</td>';
+    html += '<td class="num">' + fmt$k(d.pricing) + '</td>';
+    html += '<td class="num">' + fmtPct(getWinRateFor(d)) + '</td>';
+    html += '<td class="num">' + fmtPct(getMarginFor(d)) + '</td>';
+    html += '<td class="num num-bold">' + fmt$k(adj) + '</td>';
+    html += '<td class="num" style="color:var(--success)">' + fmt$k(mar) + '</td>';
+    html += '<td class="num" style="color:var(--muted)">' + esc(d.activationMonth || '') + '</td>';
+    html += '</tr>';
+  });
+  if (!deals.length) html += '<tr><td colspan="11" class="empty">No deals reach the 50-HC super-deal threshold yet.</td></tr>';
+  html += '</tbody></table></div></div>';
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: FULFILLMENT VIEW (Active Roles)
+// ─────────────────────────────────────────────────────────────────────────────
+function renderFulfillmentView() {
+  var deals = getDeals();
+  var anchor = getAnchorMonth();
+  var months = [];
+  var idx = ALL_MONTHS.indexOf(anchor); if (idx < 0) idx = 0;
+  for (var i = 0; i < 9 && idx + i < ALL_MONTHS.length; i++) months.push(ALL_MONTHS[idx + i]);
+  var html = '';
+  html += '<div class="page-title"><div><h1>Fulfillment View (Active Roles + Super-Deals)</h1><div class="sub">Headcount by deal-type for delivery / recruiting prioritization</div></div>';
+  html += '<div class="anchor-row"><label>Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+
+  function fulfillTable(filter, title, isSuper) {
+    var rows = deals.filter(filter);
+    var hcTot = months.map(function(){ return 0; });
+    var h = '<div class="card"><div class="card-header"><span class="card-title">' + title + '</span><span class="card-sub">' + rows.length + ' deals</span></div>';
+    h += '<div class="scroll-x"><table class="grid-tbl"><thead><tr><th>Client</th><th>Deal</th><th>Stage</th>';
+    months.forEach(function(m){ h += '<th class="num">' + monthLabel(m) + '</th>'; });
+    h += '<th class="num">Total</th></tr></thead><tbody>';
+    rows.forEach(function(d) {
+      h += '<tr' + (isSuper ? ' class="row-super"' : '') + '><td>' + esc(d.client) + '</td><td><b>' + esc(d.dealName) + '</b></td><td>' + stagePill(d.stage) + '</td>';
+      var tot = 0;
+      months.forEach(function(m, i) {
+        var hc = (d.monthlyHC || {})[m] || 0;
+        hcTot[i] += hc; tot += hc;
+        h += '<td class="num">' + (hc || '—') + '</td>';
+      });
+      h += '<td class="num num-bold">' + tot + '</td></tr>';
+    });
+    h += '<tr style="background:var(--navy);color:white;font-weight:700"><td colspan="3" style="color:white">Total HC</td>';
+    hcTot.forEach(function(v){ h += '<td class="num" style="color:white">' + v + '</td>'; });
+    h += '<td class="num" style="color:var(--gold)">' + hcTot.reduce(function(s,v){return s+v;},0) + '</td></tr>';
+    h += '</tbody></table></div></div>';
+    return h;
+  }
+  html += fulfillTable(function(d){ return !isSuperDeal(d) && /Closed Won|Active|Expanding|Recruit|Paper|Pricing/.test(d.status + ' ' + d.stage); }, 'Active Roles (non-Super)', false);
+  html += fulfillTable(isSuperDeal, 'Super-Deal Active Roles', true);
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: MRR FORECAST 2026
+// ─────────────────────────────────────────────────────────────────────────────
+function renderMRRForecast() {
+  var deals = getDeals();
+  var html = '';
+  html += '<div class="page-title"><div><h1>MRR Forecast 2026</h1><div class="sub">Monthly Recurring Revenue projection · adjusted by win rate</div></div></div>';
+  var months = ALL_MONTHS;
+  // Group by client
+  var byClient = {};
+  deals.forEach(function(d) { if (!byClient[d.client]) byClient[d.client] = []; byClient[d.client].push(d); });
+  var clients = Object.keys(byClient).sort();
+  var html2 = '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr><th>Client</th>';
+  months.forEach(function(m){ html2 += '<th class="num">' + monthLabel(m) + '</th>'; });
+  html2 += '<th class="num">Total Adj.</th></tr></thead><tbody>';
+  var grand = months.map(function(){ return 0; });
+  clients.forEach(function(c) {
+    var sums = months.map(function(){ return 0; });
+    byClient[c].forEach(function(d) {
+      months.forEach(function(m, i){
+        sums[i] += adjustedRevenue(d, m);
+      });
+    });
+    var tot = sums.reduce(function(s,v){ return s + v; }, 0);
+    if (tot < 1) return;
+    html2 += '<tr><td>' + esc(c) + '</td>';
+    sums.forEach(function(v, i){ grand[i] += v; html2 += '<td class="num">' + (v ? fmt$k(v) : '—') + '</td>'; });
+    html2 += '<td class="num num-bold">' + fmt$k(tot) + '</td></tr>';
+  });
+  html2 += '<tr style="background:var(--navy);color:white;font-weight:700"><td style="color:white">TOTAL</td>';
+  grand.forEach(function(v){ html2 += '<td class="num" style="color:white">' + fmt$k(v) + '</td>'; });
+  html2 += '<td class="num" style="color:var(--gold)">' + fmt$k(grand.reduce(function(s,v){return s+v;},0)) + '</td></tr>';
+  html2 += '</tbody></table></div></div>';
+  html += html2;
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: ACTIVE CUSTOMERS - ACTUALS
+// ─────────────────────────────────────────────────────────────────────────────
+function renderActiveCustomers() {
+  var deals = getDeals().filter(function(d){ return /Aureum Active|Active|Expanding/.test(d.status); });
+  var html = '';
+  html += '<div class="page-title"><div><h1>Active Customers — Actuals</h1><div class="sub">Customers currently producing revenue (Active / Expanding / Aureum)</div></div></div>';
+  html += '<div class="stat-grid">';
+  html += statCard('Active Customers', new Set(deals.map(function(d){return d.client;})).size, deals.length + ' deals', 'good');
+  html += statCard('Aureum Customers', new Set(deals.filter(function(d){return d.status==='Aureum Active Account';}).map(function(d){return d.client;})).size, 'Aureum-tier accounts', 'aureum');
+  html += statCard('Annualized Rev',   fmt$k(deals.reduce(function(s,d){return s + (d.pricing||0)*12;}, 0)), 'Pricing × 12 (raw)', 'gold');
+  html += '</div>';
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
+  html += '<th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th class="num">HC (current)</th><th class="num">MRR/Head</th><th class="num">Monthly $</th><th class="num">Margin %</th>';
+  html += '</tr></thead><tbody>';
+  var anchor = getAnchorMonth();
+  deals.forEach(function(d) {
+    var hc = (d.monthlyHC || {})[anchor] || 0;
+    var pph = pricePerHead(d);
+    html += '<tr><td>' + statusPill(d.status) + '</td><td>' + esc(d.client) + '</td><td><b>' + esc(d.dealName) + '</b></td>';
+    html += '<td>' + stagePill(d.stage) + '</td>';
+    html += '<td class="num">' + hc + '</td>';
+    html += '<td class="num">' + fmt$k(pph) + '</td>';
+    html += '<td class="num num-bold">' + fmt$k(hc * pph) + '</td>';
+    html += '<td class="num">' + fmtPct(getMarginFor(d)) + '</td></tr>';
+  });
+  html += '</tbody></table></div></div>';
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: MARGIN RULES
+// ─────────────────────────────────────────────────────────────────────────────
+function renderMarginRules() {
+  var rules = getMarginRules();
+  var html = '';
+  html += '<div class="page-title"><div><h1>Margin Rules</h1><div class="sub">Default margin % by deal type. Per-deal overrides take precedence. Used by 3 mo. revenue and cash-flow margin $.</div></div>';
+  html += '<div><button class="btn btn-ghost btn-sm" onclick="resetMarginRules()">Reset to Defaults</button> <button class="btn btn-gold btn-sm" onclick="openMarginRuleModal(null)">+ Add Rule</button></div></div>';
+  html += '<div class="card"><table><thead><tr><th>Deal Type / Stage</th><th class="num">Default Margin %</th><th>Note</th><th></th></tr></thead><tbody>';
+  rules.forEach(function(r, i) {
+    html += '<tr><td><b>' + esc(r.dealType) + '</b></td>';
+    html += '<td class="num"><input type="number" min="0" max="100" step="1" value="' + Math.round(r.margin * 100) + '" onchange="updateMarginRule(' + i + ', this.value/100)" style="width:70px;padding:3px 7px;text-align:right;border:1px solid var(--border);border-radius:4px;font-family:inherit"></td>';
+    html += '<td style="color:var(--muted);font-size:11.5px">' + esc(r.note || '') + '</td>';
+    html += '<td><button class="btn btn-ghost btn-sm" onclick="openMarginRuleModal(' + i + ')">&#9998;</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">How margin is resolved per deal</span></div>';
+  html += '<ol style="font-size:12.5px;color:var(--muted);line-height:1.7;padding-left:20px">';
+  html += '<li><b>Per-deal override</b> — if the Margin % field on a deal is set, it wins.</li>';
+  html += '<li><b>Aureum / Super-Deal</b> — if total HC ≥ 50, the Super-Deal rule applies.</li>';
+  html += '<li><b>By Deal Stage</b> — looks up the rule matching the deal\'s current stage (e.g. <i>Pricing</i>, <i>Recruitment</i>).</li>';
+  html += '<li><b>Default</b> — fallback if nothing matched.</li>';
+  html += '</ol></div>';
+  document.getElementById('mainContent').innerHTML = html;
+}
+function updateMarginRule(idx, val) {
+  var rules = getMarginRules();
+  rules[idx].margin = parseFloat(val) || 0;
+  setMarginRules(rules);
+}
+function openMarginRuleModal(idx) {
+  var rules = getMarginRules();
+  var r = idx === null ? { dealType:'', margin: 0.35, note:'' } : rules[idx];
+  var html = '<h3>' + (idx === null ? 'Add Margin Rule' : 'Edit Margin Rule') + '</h3>';
+  html += '<div class="form-group"><label>Deal Type / Stage</label><input id="r_type" value="' + esc(r.dealType) + '" placeholder="e.g. Pricing"></div>';
+  html += '<div class="form-group"><label>Margin %</label><input type="number" min="0" max="100" step="1" id="r_margin" value="' + Math.round(r.margin * 100) + '"></div>';
+  html += '<div class="form-group"><label>Note</label><textarea id="r_note">' + esc(r.note || '') + '</textarea></div>';
+  html += '<div class="modal-actions">';
+  if (idx !== null) html += '<button class="btn btn-danger" onclick="deleteMarginRule(' + idx + ')">Delete</button>';
+  html += '<button class="btn btn-ghost" onclick="closeModal()">Cancel</button>';
+  html += '<button class="btn btn-gold" onclick="saveMarginRule(' + (idx === null ? 'null' : idx) + ')">Save</button></div>';
+  openModal(html);
+}
+function saveMarginRule(idx) {
+  var rules = getMarginRules();
+  var r = { dealType: document.getElementById('r_type').value.trim(), margin: (parseFloat(document.getElementById('r_margin').value) || 0) / 100, note: document.getElementById('r_note').value };
+  if (idx === null) rules.push(r); else rules[idx] = r;
+  setMarginRules(rules);
+  closeModal();
+  renderTab();
+}
+function deleteMarginRule(idx) {
+  if (!confirm('Delete this rule?')) return;
+  var rules = getMarginRules(); rules.splice(idx, 1); setMarginRules(rules); closeModal(); renderTab();
+}
+function resetMarginRules() {
+  if (!confirm('Reset margin rules to defaults?')) return;
+  setMarginRules(DEFAULT_MARGIN_RULES);
+  renderTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: SETTINGS
+// ─────────────────────────────────────────────────────────────────────────────
+function renderSettings() {
+  var lastSync = load('last_zoho_sync', null);
+  var html = '';
+  html += '<div class="page-title"><div><h1>Settings</h1><div class="sub">Integration, data management, and export</div></div></div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Zoho CRM Integration</span></div>';
+  html += '<div style="font-size:12.5px;color:var(--muted);line-height:1.6">';
+  html += 'Status: <b style="color:' + (getZohoToken() ? 'var(--success)' : 'var(--danger)') + '">' + (getZohoToken() ? 'Connected' : 'Disconnected') + '</b>';
+  if (lastSync) html += ' &middot; Last sync: ' + new Date(lastSync).toLocaleString();
+  html += '<br><br>To enable: register an OAuth app at <code>api-console.zoho.com</code>, add the redirect URI <code>' + esc(ZOHO_REDIRECT) + '</code>, and replace <code>REPLACE_WITH_ZOHO_CLIENT_ID</code> in <code>index.html</code>.';
+  html += '<br><br><b>Field mapping</b> (from Zoho Deals module):<br>';
+  html += '<ul style="padding-left:22px;margin-top:6px"><li><code>Deal_Name</code> → Deal Name</li><li><code>Account_Name</code> → Client</li><li><code>Stage</code> → Stage (normalized)</li><li><code>Amount</code> → Pricing</li><li><code>Probability</code> → Adjusted Win Rate</li><li><code>Closing_Date</code> → First Billable / Activation Month</li><li><code>Description</code> → Commercial Description (margin signal)</li></ul>';
+  html += '</div>';
+  html += '<div style="margin-top:12px">';
+  html += getZohoToken() ? '<button class="btn btn-ghost btn-sm" onclick="disconnectZoho(); renderTab();">Disconnect Zoho</button> <button class="btn btn-gold btn-sm" onclick="syncZohoDeals()">↻ Sync Deals Now</button>' : '<button class="btn btn-gold btn-sm" onclick="connectZoho()">Connect Zoho</button>';
+  html += '</div></div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Google Sign-In</span></div>';
+  html += '<div style="font-size:12.5px;color:var(--muted);line-height:1.6">';
+  html += 'Only <code>@aspenview.com</code> accounts are authorized. To enable real Google Sign-In (instead of dev-mode profile picker), set up an OAuth client at <code>console.cloud.google.com</code> and replace <code>REPLACE_WITH_GOOGLE_CLIENT_ID</code> in <code>index.html</code>.';
+  html += '<br><br>See the <b>setup_guide.docx</b> alongside this file for step-by-step instructions.';
+  html += '</div></div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Data Management</span></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="exportData()">⬇ Export all data (JSON)</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'importFile\').click()">⬆ Import data (JSON)</button>';
+  html += '<input type="file" id="importFile" style="display:none" accept=".json" onchange="importData(this.files[0])">';
+  html += '<button class="btn btn-danger btn-sm" onclick="resetAllData()">⚠ Reset all data</button></div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">Deals, margin rules, snapshots, and actuals are all stored in your browser. Export regularly as backup.</div></div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Daily Workflow</span></div>';
+  html += '<ol style="font-size:12.5px;color:var(--muted);line-height:1.75;padding-left:20px">';
+  html += '<li><b>Morning (Don)</b>: open the dashboard. If Zoho is connected, click <i>Sync from Zoho</i> on the Aureum Demand Forecast tab to pull overnight changes.</li>';
+  html += '<li><b>Daily</b>: adjust monthly HC and pricing as deals move stages — every cell auto-saves.</li>';
+  html += '<li><b>Weekly</b>: review the <i>3 mo. revenue</i> tab. Move the <b>Anchor month</b> forward each new month to roll the window.</li>';
+  html += '<li><b>Monthly</b>: after a month closes, go to <i>Forecast Accuracy</i> → <i>Enter Actuals</i> for the closed month. The accuracy bands recompute automatically.</li>';
+  html += '<li><b>Quarterly</b>: review <i>Margin Rules</i> with Finance (Eric / John Scott) to keep cash-flow assumptions current.</li>';
+  html += '</ol></div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+function exportData() {
+  var dump = { deals: getDeals(), margin_rules: getMarginRules(), snapshots: getSnapshots(), actuals: getActuals(), anchor_month: getAnchorMonth(), exportedAt: new Date().toISOString() };
+  var blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'aspenview-bde-forecast-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+}
+function importData(file) {
+  if (!file) return;
+  var r = new FileReader();
+  r.onload = function() {
+    try {
+      var data = JSON.parse(r.result);
+      if (!confirm('Replace all current data with imported data? Cannot be undone.')) return;
+      if (data.deals)        setDeals(data.deals);
+      if (data.margin_rules) setMarginRules(data.margin_rules);
+      if (data.snapshots)    setSnapshots(data.snapshots);
+      if (data.actuals)      setActuals(data.actuals);
+      if (data.anchor_month) setAnchorMonth(data.anchor_month);
+      alert('Imported successfully.');
+      renderTab();
+    } catch (e) { alert('Import failed: ' + e.message); }
+  };
+  r.readAsText(file);
+}
+function resetAllData() {
+  if (!confirm('Reset ALL data (deals, rules, snapshots, actuals)? Cannot be undone.')) return;
+  ['deals','margin_rules','snapshots','actuals','anchor_month'].forEach(function(k) { localStorage.removeItem('bde_' + k); });
+  renderTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODALS
+// ─────────────────────────────────────────────────────────────────────────────
+function openModal(html)  { document.getElementById('modal').innerHTML = html; document.getElementById('modalOverlay').style.display = 'flex'; }
+function closeModal()     { document.getElementById('modalOverlay').style.display = 'none'; }
+document.getElementById('modalOverlay').addEventListener('click', function(e) { if (e.target.id === 'modalOverlay') closeModal(); });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────────────────────────────────────
+checkZohoTokenFromUrl();
+var savedUser = load('current_user', null);
+if (savedUser) loginAs(savedUser);
+</script>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</body>
+</html>
