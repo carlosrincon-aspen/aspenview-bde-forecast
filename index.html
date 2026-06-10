@@ -378,7 +378,7 @@ function setAnchorMonth(m) { save('anchor_month', m); }
 // ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE (shared state across Carlos / Michael / Don)
 // ─────────────────────────────────────────────────────────────────────────────
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','seed_applied_v1','seed_applied_v2','seed_applied_v3'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','seed_applied_v1','seed_applied_v2','seed_applied_v3','seed_applied_v4'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -654,16 +654,19 @@ function syncZohoDeals() {
     });
 
     var skipped = allDeals.length - filtered.length;
+    // Preserve ghost deals (no zohoId) — typically Excel-only entries or manually added
+    var ghosts = existing.filter(function(d) { return !d.zohoId; });
     var msg = 'Pulled ' + allDeals.length + ' deals from Zoho.\n' +
               '  • ' + filtered.length + ' match the allowed stages\n' +
               '  • ' + skipped + ' skipped (not in ALLOWED_STAGES)\n' +
-              '  • ' + seedMatched + ' new deals matched the Excel seed by name (will inherit Forecast/Super flags + monthly HC)\n\n' +
-              'Replace current deals with this set? Local edits on deals already synced are preserved.';
+              '  • ' + seedMatched + ' new deals matched the Excel seed by name\n' +
+              '  • ' + ghosts.length + ' ghost deals (Excel-only / manual) will be preserved\n\n' +
+              'Replace synced Zoho deals with this fresh set? Local edits + ghosts are preserved.';
     if (!confirm(msg)) return;
-    setDeals(mapped);
+    setDeals(mapped.concat(ghosts));
     save('last_zoho_sync', new Date().toISOString());
     renderTab();
-    alert('Zoho sync complete: ' + mapped.length + ' deals.');
+    alert('Zoho sync complete: ' + mapped.length + ' from Zoho + ' + ghosts.length + ' ghosts = ' + (mapped.length + ghosts.length) + ' total deals.');
   });
 }
 
@@ -724,12 +727,16 @@ function buildSeedIndex() {
   return idx;
 }
 // Runs once per Firestore state (versioned): syncs the canonical Excel seed
-// onto current deals matched by normalized name. Restores monthly HC, MRR Aureum,
-// win rate, and Forecast/Super flags. Never overwrites non-zero pricing (Zoho field).
+// onto current deals matched by normalized name AND appends seed deals that
+// don't exist locally (Excel-only ghosts, zohoId=''). Future Zoho syncs preserve them.
 function autoApplySeedOnce() {
-  if (load('seed_applied_v3', false)) return;
+  if (load('seed_applied_v4', false)) return;
   var deals = getDeals();
   var seedIdx = buildSeedIndex();
+  var localByName = {};
+  deals.forEach(function(d) { localByName[normDealName(d.dealName)] = d; });
+
+  // 1) Apply seed to matching local deals
   deals.forEach(function(d) {
     var seed = seedIdx[normDealName(d.dealName)];
     if (!seed) return;
@@ -739,19 +746,32 @@ function autoApplySeedOnce() {
       d.monthlyHC = JSON.parse(JSON.stringify(seedHc));
       d.totalHC = seedSum;
     }
-    // MRR Aureum (Don's value from Excel) — restore if local is empty/zero
     if ((!d.mrrAureum || d.mrrAureum <= 0) && seed.mrrAureum > 0) {
       d.mrrAureum = seed.mrrAureum;
     }
     if ((d.winRateAdj === undefined || d.winRateAdj === null) && seed.winRateAdj > 0) {
       d.winRateAdj = seed.winRateAdj;
     }
-    // v3: force Forecast/Super flags from seed (this is the one-time "match Excel" sync)
     if (seed.inForecast)  d.inForecast  = true;
     if (seed.isSuperDeal) d.isSuperDeal = true;
   });
+
+  // 2) Append seed deals not present in localStorage (Excel-only ghosts)
+  var added = 0;
+  SEED_DEALS.forEach(function(s) {
+    if (!localByName[normDealName(s.dealName)]) {
+      var copy = JSON.parse(JSON.stringify(s));
+      copy.zohoId = '';
+      copy.bde = '';
+      copy.commercialDescription = '';
+      deals.push(copy);
+      added++;
+    }
+  });
+
   setDeals(deals);
-  save('seed_applied_v3', true);
+  save('seed_applied_v4', true);
+  console.log('Seed v4: ' + added + ' Excel-only deals appended as ghosts.');
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 function getMarginFor(deal) {
