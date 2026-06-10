@@ -245,6 +245,7 @@ var ZOHO_DC         = 'com'; // Zoho data center: 'com' (US), 'eu', 'in', 'au', 
 var ALLOWED_STAGES = [
   'SQL - Solution Discovery',
   'Stage 2 (WTW)',
+  'Commercial Design',
   'Recruitment (Path 2.1)',
   'P.S (Path 2.2)',
   'Pricing',
@@ -279,6 +280,7 @@ var ALL_MONTHS = ['2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2
 var STAGES = [
   { id: 'SQL - Solution Discovery',     label: 'SQL - Solution Discovery',    cls: 'pill-gold',  winRate: 0.20 },
   { id: 'Stage 2 (WTW)',                label: 'Stage 2 (WTW)',               cls: 'pill-gold',  winRate: 0.30 },
+  { id: 'Commercial Design',            label: 'Commercial Design',           cls: 'pill-gold',  winRate: 0.30 },
   { id: 'Recruitment (Path 2.1)',       label: 'Recruitment (Path 2.1)',      cls: 'pill-blue',  winRate: 0.50 },
   { id: 'P.S (Path 2.2)',               label: 'P.S (Path 2.2)',              cls: 'pill-blue',  winRate: 0.50 },
   { id: 'Pricing',                      label: 'Pricing',                     cls: 'pill-blue',  winRate: 0.75 },
@@ -287,7 +289,6 @@ var STAGES = [
   { id: 'Closed Lost',                  label: 'Closed Lost',                 cls: 'pill-red',   winRate: 0.00 },
   // Legacy stages from seed data — kept for display before Zoho sync replaces them
   { id: 'SQL',                          label: 'SQL (legacy)',                cls: 'pill-gray',  winRate: 0.20 },
-  { id: 'Commercial Design',            label: 'Commercial Design (legacy)',  cls: 'pill-gray',  winRate: 0.30 },
   { id: 'Professional Services (Path 2.2)', label: 'P.S (legacy)',            cls: 'pill-gray',  winRate: 0.50 },
   { id: 'Paper Process',                label: 'Paper Process (legacy)',      cls: 'pill-gray',  winRate: 0.90 }
 ];
@@ -303,6 +304,7 @@ var STATUS_PILL = {
 var DEFAULT_MARGIN_RULES = [
   { dealType: 'SQL - Solution Discovery',     margin: 0.30, note: 'Early-stage; conservative default' },
   { dealType: 'Stage 2 (WTW)',                margin: 0.38, note: 'Mid-stage; not yet priced' },
+  { dealType: 'Commercial Design',            margin: 0.38, note: 'Solution scoped; not yet priced' },
   { dealType: 'Recruitment (Path 2.1)',       margin: 0.35, note: 'Default for staffing engagements' },
   { dealType: 'P.S (Path 2.2)',               margin: 0.45, note: 'PS / solutioning work — higher margin' },
   { dealType: 'Pricing',                      margin: 0.40, note: 'Live pricing conversation' },
