@@ -163,11 +163,16 @@
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-thumb { background: #c8d6e5; border-radius: 3px; }
 
+  .zoho-pill.syncing { background: rgba(232,184,75,0.18); color: var(--gold); border: 1px solid rgba(232,184,75,0.4); }
+
   @media (max-width: 880px) {
     .acc-bands { grid-template-columns: 1fr; }
     .form-row { grid-template-columns: 1fr; }
   }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
@@ -218,6 +223,7 @@
     </div>
     <div class="header-center">BDE Rolling 12-Month Sales &amp; Readiness Forecast</div>
     <div class="header-right">
+      <span class="zoho-pill off" id="fbPill" title="Firestore sync status">Sync · …</span>
       <span class="zoho-pill off" id="zohoPill" onclick="toggleZoho()">Zoho · Disconnected</span>
       <span class="header-user" id="headerUser"></span>
       <button class="logout-btn" onclick="logout()">&#8592; Log Out</button>
@@ -235,6 +241,15 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
+var FIREBASE_CONFIG = {
+  apiKey:            'AIzaSyC-8c51FtFZ4s3p4imVEKmwuQPGAzVcDyw',
+  authDomain:        'aspenview-bde-forecast-154b4.firebaseapp.com',
+  projectId:         'aspenview-bde-forecast-154b4',
+  storageBucket:     'aspenview-bde-forecast-154b4.firebasestorage.app',
+  messagingSenderId: '931065305477',
+  appId:             '1:931065305477:web:711f31ea114d53eca2ccec'
+};
+
 var ZOHO_CLIENT_ID  = '1000.IDIKQZQT1WD4JUK97IYAFVWKEFSAPC';
 var ZOHO_REDIRECT   = window.location.origin + window.location.pathname;
 var ZOHO_API        = 'https://www.zohoapis.com/crm/v3';
@@ -329,7 +344,10 @@ function load(k, d) {
   try { var v = JSON.parse(localStorage.getItem('bde_' + k)); return (v === null || v === undefined) ? d : v; }
   catch(e) { return d; }
 }
-function save(k, v) { localStorage.setItem('bde_' + k, JSON.stringify(v)); }
+function save(k, v) {
+  localStorage.setItem('bde_' + k, JSON.stringify(v));
+  if (FB_SYNCED_KEYS.indexOf(k) >= 0) fbSchedulePush();
+}
 
 function getDeals() {
   var deals = load('deals', SEED_DEALS);
@@ -353,6 +371,106 @@ function getAnchorMonth()  { return load('anchor_month', currentMonthKey()); }
 function setAnchorMonth(m) { save('anchor_month', m); }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FIRESTORE (shared state across Carlos / Michael / Don)
+// ─────────────────────────────────────────────────────────────────────────────
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','seed_applied_v1'];
+var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
+var fbReady = false;          // true after initial fetch completes
+var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
+var fbPushTimer = null;
+var fbInitTried = false;
+
+function fbInit() {
+  if (fbInitTried) return;
+  fbInitTried = true;
+  if (typeof firebase === 'undefined') { console.warn('Firebase SDK not loaded'); return; }
+  try {
+    fbApp  = firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth = firebase.auth();
+    fbDb   = firebase.firestore();
+    fbAuth.onAuthStateChanged(function(user) {
+      if (user) {
+        var savedUser = load('current_user', null);
+        if (savedUser && !currentUser) loginAs(savedUser);
+        fbInitDataSync();
+      } else {
+        fbReady = false;
+        setFbPill('off', 'Sync · Off');
+      }
+    });
+  } catch(e) {
+    console.error('Firebase init failed:', e);
+    setFbPill('off', 'Sync · Error');
+  }
+}
+function setFbPill(state, text) {
+  var p = document.getElementById('fbPill');
+  if (!p) return;
+  p.className = 'zoho-pill ' + state;
+  p.textContent = text;
+}
+function fbInitDataSync() {
+  if (!fbAuth || !fbAuth.currentUser || !fbDb) return;
+  fbDocRef = fbDb.collection('dashboard').doc('state');
+  setFbPill('syncing', 'Sync · Loading');
+  fbDocRef.get().then(function(doc) {
+    if (doc.exists) {
+      var data = doc.data();
+      fbSuppressPush = true;
+      FB_SYNCED_KEYS.forEach(function(k) { if (data[k] !== undefined) save(k, data[k]); });
+      fbSuppressPush = false;
+      fbReady = true;
+      setFbPill('on', 'Sync · Live');
+      renderTab();
+    } else {
+      fbReady = true;
+      setFbPill('on', 'Sync · Live (first push)');
+      fbPushNow();
+    }
+    fbDocRef.onSnapshot(function(snap) {
+      if (!snap.exists) return;
+      var data = snap.data();
+      if (data.updatedBy && fbAuth.currentUser && data.updatedBy === fbAuth.currentUser.email) return;
+      fbSuppressPush = true;
+      FB_SYNCED_KEYS.forEach(function(k) { if (data[k] !== undefined) save(k, data[k]); });
+      fbSuppressPush = false;
+      setFbPill('on', 'Sync · Live (updated by ' + (data.updatedBy || 'someone') + ')');
+      renderTab();
+    }, function(err) {
+      console.error('Firestore onSnapshot error:', err);
+      setFbPill('off', 'Sync · Error');
+    });
+  }).catch(function(err) {
+    console.error('Firestore initial fetch failed:', err);
+    setFbPill('off', 'Sync · Error');
+  });
+}
+function fbSchedulePush() {
+  if (!fbReady || !fbDocRef || fbSuppressPush) return;
+  if (fbPushTimer) clearTimeout(fbPushTimer);
+  setFbPill('syncing', 'Sync · Saving…');
+  fbPushTimer = setTimeout(fbPushNow, 800);
+}
+function fbPushNow() {
+  if (!fbReady || !fbDocRef) return;
+  var payload = { updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: (fbAuth.currentUser && fbAuth.currentUser.email) || '' };
+  FB_SYNCED_KEYS.forEach(function(k) { payload[k] = load(k, null); });
+  fbDocRef.set(payload, { merge: false }).then(function() {
+    setFbPill('on', 'Sync · Live');
+  }).catch(function(err) {
+    console.error('Firestore push failed:', err);
+    setFbPill('off', 'Sync · Error');
+  });
+}
+function fbSignOut() {
+  if (fbAuth) { try { fbAuth.signOut(); } catch(e) {} }
+  fbReady = false;
+  fbDocRef = null;
+  if (fbPushTimer) clearTimeout(fbPushTimer);
+  setFbPill('off', 'Sync · Off');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // AUTH
 // ─────────────────────────────────────────────────────────────────────────────
 function handleCredentialResponse(resp) {
@@ -366,6 +484,14 @@ function handleCredentialResponse(resp) {
     Object.keys(USERS).forEach(function(k) { if (USERS[k].email.toLowerCase() === payload.email.toLowerCase()) match = USERS[k]; });
     if (!match) {
       match = { id: payload.email, name: payload.name || payload.email, email: payload.email, role: 'bde', initials: (payload.given_name||'?').substring(0,1) + (payload.family_name||'').substring(0,1) };
+    }
+    // Bridge: also sign in to Firebase using the same Google ID token so Firestore rules accept us.
+    if (fbAuth) {
+      var credential = firebase.auth.GoogleAuthProvider.credential(resp.credential);
+      fbAuth.signInWithCredential(credential).catch(function(err) {
+        console.error('Firebase sign-in failed:', err);
+        setFbPill('off', 'Sync · Auth failed');
+      });
     }
     loginAs(match);
   } catch (e) {
@@ -386,7 +512,8 @@ function loginAs(u) {
 }
 function logout() {
   currentUser = null;
-  save('current_user', null);
+  localStorage.removeItem('bde_current_user');
+  fbSignOut();
   document.getElementById('appScreen').style.display   = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
 }
@@ -1445,8 +1572,14 @@ document.getElementById('modalOverlay').addEventListener('click', function(e) { 
 // BOOT
 // ─────────────────────────────────────────────────────────────────────────────
 checkZohoTokenFromUrl();
-var savedUser = load('current_user', null);
-if (savedUser) loginAs(savedUser);
+fbInit();  // Firestore auth state will trigger loginAs if a session exists.
+// Fallback: if Firebase isn't ready in 1s (SDK failed to load), restore from localStorage anyway.
+setTimeout(function() {
+  if (!currentUser) {
+    var savedUser = load('current_user', null);
+    if (savedUser) loginAs(savedUser);
+  }
+}, 1000);
 </script>
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
