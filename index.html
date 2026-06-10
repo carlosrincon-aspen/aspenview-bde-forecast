@@ -378,10 +378,11 @@ function loginAs(u) {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appScreen').style.display   = 'flex';
   document.getElementById('headerUser').textContent    = u.name + ' · ' + (u.role === 'manager' ? 'Manager' : 'BDE');
+  autoApplySeedOnce();
+  ensureMonthlySnapshot();
   renderTopNav();
   renderTab();
   refreshZohoPill();
-  ensureMonthlySnapshot();
 }
 function logout() {
   currentUser = null;
@@ -580,30 +581,28 @@ function buildSeedIndex() {
   });
   return idx;
 }
-// One-time fixup: matches current deals against the Excel seed by normalized deal name,
-// then copies monthlyHC + Forecast/Super-Deal flags when the local deal has none yet.
-function applySeedSelections() {
-  if (!confirm('This will match your current deals against the Excel seed by deal name and restore:\n  • Monthly Headcount (where local is empty)\n  • Forecast checkbox (where currently unchecked)\n  • Super-Deal checkbox (where currently unchecked)\n\nIt will NOT overwrite anything you have explicitly edited. Continue?')) return;
+// Runs once per browser: matches current deals against the Excel seed by normalized
+// deal name and copies monthlyHC + Forecast/Super-Deal flags where the local deal
+// has none yet. Never overwrites user edits. Sets a localStorage flag so it never
+// runs again. Triggered automatically on first login after this version.
+function autoApplySeedOnce() {
+  if (load('seed_applied_v1', false)) return;
   var deals = getDeals();
   var seedIdx = buildSeedIndex();
-  var matched = 0, hcSet = 0, fcastSet = 0, superSet = 0;
   deals.forEach(function(d) {
     var seed = seedIdx[normDealName(d.dealName)];
     if (!seed) return;
-    matched++;
     var seedHc = seed.monthlyHC || {};
     var seedSum = sumMonths(seedHc);
     if (sumMonths(d.monthlyHC || {}) === 0 && seedSum > 0) {
       d.monthlyHC = JSON.parse(JSON.stringify(seedHc));
       d.totalHC = seedSum;
-      hcSet++;
     }
-    if (!d.inForecast && seedSum > 0)   { d.inForecast  = true; fcastSet++; }
-    if (!d.isSuperDeal && seedSum >= 50){ d.isSuperDeal = true; superSet++; }
+    if (!d.inForecast  && seedSum > 0)   d.inForecast  = true;
+    if (!d.isSuperDeal && seedSum >= 50) d.isSuperDeal = true;
   });
   setDeals(deals);
-  alert('Excel seed applied:\n  • ' + matched + ' deals matched by name\n  • ' + hcSet + ' got monthly HC restored\n  • ' + fcastSet + ' flagged for Forecast\n  • ' + superSet + ' flagged as Super-Deal');
-  renderTab();
+  save('seed_applied_v1', true);
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 function getMarginFor(deal) {
@@ -816,8 +815,7 @@ function renderAureumGrid() {
 
   var html = '';
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">All deals from Zoho · Check <b>Forecast</b> to include in 3 mo. revenue · Check <b>Super</b> to flag for Super-Deals</div></div>';
-  html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="applySeedSelections()" title="Match current deals to the Excel seed by name and restore monthly HC + Forecast/Super flags. Safe to run multiple times — only fills in blanks.">⤴ Apply Excel selections</button>';
-  html += '<button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
+  html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="openDealModal(null)">+ New Deal</button></div></div>';
 
   html += '<div class="toolbar">';
