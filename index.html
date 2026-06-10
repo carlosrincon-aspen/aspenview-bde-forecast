@@ -238,6 +238,19 @@
 var ZOHO_CLIENT_ID  = 'REPLACE_WITH_ZOHO_CLIENT_ID';
 var ZOHO_REDIRECT   = window.location.origin + window.location.pathname;
 var ZOHO_API        = 'https://www.zohoapis.com/crm/v3';
+var ZOHO_DC         = 'com'; // Zoho data center: 'com' (US), 'eu', 'in', 'au', 'jp'
+
+// Exact Zoho Deal Stage API Names that should appear in the dashboard.
+// Edit this list if your Zoho stage names change.
+var ALLOWED_STAGES = [
+  'SQL - Solution Discovery',
+  'Stage 2 (WTW)',
+  'Recruitment (Path 2.1)',
+  'P.S (Path 2.2)',
+  'Pricing',
+  'Paper Process / Contracting',
+  'Closed Won'
+];
 
 // Email → role mapping. Edit emails here to grant manager access.
 // Anyone else with an @aspenview.com account signs in as a BDE by default.
@@ -261,15 +274,22 @@ var TABS = [
 
 var ALL_MONTHS = ['2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03'];
 
+// Stage IDs MUST match Zoho's exact Stage API Names (case-sensitive). Add legacy entries
+// at the bottom so seed data still renders before the first Zoho sync.
 var STAGES = [
-  { id: 'SQL',                          label: 'Stage 1 - SQL',           cls: 'pill-gold',  winRate: 0.20 },
-  { id: 'Commercial Design',            label: 'Commercial Design',       cls: 'pill-gold',  winRate: 0.30 },
-  { id: 'Recruitment (Path 2.1)',       label: 'Path 2.1 - Recruitment',  cls: 'pill-blue',  winRate: 0.50 },
-  { id: 'Professional Services (Path 2.2)', label: 'Path 2.2 - PS',       cls: 'pill-blue',  winRate: 0.50 },
-  { id: 'Pricing',                      label: 'Stage 3 - Pricing',       cls: 'pill-blue',  winRate: 0.75 },
-  { id: 'Paper Process',                label: 'Stage 4 - Paper',         cls: 'pill-green', winRate: 0.90 },
-  { id: 'Closed Won',                   label: 'Stage 5 - Closed Won',    cls: 'pill-green', winRate: 1.00 },
-  { id: 'Closed Lost',                  label: 'Closed Lost',             cls: 'pill-red',   winRate: 0.00 }
+  { id: 'SQL - Solution Discovery',     label: 'SQL - Solution Discovery',    cls: 'pill-gold',  winRate: 0.20 },
+  { id: 'Stage 2 (WTW)',                label: 'Stage 2 (WTW)',               cls: 'pill-gold',  winRate: 0.30 },
+  { id: 'Recruitment (Path 2.1)',       label: 'Recruitment (Path 2.1)',      cls: 'pill-blue',  winRate: 0.50 },
+  { id: 'P.S (Path 2.2)',               label: 'P.S (Path 2.2)',              cls: 'pill-blue',  winRate: 0.50 },
+  { id: 'Pricing',                      label: 'Pricing',                     cls: 'pill-blue',  winRate: 0.75 },
+  { id: 'Paper Process / Contracting',  label: 'Paper Process / Contracting', cls: 'pill-green', winRate: 0.90 },
+  { id: 'Closed Won',                   label: 'Closed Won',                  cls: 'pill-green', winRate: 1.00 },
+  { id: 'Closed Lost',                  label: 'Closed Lost',                 cls: 'pill-red',   winRate: 0.00 },
+  // Legacy stages from seed data — kept for display before Zoho sync replaces them
+  { id: 'SQL',                          label: 'SQL (legacy)',                cls: 'pill-gray',  winRate: 0.20 },
+  { id: 'Commercial Design',            label: 'Commercial Design (legacy)',  cls: 'pill-gray',  winRate: 0.30 },
+  { id: 'Professional Services (Path 2.2)', label: 'P.S (legacy)',            cls: 'pill-gray',  winRate: 0.50 },
+  { id: 'Paper Process',                label: 'Paper Process (legacy)',      cls: 'pill-gray',  winRate: 0.90 }
 ];
 
 var STATUS_PILL = {
@@ -281,15 +301,15 @@ var STATUS_PILL = {
 };
 
 var DEFAULT_MARGIN_RULES = [
-  { dealType: 'Recruitment (Path 2.1)',          margin: 0.35, note: 'Default for staffing engagements' },
-  { dealType: 'Professional Services (Path 2.2)', margin: 0.45, note: 'PS / solutioning work — higher margin' },
-  { dealType: 'Commercial Design',                margin: 0.38, note: 'Mid-stage; not yet priced' },
-  { dealType: 'Pricing',                          margin: 0.40, note: 'Live pricing conversation' },
-  { dealType: 'Paper Process',                    margin: 0.42, note: 'Contracts in flight' },
-  { dealType: 'Closed Won',                       margin: 0.42, note: 'Booked' },
-  { dealType: 'SQL',                              margin: 0.30, note: 'Early-stage; conservative default' },
-  { dealType: 'Aureum / Super-Deal',              margin: 0.40, note: 'Override applied when totalHC ≥ 50' },
-  { dealType: 'Default',                          margin: 0.35, note: 'Fallback when no other rule matches' }
+  { dealType: 'SQL - Solution Discovery',     margin: 0.30, note: 'Early-stage; conservative default' },
+  { dealType: 'Stage 2 (WTW)',                margin: 0.38, note: 'Mid-stage; not yet priced' },
+  { dealType: 'Recruitment (Path 2.1)',       margin: 0.35, note: 'Default for staffing engagements' },
+  { dealType: 'P.S (Path 2.2)',               margin: 0.45, note: 'PS / solutioning work — higher margin' },
+  { dealType: 'Pricing',                      margin: 0.40, note: 'Live pricing conversation' },
+  { dealType: 'Paper Process / Contracting',  margin: 0.42, note: 'Contracts in flight' },
+  { dealType: 'Closed Won',                   margin: 0.42, note: 'Booked' },
+  { dealType: 'Aureum / Super-Deal',          margin: 0.40, note: 'Applied when the Super-Deal checkbox is on' },
+  { dealType: 'Default',                      margin: 0.35, note: 'Fallback when no other rule matches' }
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -309,8 +329,18 @@ function load(k, d) {
 }
 function save(k, v) { localStorage.setItem('bde_' + k, JSON.stringify(v)); }
 
-function getDeals()        { return load('deals',  SEED_DEALS); }
-function setDeals(d)       { save('deals', d); }
+function getDeals() {
+  var deals = load('deals', SEED_DEALS);
+  // Migration: ensure new fields exist on every deal
+  deals.forEach(function(d) {
+    if (d.isSuperDeal === undefined) d.isSuperDeal = (d.totalHC || sumMonths(d.monthlyHC || {})) >= 50;
+    if (d.inForecast  === undefined) d.inForecast  = sumMonths(d.monthlyHC || {}) > 0;
+    if (d.bde         === undefined) d.bde         = '';
+    if (d.zohoId      === undefined) d.zohoId      = '';
+  });
+  return deals;
+}
+function setDeals(d) { save('deals', d); }
 function getMarginRules()  { return load('margin_rules', DEFAULT_MARGIN_RULES); }
 function setMarginRules(r) { save('margin_rules', r); }
 function getSnapshots()    { return load('snapshots', []); }
@@ -412,50 +442,76 @@ function zohoGet(token, path, cb) {
   };
   xhr.send();
 }
+// Paginate through ALL Zoho deals across pages of 200
+function fetchAllZohoDeals(token, cb) {
+  var FIELDS = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description';
+  var all = [];
+  function fetchPage(page) {
+    zohoGet(token, '/Deals?fields=' + FIELDS + '&per_page=200&page=' + page, function(err, d) {
+      if (err) return cb(err);
+      var batch = (d && d.data) || [];
+      all = all.concat(batch);
+      var moreRecords = d && d.info && d.info.more_records;
+      if (!moreRecords || batch.length === 0) return cb(null, all);
+      if (page >= 50) return cb(null, all); // safety stop at 10,000 deals
+      fetchPage(page + 1);
+    });
+  }
+  fetchPage(1);
+}
+
 function syncZohoDeals() {
   var token = getZohoToken();
   if (!token) { alert('Connect Zoho first.'); return; }
   var btn = document.getElementById('zohoSyncBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
-  zohoGet(token, '/Deals?fields=Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description&per_page=200', function(err, d) {
+  fetchAllZohoDeals(token, function(err, allDeals) {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Sync from Zoho'; }
     if (err) { alert('Sync failed: ' + err.message); return; }
-    var mapped = (d.data || []).map(function(r) {
+
+    // Preserve local edits/flags on existing deals (matched by Zoho id)
+    var existing = getDeals();
+    var byId = {};
+    existing.forEach(function(d) { if (d.zohoId) byId[d.zohoId] = d; });
+
+    var filtered = allDeals.filter(function(r) { return ALLOWED_STAGES.indexOf(r.Stage) >= 0; });
+
+    var mapped = filtered.map(function(r) {
+      var prior = byId[r.id] || {};
       return {
-        status: 'Pipeline Account',
-        client: (r.Account_Name && r.Account_Name.name) || '',
-        dealName: r.Deal_Name || '',
-        stage: normalizeStage(r.Stage),
-        location: 'LATAM',
-        firstBillableMonth: r.Closing_Date ? r.Closing_Date.slice(0,7) : '',
-        monthlyHC: {},
-        pricing: parseFloat(r.Amount) || 0,
-        winRate: 0.5,
-        winRateAdj: (parseFloat(r.Probability) || 0) / 100,
-        activationMonth: r.Closing_Date ? r.Closing_Date.slice(0,7) : '',
-        totalHC: 0,
-        commercialDescription: r.Description || '',
-        zohoId: r.id || ''
+        zohoId:                r.id,
+        dealName:              r.Deal_Name || prior.dealName || '',
+        client:                (r.Account_Name && r.Account_Name.name) || prior.client || '',
+        stage:                 r.Stage,
+        bde:                   (r.Owner && r.Owner.name) || prior.bde || '',
+        status:                prior.status || 'Pipeline Account',
+        location:              prior.location || 'LATAM',
+        firstBillableMonth:    r.Closing_Date || prior.firstBillableMonth || '',
+        activationMonth:       r.Closing_Date || prior.activationMonth || '',
+        pricing:               (parseFloat(r.Amount) || 0) || prior.pricing || 0,
+        winRate:               prior.winRate !== undefined ? prior.winRate : 0.5,
+        winRateAdj:            (r.Probability !== undefined && r.Probability !== null) ? (parseFloat(r.Probability) || 0) / 100 : (prior.winRateAdj !== undefined ? prior.winRateAdj : 0.5),
+        monthlyHC:             prior.monthlyHC || {},
+        totalHC:               prior.totalHC || 0,
+        commercialDescription: r.Description || prior.commercialDescription || '',
+        // Preserve manual flags across re-syncs
+        inForecast:            prior.inForecast  !== undefined ? prior.inForecast  : false,
+        isSuperDeal:           prior.isSuperDeal !== undefined ? prior.isSuperDeal : false,
+        marginOverride:        prior.marginOverride
       };
     });
-    if (!confirm('Pulled ' + mapped.length + ' deals from Zoho. Replace current deals? (Snapshots are preserved.)')) return;
+
+    var skipped = allDeals.length - filtered.length;
+    var msg = 'Pulled ' + allDeals.length + ' deals from Zoho.\n' +
+              '  • ' + filtered.length + ' match the allowed stages\n' +
+              '  • ' + skipped + ' skipped (not in ALLOWED_STAGES)\n\n' +
+              'Replace current deals with this set? Forecast/Super-Deal flags, monthly HC and snapshots are preserved for deals already in the list.';
+    if (!confirm(msg)) return;
     setDeals(mapped);
     save('last_zoho_sync', new Date().toISOString());
     renderTab();
     alert('Zoho sync complete: ' + mapped.length + ' deals.');
   });
-}
-function normalizeStage(s) {
-  if (!s) return 'SQL';
-  var x = s.toLowerCase();
-  if (/closed won/.test(x))  return 'Closed Won';
-  if (/closed lost/.test(x)) return 'Closed Lost';
-  if (/recruit|2\.1/.test(x))  return 'Recruitment (Path 2.1)';
-  if (/services|2\.2/.test(x)) return 'Professional Services (Path 2.2)';
-  if (/commercial/.test(x))  return 'Commercial Design';
-  if (/pricing/.test(x))     return 'Pricing';
-  if (/paper|contract/.test(x)) return 'Paper Process';
-  return 'SQL';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -479,7 +535,30 @@ function fmt$k(n)   { if (!n) return '$0'; if (Math.abs(n) >= 1e6) return '$' + 
 function fmtPct(n)  { if (n === null || n === undefined || isNaN(n)) return '—'; return (n * 100).toFixed(0) + '%'; }
 function fmtPct1(n) { if (n === null || n === undefined || isNaN(n)) return '—'; return (n * 100).toFixed(1) + '%'; }
 function esc(s)     { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
-function isSuperDeal(d) { return (d.totalHC || sumMonths(d.monthlyHC)) >= 50; }
+function isSuperDeal(d) {
+  if (d.isSuperDeal !== undefined) return !!d.isSuperDeal;
+  return (d.totalHC || sumMonths(d.monthlyHC)) >= 50;
+}
+function dealZohoUrl(d) {
+  if (!d.zohoId) return '';
+  return 'https://crm.zoho.' + ZOHO_DC + '/crm/tab/Potentials/' + encodeURIComponent(d.zohoId);
+}
+function dealNameCell(d) {
+  var url = dealZohoUrl(d);
+  if (url) return '<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--navy);font-weight:700;text-decoration:none;border-bottom:1px dashed var(--gold)" title="Open in Zoho CRM">' + esc(d.dealName) + ' ↗</a>';
+  return '<b>' + esc(d.dealName) + '</b>';
+}
+function toggleDealFlag(idx, field) {
+  var deals = getDeals();
+  if (!deals[idx]) return;
+  deals[idx][field] = !deals[idx][field];
+  setDeals(deals);
+  renderTab();
+}
+function uniqueBdes(deals) {
+  var set = {}; deals.forEach(function(d){ if (d.bde) set[d.bde] = 1; });
+  return Object.keys(set).sort();
+}
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 function getMarginFor(deal) {
   if (deal.marginOverride !== undefined && deal.marginOverride !== null && deal.marginOverride !== '') return parseFloat(deal.marginOverride);
@@ -665,7 +744,7 @@ function anchorSelectHtml() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: AUREUM DEMAND FORECAST (main grid)
 // ─────────────────────────────────────────────────────────────────────────────
-var aureumFilter = { search: '', status: '', stage: '', superOnly: false };
+var aureumFilter = { search: '', status: '', stage: '', bde: '', forecastOnly: false, superOnly: false };
 function renderAureumGrid() {
   var deals  = getDeals();
   var anchor = getAnchorMonth();
@@ -675,32 +754,40 @@ function renderAureumGrid() {
   for (var i = 0; i < 9 && idx + i < ALL_MONTHS.length; i++) months.push(ALL_MONTHS[idx + i]);
 
   var filtered = deals.filter(function(d) {
-    if (aureumFilter.search && (d.dealName + ' ' + d.client).toLowerCase().indexOf(aureumFilter.search.toLowerCase()) < 0) return false;
+    if (aureumFilter.search && (d.dealName + ' ' + d.client + ' ' + (d.bde||'')).toLowerCase().indexOf(aureumFilter.search.toLowerCase()) < 0) return false;
     if (aureumFilter.status && d.status !== aureumFilter.status) return false;
     if (aureumFilter.stage  && d.stage  !== aureumFilter.stage)  return false;
-    if (aureumFilter.superOnly && !isSuperDeal(d)) return false;
+    if (aureumFilter.bde    && d.bde    !== aureumFilter.bde)    return false;
+    if (aureumFilter.forecastOnly && !d.inForecast) return false;
+    if (aureumFilter.superOnly    && !isSuperDeal(d)) return false;
     return true;
   });
 
   var statusOpts = [''].concat(Object.keys(STATUS_PILL)).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.status ? ' selected' : '') + '>' + (s || 'All statuses') + '</option>'; }).join('');
-  var stageOpts  = [''].concat(STAGES.map(function(s){ return s.id; })).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.stage ? ' selected' : '') + '>' + (s || 'All stages') + '</option>'; }).join('');
+  var stageOpts  = [''].concat(ALLOWED_STAGES).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.stage ? ' selected' : '') + '>' + (s || 'All stages') + '</option>'; }).join('');
+  var bdes       = uniqueBdes(deals);
+  var bdeOpts    = [''].concat(bdes).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.bde ? ' selected' : '') + '>' + (s || 'All BDEs') + '</option>'; }).join('');
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">Headcount per month · Pricing · Margin · Win rate</div></div>';
+  html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">All deals from Zoho · Check <b>Forecast</b> to include in 3 mo. revenue · Check <b>Super</b> to flag for Super-Deals</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="openDealModal(null)">+ New Deal</button></div></div>';
 
   html += '<div class="toolbar">';
-  html += '<input type="text" placeholder="Search deal or client…" value="' + esc(aureumFilter.search) + '" oninput="aureumFilter.search=this.value; renderAureumGrid()">';
-  html += '<select onchange="aureumFilter.status=this.value; renderAureumGrid()">' + statusOpts + '</select>';
+  html += '<input type="text" placeholder="Search deal, client, BDE…" value="' + esc(aureumFilter.search) + '" oninput="aureumFilter.search=this.value; renderAureumGrid()">';
+  html += '<select onchange="aureumFilter.bde=this.value; renderAureumGrid()">' + bdeOpts + '</select>';
   html += '<select onchange="aureumFilter.stage=this.value; renderAureumGrid()">' + stageOpts + '</select>';
+  html += '<select onchange="aureumFilter.status=this.value; renderAureumGrid()">' + statusOpts + '</select>';
+  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (aureumFilter.forecastOnly ? ' checked' : '') + ' onchange="aureumFilter.forecastOnly=this.checked; renderAureumGrid()"> Forecast only</label>';
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (aureumFilter.superOnly ? ' checked' : '') + ' onchange="aureumFilter.superOnly=this.checked; renderAureumGrid()"> Super-deals only</label>';
   html += '<span class="spacer"></span>';
   html += '<span style="font-size:11px;color:var(--muted)">Showing ' + filtered.length + ' / ' + deals.length + ' deals</span>';
   html += '</div>';
 
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
-  html += '<th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th>Loc</th><th>1st Bill.</th>';
+  html += '<th title="Include this deal in the 3 mo. revenue tab">Fcst</th>';
+  html += '<th title="Flag this deal as a Super-Deal / Aureum">Super</th>';
+  html += '<th>BDE</th><th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th>Loc</th><th>1st Bill.</th>';
   months.forEach(function(m){ html += '<th class="num">' + monthLabel(m) + '</th>'; });
   html += '<th class="num">Pricing</th><th class="num">Win %</th><th class="num">Margin %</th><th></th>';
   html += '</tr></thead><tbody>';
@@ -709,9 +796,12 @@ function renderAureumGrid() {
     var dealIdx = deals.indexOf(d);
     var sup = isSuperDeal(d);
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
+    html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast  ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
+    html += '<td style="text-align:center"><input type="checkbox"' + (d.isSuperDeal ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'isSuperDeal\')" title="Mark as Super-Deal"></td>';
+    html += '<td style="color:var(--muted);font-size:11px">' + esc(d.bde || '—') + '</td>';
     html += '<td>' + statusPill(d.status) + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
-    html += '<td><b>' + esc(d.dealName) + '</b>' + (sup ? ' <span class="pill pill-aureum" style="margin-left:4px">Aureum</span>' : '') + '</td>';
+    html += '<td>' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="margin-left:4px">Aureum</span>' : '') + '</td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
     html += '<td style="color:var(--muted)">' + esc(d.location) + '</td>';
     html += '<td style="color:var(--muted)">' + esc(d.firstBillableMonth) + '</td>';
@@ -737,17 +827,17 @@ function renderAureumGrid() {
   var tot = { hc: months.map(function(){ return 0; }) };
   filtered.forEach(function(d){ months.forEach(function(m, i){ tot.hc[i] += (d.monthlyHC || {})[m] || 0; }); });
   html += '<tr style="background:var(--navy);color:white;font-weight:700">';
-  html += '<td colspan="6" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
+  html += '<td colspan="9" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
   tot.hc.forEach(function(v) { html += '<td class="num" style="color:white">' + v + '</td>'; });
   html += '<td colspan="4"></td></tr>';
 
   html += '</tbody></table></div></div>';
 
   html += '<div class="legend">';
-  html += '<span><span class="sw" style="background:#B2EBF2"></span>Super-Deal / Aureum (≥50 HC)</span>';
+  html += '<span><span class="sw" style="background:#B2EBF2"></span>Super-Deal (manually flagged)</span>';
   html += '<span><span class="sw" style="background:#E8F5E9"></span>≥ $10K per head</span>';
   html += '<span><span class="sw" style="background:#FDECEA"></span>&lt; $10K per head</span>';
-  html += '<span style="margin-left:auto;font-style:italic">All cells editable · changes auto-save</span>';
+  html += '<span style="margin-left:auto;font-style:italic">All cells editable · changes auto-save · click deal name to open in Zoho</span>';
   html += '</div>';
 
   document.getElementById('mainContent').innerHTML = html;
@@ -821,23 +911,34 @@ function deleteDeal(idx) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: 3 mo. revenue (rolling)
 // ─────────────────────────────────────────────────────────────────────────────
+var threeMoFilter = { bde: '' };
 function render3MoRevenue() {
   var deals  = getDeals();
   var anchor = getAnchorMonth();
   var months = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
 
-  var html = '';
-  html += '<div class="page-title"><div><h1>3 mo. revenue</h1><div class="sub">Rolling 3-month window — each month, advance Anchor by one</div></div>';
-  html += '<div class="anchor-row"><label>Anchor month:</label>' + anchorSelectHtml() + '</div></div>';
-
-  // Filter deals that have any HC in window OR are active accounts
+  // Only deals flagged "Forecast" in Aureum, filtered by BDE if selected
   var rows = deals.filter(function(d) {
-    return months.some(function(m){ return ((d.monthlyHC || {})[m] || 0) > 0; });
+    if (!d.inForecast) return false;
+    if (threeMoFilter.bde && d.bde !== threeMoFilter.bde) return false;
+    return true;
   });
+  var bdes    = uniqueBdes(deals);
+  var bdeOpts = [''].concat(bdes).map(function(s){ return '<option value="' + esc(s) + '"' + (s === threeMoFilter.bde ? ' selected' : '') + '>' + (s || 'All BDEs') + '</option>'; }).join('');
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>3 mo. revenue</h1><div class="sub">Rolling 3-month window · only deals flagged <b>Forecast</b> in Aureum Demand Forecast</div></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">BDE:</label><select onchange="threeMoFilter.bde=this.value; renderTab()">' + bdeOpts + '</select><label style="font-size:11px;color:var(--muted);margin-left:8px">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+
+  if (!rows.length) {
+    html += '<div class="card empty">No deals flagged for forecast yet. Go to <b>Aureum Demand Forecast</b> and check the <b>Fcst</b> box on the deals you want to include in the rolling 3-month view.</div>';
+    document.getElementById('mainContent').innerHTML = html;
+    return;
+  }
 
   var tot = { proj:[0,0,0], adj:[0,0,0], mar:[0,0,0], hc:[0,0,0] };
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead>';
-  html += '<tr><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Deal</th><th rowspan="2">Stage</th><th rowspan="2" class="num">Win %</th><th rowspan="2" class="num">MRR / Head</th>';
+  html += '<tr><th rowspan="2">BDE</th><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Deal</th><th rowspan="2">Stage</th><th rowspan="2" class="num">Win %</th><th rowspan="2" class="num">MRR / Head</th>';
   months.forEach(function(m){ html += '<th colspan="4" style="text-align:center;background:#1c3250;color:white">' + monthLabel(m) + '</th>'; });
   html += '<th rowspan="2" class="num" style="background:var(--navy);color:white">Total Adj.</th></tr>';
   html += '<tr>';
@@ -850,9 +951,10 @@ function render3MoRevenue() {
     var pph = pricePerHead(d);
     var wr  = getWinRateFor(d);
     html += '<tr>';
+    html += '<td style="color:var(--muted);font-size:11px">' + esc(d.bde || '—') + '</td>';
     html += '<td>' + statusPill(d.status) + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
-    html += '<td><b>' + esc(d.dealName) + '</b></td>';
+    html += '<td>' + dealNameCell(d) + '</td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
     html += '<td class="num">' + fmtPct(wr) + '</td>';
     html += '<td class="num">' + fmt$k(pph) + '</td>';
@@ -874,7 +976,7 @@ function render3MoRevenue() {
   });
 
   html += '<tr style="background:var(--navy);color:white;font-weight:700">';
-  html += '<td colspan="6" style="color:white">TOTALS — ' + rows.length + ' deals in window</td>';
+  html += '<td colspan="7" style="color:white">TOTALS — ' + rows.length + ' deals in forecast</td>';
   for (var i = 0; i < 3; i++) {
     html += '<td class="num" style="color:white">' + tot.hc[i] + '</td>';
     html += '<td class="num" style="color:white">' + fmt$k(tot.proj[i]) + '</td>';
@@ -891,7 +993,7 @@ function render3MoRevenue() {
   html += statCard('3-Mo Margin $',      fmt$k(tot.mar.reduce(function(s,v){return s+v;},0)),  '× Margin % (per Margin Rules tab)', 'good');
   html += '</div>';
 
-  html += '<div class="legend"><span style="font-style:italic">Move the anchor month forward each month to roll the window. Margin % defaults from Margin Rules tab; can be overridden per deal in Aureum Demand Forecast.</span></div>';
+  html += '<div class="legend"><span style="font-style:italic">Move the anchor month forward each month to roll the window. Only deals with the <b>Forecast</b> checkbox in Aureum Demand Forecast appear here. Click a deal name to open it in Zoho.</span></div>';
 
   document.getElementById('mainContent').innerHTML = html;
 }
@@ -1007,23 +1109,24 @@ function saveActuals() {
 function renderSuperDeals() {
   var deals = getDeals().filter(isSuperDeal);
   var html = '';
-  html += '<div class="page-title"><div><h1>Super-Deals</h1><div class="sub">Aureum-tier engagements (≥ 50 HC). Disruptive growth, treated as separate cash-flow lane.</div></div></div>';
+  html += '<div class="page-title"><div><h1>Super-Deals</h1><div class="sub">Deals manually flagged as Super-Deal in Aureum Demand Forecast. Disruptive growth, treated as a separate cash-flow lane.</div></div></div>';
   html += '<div class="stat-grid">';
-  html += statCard('Super-Deals', deals.length, 'Deals with ≥ 50 total HC', 'aureum');
+  html += statCard('Super-Deals', deals.length, 'Flagged via the Super checkbox', 'aureum');
   html += statCard('Total Forecasted HC', deals.reduce(function(s,d){ return s + sumMonths(d.monthlyHC); }, 0), 'Across all months', 'aureum');
   html += statCard('Adj. Pipeline $',     fmt$k(deals.reduce(function(s,d){ return s + (d.pricing || 0) * getWinRateFor(d); }, 0)), 'Pricing × Win Rate', 'gold');
   html += statCard('Adj. Margin $',       fmt$k(deals.reduce(function(s,d){ return s + (d.pricing || 0) * getWinRateFor(d) * getMarginFor(d); }, 0)), 'Pricing × Win × Margin %', 'good');
   html += '</div>';
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
-  html += '<th>Client</th><th>Deal</th><th>Stage</th><th class="num">Total HC</th><th class="num">Peak HC</th><th class="num">Pricing</th><th class="num">Win %</th><th class="num">Margin %</th><th class="num">Adj. Rev</th><th class="num">Margin $</th><th class="num">Activation</th>';
+  html += '<th>BDE</th><th>Client</th><th>Deal</th><th>Stage</th><th class="num">Total HC</th><th class="num">Peak HC</th><th class="num">Pricing</th><th class="num">Win %</th><th class="num">Margin %</th><th class="num">Adj. Rev</th><th class="num">Margin $</th><th class="num">Activation</th>';
   html += '</tr></thead><tbody>';
   deals.sort(function(a,b){ return (b.pricing||0)*getWinRateFor(b) - (a.pricing||0)*getWinRateFor(a); }).forEach(function(d) {
     var peakHc = Math.max.apply(null, Object.values(d.monthlyHC || {0:0}));
     var adj = (d.pricing||0) * getWinRateFor(d);
     var mar = adj * getMarginFor(d);
     html += '<tr class="row-super">';
+    html += '<td style="color:var(--muted);font-size:11px">' + esc(d.bde || '—') + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
-    html += '<td><b>' + esc(d.dealName) + '</b></td>';
+    html += '<td>' + dealNameCell(d) + '</td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
     html += '<td class="num num-bold">' + sumMonths(d.monthlyHC) + '</td>';
     html += '<td class="num">' + peakHc + '</td>';
@@ -1035,7 +1138,7 @@ function renderSuperDeals() {
     html += '<td class="num" style="color:var(--muted)">' + esc(d.activationMonth || '') + '</td>';
     html += '</tr>';
   });
-  if (!deals.length) html += '<tr><td colspan="11" class="empty">No deals reach the 50-HC super-deal threshold yet.</td></tr>';
+  if (!deals.length) html += '<tr><td colspan="12" class="empty">No deals flagged as Super-Deal yet. Go to <b>Aureum Demand Forecast</b> and check the <b>Super</b> box on deals that qualify.</td></tr>';
   html += '</tbody></table></div></div>';
   document.getElementById('mainContent').innerHTML = html;
 }
