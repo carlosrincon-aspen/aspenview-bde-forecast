@@ -471,43 +471,51 @@ function syncZohoDeals() {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Sync from Zoho'; }
     if (err) { alert('Sync failed: ' + err.message); return; }
 
-    // Preserve local edits/flags on existing deals (matched by Zoho id)
+    // Preserve local edits/flags on existing deals (matched by Zoho id).
+    // For deals never seen locally before, fall back to the Excel seed by name match
+    // so the original Forecast/Super flags and monthly HC carry over.
     var existing = getDeals();
     var byId = {};
     existing.forEach(function(d) { if (d.zohoId) byId[d.zohoId] = d; });
+    var seedIdx = buildSeedIndex();
 
     var filtered = allDeals.filter(function(r) { return ALLOWED_STAGES.indexOf(r.Stage) >= 0; });
 
+    var seedMatched = 0;
     var mapped = filtered.map(function(r) {
-      var prior = byId[r.id] || {};
+      var prior = byId[r.id];
+      var seed = !prior ? seedIdx[normDealName(r.Deal_Name)] : null;
+      if (seed) seedMatched++;
+      var p = prior || {};
+      var seedSum = seed ? sumMonths(seed.monthlyHC || {}) : 0;
       return {
         zohoId:                r.id,
-        dealName:              r.Deal_Name || prior.dealName || '',
-        client:                (r.Account_Name && r.Account_Name.name) || prior.client || '',
+        dealName:              r.Deal_Name || p.dealName || '',
+        client:                (r.Account_Name && r.Account_Name.name) || p.client || (seed && seed.client) || '',
         stage:                 r.Stage,
-        bde:                   (r.Owner && r.Owner.name) || prior.bde || '',
-        status:                prior.status || 'Pipeline Account',
-        location:              prior.location || 'LATAM',
-        firstBillableMonth:    r.Closing_Date || prior.firstBillableMonth || '',
-        activationMonth:       r.Closing_Date || prior.activationMonth || '',
-        pricing:               (parseFloat(r.Amount) || 0) || prior.pricing || 0,
-        winRate:               prior.winRate !== undefined ? prior.winRate : 0.5,
-        winRateAdj:            (r.Probability !== undefined && r.Probability !== null) ? (parseFloat(r.Probability) || 0) / 100 : (prior.winRateAdj !== undefined ? prior.winRateAdj : 0.5),
-        monthlyHC:             prior.monthlyHC || {},
-        totalHC:               prior.totalHC || 0,
-        commercialDescription: r.Description || prior.commercialDescription || '',
-        // Preserve manual flags across re-syncs
-        inForecast:            prior.inForecast  !== undefined ? prior.inForecast  : false,
-        isSuperDeal:           prior.isSuperDeal !== undefined ? prior.isSuperDeal : false,
-        marginOverride:        prior.marginOverride
+        bde:                   (r.Owner && r.Owner.name) || p.bde || '',
+        status:                p.status || (seed && seed.status) || 'Pipeline Account',
+        location:              p.location || (seed && seed.location) || 'LATAM',
+        firstBillableMonth:    r.Closing_Date || p.firstBillableMonth || (seed && seed.firstBillableMonth) || '',
+        activationMonth:       r.Closing_Date || p.activationMonth || (seed && seed.activationMonth) || '',
+        pricing:               (parseFloat(r.Amount) || 0) || p.pricing || (seed && seed.pricing) || 0,
+        winRate:               p.winRate !== undefined ? p.winRate : (seed && seed.winRate !== undefined ? seed.winRate : 0.5),
+        winRateAdj:            (r.Probability !== undefined && r.Probability !== null) ? (parseFloat(r.Probability) || 0) / 100 : (p.winRateAdj !== undefined ? p.winRateAdj : (seed && seed.winRateAdj !== undefined ? seed.winRateAdj : 0.5)),
+        monthlyHC:             (p.monthlyHC && Object.keys(p.monthlyHC).length) ? p.monthlyHC : (seed && seed.monthlyHC ? JSON.parse(JSON.stringify(seed.monthlyHC)) : {}),
+        totalHC:               p.totalHC || seedSum || 0,
+        commercialDescription: r.Description || p.commercialDescription || '',
+        inForecast:            p.inForecast  !== undefined ? p.inForecast  : (seed ? seedSum > 0   : false),
+        isSuperDeal:           p.isSuperDeal !== undefined ? p.isSuperDeal : (seed ? seedSum >= 50 : false),
+        marginOverride:        p.marginOverride
       };
     });
 
     var skipped = allDeals.length - filtered.length;
     var msg = 'Pulled ' + allDeals.length + ' deals from Zoho.\n' +
               '  • ' + filtered.length + ' match the allowed stages\n' +
-              '  • ' + skipped + ' skipped (not in ALLOWED_STAGES)\n\n' +
-              'Replace current deals with this set? Forecast/Super-Deal flags, monthly HC and snapshots are preserved for deals already in the list.';
+              '  • ' + skipped + ' skipped (not in ALLOWED_STAGES)\n' +
+              '  • ' + seedMatched + ' new deals matched the Excel seed by name (will inherit Forecast/Super flags + monthly HC)\n\n' +
+              'Replace current deals with this set? Local edits on deals already synced are preserved.';
     if (!confirm(msg)) return;
     setDeals(mapped);
     save('last_zoho_sync', new Date().toISOString());
@@ -560,6 +568,42 @@ function toggleDealFlag(idx, field) {
 function uniqueBdes(deals) {
   var set = {}; deals.forEach(function(d){ if (d.bde) set[d.bde] = 1; });
   return Object.keys(set).sort();
+}
+function normDealName(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function buildSeedIndex() {
+  var idx = {};
+  SEED_DEALS.forEach(function(s) {
+    var k = normDealName(s.dealName);
+    if (k) idx[k] = s;
+  });
+  return idx;
+}
+// One-time fixup: matches current deals against the Excel seed by normalized deal name,
+// then copies monthlyHC + Forecast/Super-Deal flags when the local deal has none yet.
+function applySeedSelections() {
+  if (!confirm('This will match your current deals against the Excel seed by deal name and restore:\n  • Monthly Headcount (where local is empty)\n  • Forecast checkbox (where currently unchecked)\n  • Super-Deal checkbox (where currently unchecked)\n\nIt will NOT overwrite anything you have explicitly edited. Continue?')) return;
+  var deals = getDeals();
+  var seedIdx = buildSeedIndex();
+  var matched = 0, hcSet = 0, fcastSet = 0, superSet = 0;
+  deals.forEach(function(d) {
+    var seed = seedIdx[normDealName(d.dealName)];
+    if (!seed) return;
+    matched++;
+    var seedHc = seed.monthlyHC || {};
+    var seedSum = sumMonths(seedHc);
+    if (sumMonths(d.monthlyHC || {}) === 0 && seedSum > 0) {
+      d.monthlyHC = JSON.parse(JSON.stringify(seedHc));
+      d.totalHC = seedSum;
+      hcSet++;
+    }
+    if (!d.inForecast && seedSum > 0)   { d.inForecast  = true; fcastSet++; }
+    if (!d.isSuperDeal && seedSum >= 50){ d.isSuperDeal = true; superSet++; }
+  });
+  setDeals(deals);
+  alert('Excel seed applied:\n  • ' + matched + ' deals matched by name\n  • ' + hcSet + ' got monthly HC restored\n  • ' + fcastSet + ' flagged for Forecast\n  • ' + superSet + ' flagged as Super-Deal');
+  renderTab();
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 function getMarginFor(deal) {
@@ -772,7 +816,8 @@ function renderAureumGrid() {
 
   var html = '';
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">All deals from Zoho · Check <b>Forecast</b> to include in 3 mo. revenue · Check <b>Super</b> to flag for Super-Deals</div></div>';
-  html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
+  html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="applySeedSelections()" title="Match current deals to the Excel seed by name and restore monthly HC + Forecast/Super flags. Safe to run multiple times — only fills in blanks.">⤴ Apply Excel selections</button>';
+  html += '<button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="openDealModal(null)">+ New Deal</button></div></div>';
 
   html += '<div class="toolbar">';
