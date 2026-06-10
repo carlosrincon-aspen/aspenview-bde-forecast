@@ -751,6 +751,24 @@ function nameSimilar(a, b) {
   var minLen = Math.min(ta.length, tb.length);
   return common >= 3 && (common / minLen >= 0.8);
 }
+// Client safeguard: prevents cross-client false matches. One of the client names must
+// be a substring of the other (case-insensitive, normalized). E.g. "ISTARI" ⊂ "Istari-Global".
+function clientSimilar(a, b) {
+  var na = normDealName(a);
+  var nb = normDealName(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.length >= 3 && nb.indexOf(na) >= 0) return true;
+  if (nb.length >= 3 && na.indexOf(nb) >= 0) return true;
+  return false;
+}
+// True if two deals can be considered the same engagement (name + client both match).
+// If either side lacks a client, falls back to name match only.
+function sameDeal(a, b) {
+  if (!nameSimilar(a.dealName, b.dealName)) return false;
+  if (a.client && b.client) return clientSimilar(a.client, b.client);
+  return true;
+}
 // Copies seed-only fields into a target deal where the target has gaps. Never overwrites real data.
 function mergeSeedData(dst, src) {
   if ((!dst.mrrAureum || dst.mrrAureum <= 0) && src.mrrAureum > 0) dst.mrrAureum = src.mrrAureum;
@@ -767,7 +785,7 @@ function mergeSeedData(dst, src) {
 // (2) For each seed deal, finds a similar-named local deal and merges data into it,
 //     or adds as ghost if no match. Local flag prevents re-runs in this browser.
 function autoApplySeedOnce() {
-  if (load('seed_merged_v6', false)) return;
+  if (load('seed_merged_v7', false)) return;
   var deals  = getDeals();
   var zohoDeals = deals.filter(function(d) { return d.zohoId; });
   var ghosts    = deals.filter(function(d) { return !d.zohoId; });
@@ -778,7 +796,7 @@ function autoApplySeedOnce() {
   ghosts.forEach(function(g) {
     var match = null;
     for (var i = 0; i < zohoDeals.length; i++) {
-      if (nameSimilar(g.dealName, zohoDeals[i].dealName)) { match = zohoDeals[i]; break; }
+      if (sameDeal(g, zohoDeals[i])) { match = zohoDeals[i]; break; }
     }
     if (match) { mergeSeedData(match, g); ghostsMerged++; }
     else keepGhosts.push(g);
@@ -790,7 +808,7 @@ function autoApplySeedOnce() {
   SEED_DEALS.forEach(function(s) {
     var match = null;
     for (var i = 0; i < localPool.length; i++) {
-      if (nameSimilar(s.dealName, localPool[i].dealName)) { match = localPool[i]; break; }
+      if (sameDeal(s, localPool[i])) { match = localPool[i]; break; }
     }
     if (match) { mergeSeedData(match, s); seedApplied++; }
     else {
@@ -805,8 +823,8 @@ function autoApplySeedOnce() {
   });
 
   setDeals(zohoDeals.concat(keepGhosts));
-  save('seed_merged_v6', true);
-  console.log('Seed merge v6: ' + ghostsMerged + ' duplicate ghosts merged into Zoho deals, ' + seedApplied + ' seed deals applied to matches, ' + newGhosts + ' truly Excel-only ghosts.');
+  save('seed_merged_v7', true);
+  console.log('Seed merge v7 (with client safeguard): ' + ghostsMerged + ' duplicate ghosts merged into Zoho deals, ' + seedApplied + ' seed deals applied to matches, ' + newGhosts + ' truly Excel-only ghosts.');
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 function getMarginFor(deal) {
