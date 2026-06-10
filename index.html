@@ -196,8 +196,10 @@
   <div class="login-title">BDE Rolling 12-Month Sales &amp; Readiness Forecast</div>
   <div class="login-box">
     <div class="hint">Sign in with your AspenView Google account</div>
-    <div id="g_id_onload" data-client_id="339180046037-bv1glvjsr521c3m6cp3m9toj8lu2b27k.apps.googleusercontent.com" data-callback="handleCredentialResponse" data-auto_select="false"></div>
-    <div class="g_id_signin" data-type="standard" data-shape="pill" data-theme="filled_blue" data-text="signin_with" data-size="large" data-logo_alignment="center" data-width="260"></div>
+    <button class="login-pick" onclick="signInWithGoogle()" style="display:flex;align-items:center;gap:10px;margin:0 auto;padding:12px 28px;font-size:14px">
+      <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.167 6.656 3.58 9 3.58z"/></svg>
+      Sign in with Google
+    </button>
     <div id="loginError" style="margin-top:14px;font-size:12px;color:#ff8a80;min-height:18px"></div>
   </div>
   <div class="login-foot">Only @aspenview.com accounts are authorized</div>
@@ -471,32 +473,30 @@ function fbSignOut() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUTH
+// AUTH (Firebase Auth — Google sign-in popup)
 // ─────────────────────────────────────────────────────────────────────────────
-function handleCredentialResponse(resp) {
-  try {
-    var payload = JSON.parse(atob(resp.credential.split('.')[1]));
-    if (!/@aspenview\.com$/i.test(payload.email || '')) {
+function signInWithGoogle() {
+  if (!fbAuth) { document.getElementById('loginError').textContent = 'Firebase not loaded.'; return; }
+  var provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ hd: 'aspenview.com' }); // restrict chooser to @aspenview.com
+  fbAuth.signInWithPopup(provider).then(function(result) {
+    var u = result.user;
+    if (!/@aspenview\.com$/i.test(u.email || '')) {
       document.getElementById('loginError').textContent = 'Only @aspenview.com accounts are authorized.';
+      fbAuth.signOut();
       return;
     }
     var match = null;
-    Object.keys(USERS).forEach(function(k) { if (USERS[k].email.toLowerCase() === payload.email.toLowerCase()) match = USERS[k]; });
+    Object.keys(USERS).forEach(function(k) { if (USERS[k].email.toLowerCase() === u.email.toLowerCase()) match = USERS[k]; });
     if (!match) {
-      match = { id: payload.email, name: payload.name || payload.email, email: payload.email, role: 'bde', initials: (payload.given_name||'?').substring(0,1) + (payload.family_name||'').substring(0,1) };
-    }
-    // Bridge: also sign in to Firebase using the same Google ID token so Firestore rules accept us.
-    if (fbAuth) {
-      var credential = firebase.auth.GoogleAuthProvider.credential(resp.credential);
-      fbAuth.signInWithCredential(credential).catch(function(err) {
-        console.error('Firebase sign-in failed:', err);
-        setFbPill('off', 'Sync · Auth failed');
-      });
+      var name = u.displayName || u.email;
+      var initials = name.split(' ').map(function(s){ return s[0] || ''; }).join('').substring(0,2).toUpperCase();
+      match = { id: u.email, name: name, email: u.email, role: 'bde', initials: initials };
     }
     loginAs(match);
-  } catch (e) {
-    document.getElementById('loginError').textContent = 'Sign-in failed: ' + e.message;
-  }
+  }).catch(function(err) {
+    document.getElementById('loginError').textContent = 'Sign-in failed: ' + (err.message || err.code);
+  });
 }
 function loginAs(u) {
   currentUser = u;
@@ -1572,16 +1572,15 @@ document.getElementById('modalOverlay').addEventListener('click', function(e) { 
 // BOOT
 // ─────────────────────────────────────────────────────────────────────────────
 checkZohoTokenFromUrl();
-fbInit();  // Firestore auth state will trigger loginAs if a session exists.
-// Fallback: if Firebase isn't ready in 1s (SDK failed to load), restore from localStorage anyway.
+fbInit();  // Firebase auth state — fires loginAs automatically if user has a session.
+// Degrade-mode: if Firebase SDK didn't load at all, fall back to localStorage-only.
 setTimeout(function() {
-  if (!currentUser) {
+  if (!currentUser && typeof firebase === 'undefined') {
     var savedUser = load('current_user', null);
     if (savedUser) loginAs(savedUser);
   }
-}, 1000);
+}, 1500);
 </script>
 
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 </body>
 </html>
