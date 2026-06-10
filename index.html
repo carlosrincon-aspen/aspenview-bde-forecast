@@ -378,7 +378,10 @@ function setAnchorMonth(m) { save('anchor_month', m); }
 // ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE (shared state across Carlos / Michael / Don)
 // ─────────────────────────────────────────────────────────────────────────────
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','seed_applied_v1','seed_applied_v2','seed_applied_v3','seed_applied_v4'];
+// NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
+// runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
+// the flag back to false and migration races with fetch).
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -426,11 +429,14 @@ function fbInitDataSync() {
       fbSuppressPush = false;
       fbReady = true;
       setFbPill('on', 'Sync · Live');
+      autoApplySeedOnce();   // now sees latest Firestore data; setDeals triggers push if changed
       renderTab();
     } else {
       fbReady = true;
       setFbPill('on', 'Sync · Live (first push)');
+      autoApplySeedOnce();   // populates ghosts before first push
       fbPushNow();
+      renderTab();
     }
     fbDocRef.onSnapshot(function(snap) {
       if (!snap.exists) return;
@@ -507,7 +513,7 @@ function loginAs(u) {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appScreen').style.display   = 'flex';
   document.getElementById('headerUser').textContent    = u.name + ' · ' + (u.role === 'manager' ? 'Manager' : 'BDE');
-  autoApplySeedOnce();
+  // autoApplySeedOnce is called from fbInitDataSync after Firestore fetch (or from degrade fallback)
   ensureMonthlySnapshot();
   renderTopNav();
   renderTab();
@@ -726,17 +732,18 @@ function buildSeedIndex() {
   });
   return idx;
 }
-// Runs once per Firestore state (versioned): syncs the canonical Excel seed
-// onto current deals matched by normalized name AND appends seed deals that
-// don't exist locally (Excel-only ghosts, zohoId=''). Future Zoho syncs preserve them.
+// Idempotent seed merge — called AFTER Firestore fetch completes so it sees the latest
+// state. Local flag prevents re-running once already merged in this browser.
 function autoApplySeedOnce() {
-  if (load('seed_applied_v4', false)) return;
+  if (load('seed_merged_v5', false)) return;
   var deals = getDeals();
   var seedIdx = buildSeedIndex();
   var localByName = {};
   deals.forEach(function(d) { localByName[normDealName(d.dealName)] = d; });
 
-  // 1) Apply seed to matching local deals
+  var changed = 0;
+
+  // 1) Fill gaps in matching local deals (never overwrites non-empty/non-zero data)
   deals.forEach(function(d) {
     var seed = seedIdx[normDealName(d.dealName)];
     if (!seed) return;
@@ -745,18 +752,17 @@ function autoApplySeedOnce() {
     if (sumMonths(d.monthlyHC || {}) === 0 && seedSum > 0) {
       d.monthlyHC = JSON.parse(JSON.stringify(seedHc));
       d.totalHC = seedSum;
+      changed++;
     }
     if ((!d.mrrAureum || d.mrrAureum <= 0) && seed.mrrAureum > 0) {
       d.mrrAureum = seed.mrrAureum;
+      changed++;
     }
-    if ((d.winRateAdj === undefined || d.winRateAdj === null) && seed.winRateAdj > 0) {
-      d.winRateAdj = seed.winRateAdj;
-    }
-    if (seed.inForecast)  d.inForecast  = true;
-    if (seed.isSuperDeal) d.isSuperDeal = true;
+    if (seed.inForecast  && !d.inForecast)  { d.inForecast  = true; changed++; }
+    if (seed.isSuperDeal && !d.isSuperDeal) { d.isSuperDeal = true; changed++; }
   });
 
-  // 2) Append seed deals not present in localStorage (Excel-only ghosts)
+  // 2) Append seed deals not present in local (Excel-only ghosts, zohoId='')
   var added = 0;
   SEED_DEALS.forEach(function(s) {
     if (!localByName[normDealName(s.dealName)]) {
@@ -766,12 +772,13 @@ function autoApplySeedOnce() {
       copy.commercialDescription = '';
       deals.push(copy);
       added++;
+      changed++;
     }
   });
 
-  setDeals(deals);
-  save('seed_applied_v4', true);
-  console.log('Seed v4: ' + added + ' Excel-only deals appended as ghosts.');
+  if (changed > 0) setDeals(deals);
+  save('seed_merged_v5', true);
+  console.log('Seed merge: ' + added + ' ghosts appended, ' + (changed - added) + ' gaps filled.');
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 function getMarginFor(deal) {
@@ -1632,7 +1639,7 @@ fbInit();  // Firebase auth state — fires loginAs automatically if user has a 
 setTimeout(function() {
   if (!currentUser && typeof firebase === 'undefined') {
     var savedUser = load('current_user', null);
-    if (savedUser) loginAs(savedUser);
+    if (savedUser) { loginAs(savedUser); autoApplySeedOnce(); renderTab(); }
   }
 }, 1500);
 </script>
