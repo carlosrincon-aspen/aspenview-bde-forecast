@@ -375,7 +375,7 @@ function setAnchorMonth(m) { save('anchor_month', m); }
 // ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE (shared state across Carlos / Michael / Don)
 // ─────────────────────────────────────────────────────────────────────────────
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','seed_applied_v1'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','seed_applied_v1','seed_applied_v2'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -599,9 +599,10 @@ function syncZohoDeals() {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Sync from Zoho'; }
     if (err) { alert('Sync failed: ' + err.message); return; }
 
-    // Preserve local edits/flags on existing deals (matched by Zoho id).
-    // For deals never seen locally before, fall back to the Excel seed by name match
-    // so the original Forecast/Super flags and monthly HC carry over.
+    // Preserve local edits on existing deals (matched by Zoho id), but if a field
+    // is empty/zero locally AND empty/zero in Zoho, fall back to the Excel seed
+    // matched by deal name. This way pricing/HC from the original Excel survive
+    // even when Zoho's Amount field is blank.
     var existing = getDeals();
     var byId = {};
     existing.forEach(function(d) { if (d.zohoId) byId[d.zohoId] = d; });
@@ -612,10 +613,15 @@ function syncZohoDeals() {
     var seedMatched = 0;
     var mapped = filtered.map(function(r) {
       var prior = byId[r.id];
-      var seed = !prior ? seedIdx[normDealName(r.Deal_Name)] : null;
-      if (seed) seedMatched++;
+      var seed  = seedIdx[normDealName(r.Deal_Name)];
+      if (seed && !prior) seedMatched++;
       var p = prior || {};
-      var seedSum = seed ? sumMonths(seed.monthlyHC || {}) : 0;
+      var seedHc = (seed && seed.monthlyHC) || {};
+      var seedSum = sumMonths(seedHc);
+      var localHc = p.monthlyHC || {};
+      var hasLocalHc = Object.keys(localHc).length > 0;
+      var zohoAmount = parseFloat(r.Amount) || 0;
+      var zohoProb   = (r.Probability !== undefined && r.Probability !== null) ? (parseFloat(r.Probability) || 0) / 100 : null;
       return {
         zohoId:                r.id,
         dealName:              r.Deal_Name || p.dealName || '',
@@ -626,14 +632,18 @@ function syncZohoDeals() {
         location:              p.location || (seed && seed.location) || 'LATAM',
         firstBillableMonth:    r.Closing_Date || p.firstBillableMonth || (seed && seed.firstBillableMonth) || '',
         activationMonth:       r.Closing_Date || p.activationMonth || (seed && seed.activationMonth) || '',
-        pricing:               (parseFloat(r.Amount) || 0) || p.pricing || (seed && seed.pricing) || 0,
-        winRate:               p.winRate !== undefined ? p.winRate : (seed && seed.winRate !== undefined ? seed.winRate : 0.5),
-        winRateAdj:            (r.Probability !== undefined && r.Probability !== null) ? (parseFloat(r.Probability) || 0) / 100 : (p.winRateAdj !== undefined ? p.winRateAdj : (seed && seed.winRateAdj !== undefined ? seed.winRateAdj : 0.5)),
-        monthlyHC:             (p.monthlyHC && Object.keys(p.monthlyHC).length) ? p.monthlyHC : (seed && seed.monthlyHC ? JSON.parse(JSON.stringify(seed.monthlyHC)) : {}),
+        // Pricing: Zoho > local edit > seed
+        pricing:               zohoAmount > 0 ? zohoAmount : (p.pricing > 0 ? p.pricing : ((seed && seed.pricing) || 0)),
+        // Win rate adjusted: Zoho's Probability > local edit > seed > default 0.5
+        winRateAdj:            (zohoProb !== null && zohoProb > 0) ? zohoProb : ((p.winRateAdj !== undefined && p.winRateAdj > 0) ? p.winRateAdj : ((seed && seed.winRateAdj) || 0.5)),
+        winRate:               p.winRate !== undefined ? p.winRate : ((seed && seed.winRate) || 0.5),
+        // HC plan: local if any, else seed (Zoho doesn't track monthly HC)
+        monthlyHC:             hasLocalHc ? localHc : (seedSum > 0 ? JSON.parse(JSON.stringify(seedHc)) : {}),
         totalHC:               p.totalHC || seedSum || 0,
         commercialDescription: r.Description || p.commercialDescription || '',
-        inForecast:            p.inForecast  !== undefined ? p.inForecast  : (seed ? seedSum > 0   : false),
-        isSuperDeal:           p.isSuperDeal !== undefined ? p.isSuperDeal : (seed ? seedSum >= 50 : false),
+        // Flags: if user has touched this deal before, respect their flag; else use seed default
+        inForecast:            prior ? !!p.inForecast  : (seed ? seedSum > 0   : false),
+        isSuperDeal:           prior ? !!p.isSuperDeal : (seed ? seedSum >= 50 : false),
         marginOverride:        p.marginOverride
       };
     });
@@ -708,12 +718,13 @@ function buildSeedIndex() {
   });
   return idx;
 }
-// Runs once per browser: matches current deals against the Excel seed by normalized
-// deal name and copies monthlyHC + Forecast/Super-Deal flags where the local deal
-// has none yet. Never overwrites user edits. Sets a localStorage flag so it never
-// runs again. Triggered automatically on first login after this version.
+// Runs once per Firestore state: matches current deals against the Excel seed
+// by normalized deal name and restores from the seed where the local deal has
+// gaps (empty monthlyHC, zero pricing, zero win-rate, unset Forecast/Super flags).
+// Never overwrites non-empty/non-zero local values — your edits always win.
+// Sets a versioned flag (synced to Firestore) so it doesn't keep running.
 function autoApplySeedOnce() {
-  if (load('seed_applied_v1', false)) return;
+  if (load('seed_applied_v2', false)) return;
   var deals = getDeals();
   var seedIdx = buildSeedIndex();
   deals.forEach(function(d) {
@@ -725,11 +736,17 @@ function autoApplySeedOnce() {
       d.monthlyHC = JSON.parse(JSON.stringify(seedHc));
       d.totalHC = seedSum;
     }
+    if ((!d.pricing || d.pricing <= 0) && seed.pricing > 0) {
+      d.pricing = seed.pricing;
+    }
+    if ((d.winRateAdj === undefined || d.winRateAdj === null) && seed.winRateAdj > 0) {
+      d.winRateAdj = seed.winRateAdj;
+    }
     if (!d.inForecast  && seedSum > 0)   d.inForecast  = true;
     if (!d.isSuperDeal && seedSum >= 50) d.isSuperDeal = true;
   });
   setDeals(deals);
-  save('seed_applied_v1', true);
+  save('seed_applied_v2', true);
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 function getMarginFor(deal) {
