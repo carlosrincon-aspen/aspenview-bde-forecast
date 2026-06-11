@@ -638,11 +638,37 @@ function fetchAllZohoDeals(token, cb) {
   fetchPage(1);
 }
 
+// Paginate the Accounts module and build a map: normalized account name → Account_Status.
+function fetchAllZohoAccounts(token, cb) {
+  var all = [];
+  function fetchPage(page) {
+    zohoGet(token, '/Accounts?fields=Account_Name,Account_Status&per_page=200&page=' + page, function(err, d) {
+      if (err) return cb(err);
+      var batch = (d && d.data) || [];
+      all = all.concat(batch);
+      var more = d && d.info && d.info.more_records;
+      if (!more || batch.length === 0) return cb(null, all);
+      if (page >= 50) return cb(null, all);
+      fetchPage(page + 1);
+    });
+  }
+  fetchPage(1);
+}
+
 function syncZohoDeals() {
   var token = getZohoToken();
   if (!token) { alert('Connect Zoho first.'); return; }
   var btn = document.getElementById('zohoSyncBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+  // First pull Accounts (for Account_Status), then Deals.
+  fetchAllZohoAccounts(token, function(accErr, accounts) {
+    var statusByAccount = {};
+    if (!accErr && accounts) {
+      accounts.forEach(function(a) {
+        var nm = normDealName(a.Account_Name);
+        if (nm && a.Account_Status) statusByAccount[nm] = a.Account_Status;
+      });
+    }
   fetchAllZohoDeals(token, function(err, allDeals) {
     if (btn) { btn.disabled = false; btn.textContent = '↻ Sync from Zoho'; }
     if (err) { alert('Sync failed: ' + err.message); return; }
@@ -670,13 +696,16 @@ function syncZohoDeals() {
       var hasLocalHc = Object.keys(localHc).length > 0;
       var zohoAmount = parseFloat(r.Amount) || 0;
       var zohoProb   = (r.Probability !== undefined && r.Probability !== null) ? (parseFloat(r.Probability) || 0) / 100 : null;
+      var acctName   = (r.Account_Name && r.Account_Name.name) || p.client || (seed && seed.client) || '';
+      var zohoStatus = statusByAccount[normDealName(acctName)] || '';  // Account_Status from Zoho Accounts
       return {
         zohoId:                r.id,
         dealName:              r.Deal_Name || p.dealName || '',
-        client:                (r.Account_Name && r.Account_Name.name) || p.client || (seed && seed.client) || '',
+        client:                acctName,
         stage:                 r.Stage,
         bde:                   (r.Owner && r.Owner.name) || p.bde || '',
-        status:                p.status || (seed && seed.status) || 'Pipeline Account',
+        // Status: Zoho Account_Status wins; else prior local; else seed; else default.
+        status:                zohoStatus || p.status || (seed && seed.status) || 'Pipeline Account',
         location:              p.location || (seed && seed.location) || 'LATAM',
         firstBillableMonth:    r.Closing_Date || p.firstBillableMonth || (seed && seed.firstBillableMonth) || '',
         activationMonth:       r.Closing_Date || p.activationMonth || (seed && seed.activationMonth) || '',
@@ -717,6 +746,7 @@ function syncZohoDeals() {
     save('last_zoho_sync', new Date().toISOString());
     renderTab();
     alert('Zoho sync complete: ' + mapped.length + ' from Zoho + ' + rec.kept.length + ' not-in-Zoho = ' + finalDeals.length + ' total. ' + rec.merged + ' duplicates reconciled.');
+  });
   });
 }
 
