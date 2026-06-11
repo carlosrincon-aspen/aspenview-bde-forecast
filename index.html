@@ -165,6 +165,19 @@
 
   .zoho-pill.syncing { background: rgba(232,184,75,0.18); color: var(--gold); border: 1px solid rgba(232,184,75,0.4); }
 
+  /* Multi-select filter dropdown */
+  .ms { position: relative; display: inline-block; }
+  .ms > summary { list-style: none; cursor: pointer; padding: 5px 10px; font-size: 11.5px; border: 1px solid var(--border); border-radius: 5px; background: white; color: var(--text); white-space: nowrap; user-select: none; }
+  .ms > summary::-webkit-details-marker { display: none; }
+  .ms > summary::marker { content: ''; }
+  .ms[open] > summary { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,184,75,0.2); }
+  .ms-panel { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; background: white; border: 1px solid var(--border); border-radius: 7px; box-shadow: 0 10px 30px rgba(10,25,40,0.18); padding: 6px; min-width: 210px; max-height: 300px; overflow-y: auto; }
+  .ms-opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; font-size: 12px; cursor: pointer; border-radius: 4px; white-space: nowrap; }
+  .ms-opt:hover { background: var(--bg); }
+  .ms-clear { font-size: 10.5px; color: var(--muted); cursor: pointer; padding: 5px 8px; display: block; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .ms-clear:hover { color: var(--navy); }
+  .ms-badge { background: var(--gold); color: var(--navy); border-radius: 10px; padding: 0 6px; font-size: 10px; font-weight: 700; margin-left: 4px; }
+
   @media (max-width: 880px) {
     .acc-bands { grid-template-columns: 1fr; }
     .form-row { grid-template-columns: 1fr; }
@@ -750,6 +763,56 @@ function bdeCell(d) {
   var inferred = d.bdeInferred ? ' <span title="Inferred from another deal in this account" style="color:var(--gold);cursor:help">≈</span>' : '';
   return '<td style="color:var(--muted);font-size:11px">' + esc(d.bde) + inferred + '</td>';
 }
+
+// ── Reusable filters (search box + multi-select dropdowns) ──
+var FILTERS = {};  // scope -> filter object
+function filterScope(scope) {
+  if (!FILTERS[scope]) FILTERS[scope] = { search: '' };
+  return FILTERS[scope];
+}
+function setSearch(scope, v) { filterScope(scope).search = v; renderTab(); restoreFocus(scope + 'Search'); }
+function toggleFilter(scope, field, value) {
+  var f = filterScope(scope);
+  if (!f[field]) f[field] = [];
+  var i = f[field].indexOf(value);
+  if (i >= 0) f[field].splice(i, 1); else f[field].push(value);
+  renderTab();
+  var el = document.getElementById('ms_' + scope + '_' + field); if (el) el.open = true; // keep panel open
+}
+function clearFilter(scope, field) { var f = filterScope(scope); f[field] = []; renderTab(); }
+function restoreFocus(id) {
+  var el = document.getElementById(id);
+  if (el) { el.focus(); var v = el.value; el.value = ''; el.value = v; }
+}
+function searchBox(scope, placeholder) {
+  var f = filterScope(scope);
+  return '<input type="text" id="' + scope + 'Search" placeholder="' + esc(placeholder || 'Search…') + '" value="' + esc(f.search || '') + '" oninput="setSearch(\'' + scope + '\', this.value)" style="min-width:200px">';
+}
+function msDropdown(scope, field, label, options) {
+  var f = filterScope(scope);
+  var selected = f[field] || (f[field] = []);
+  var count = selected.length;
+  var sum = label + (count ? '<span class="ms-badge">' + count + '</span>' : ': All');
+  var h = '<details class="ms" id="ms_' + scope + '_' + field + '"><summary>' + sum + ' ▾</summary><div class="ms-panel">';
+  h += '<span class="ms-clear" onclick="clearFilter(\'' + scope + '\',\'' + field + '\')">✕ Clear ' + esc(label) + '</span>';
+  options.forEach(function(o) {
+    if (o === '' || o == null) return;
+    var ck = selected.indexOf(o) >= 0 ? ' checked' : '';
+    h += '<label class="ms-opt"><input type="checkbox" value="' + esc(o) + '"' + ck + ' onchange="toggleFilter(\'' + scope + '\',\'' + field + '\',this.value)"> ' + esc(o) + '</label>';
+  });
+  h += '</div></details>';
+  return h;
+}
+// True if deal passes a multi-select field filter (empty selection = pass all)
+function passMulti(scope, field, value) {
+  var sel = filterScope(scope)[field];
+  return !sel || sel.length === 0 || sel.indexOf(value) >= 0;
+}
+function passSearch(scope, haystack) {
+  var q = (filterScope(scope).search || '').toLowerCase().trim();
+  if (!q) return true;
+  return haystack.toLowerCase().indexOf(q) >= 0;
+}
 function normDealName(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -1073,9 +1136,9 @@ function anchorSelectHtml() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: AUREUM DEMAND FORECAST (main grid)
 // ─────────────────────────────────────────────────────────────────────────────
-var aureumFilter = { search: '', status: '', stage: '', bde: '', forecastOnly: false, superOnly: false };
 function renderAureumGrid() {
   var deals  = getDeals();
+  var f      = filterScope('aureum');
   var anchor = getAnchorMonth();
   var months = [];
   var idx = ALL_MONTHS.indexOf(anchor);
@@ -1083,12 +1146,12 @@ function renderAureumGrid() {
   for (var i = 0; i < 9 && idx + i < ALL_MONTHS.length; i++) months.push(ALL_MONTHS[idx + i]);
 
   var filtered = deals.filter(function(d) {
-    if (aureumFilter.search && (d.dealName + ' ' + d.client + ' ' + (d.bde||'')).toLowerCase().indexOf(aureumFilter.search.toLowerCase()) < 0) return false;
-    if (aureumFilter.status && d.status !== aureumFilter.status) return false;
-    if (aureumFilter.stage  && d.stage  !== aureumFilter.stage)  return false;
-    if (aureumFilter.bde    && d.bde    !== aureumFilter.bde)    return false;
-    if (aureumFilter.forecastOnly && !d.inForecast) return false;
-    if (aureumFilter.superOnly    && !isSuperDeal(d)) return false;
+    if (!passSearch('aureum', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
+    if (!passMulti('aureum', 'status', d.status)) return false;
+    if (!passMulti('aureum', 'stage',  d.stage))  return false;
+    if (!passMulti('aureum', 'bde',    d.bde))    return false;
+    if (f.forecastOnly && !d.inForecast) return false;
+    if (f.superOnly    && !isSuperDeal(d)) return false;
     return true;
   });
   // Account-level traceability: group all deals of the same client together (then by deal name)
@@ -1098,10 +1161,7 @@ function renderAureumGrid() {
     return (a.dealName || '').toLowerCase() < (b.dealName || '').toLowerCase() ? -1 : 1;
   });
 
-  var statusOpts = [''].concat(Object.keys(STATUS_PILL)).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.status ? ' selected' : '') + '>' + (s || 'All statuses') + '</option>'; }).join('');
-  var stageOpts  = [''].concat(ALLOWED_STAGES).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.stage ? ' selected' : '') + '>' + (s || 'All stages') + '</option>'; }).join('');
-  var bdes       = uniqueBdes(deals);
-  var bdeOpts    = [''].concat(bdes).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.bde ? ' selected' : '') + '>' + (s || 'All BDEs') + '</option>'; }).join('');
+  var bdes = uniqueBdes(deals);
 
   var html = '';
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">All deals from Zoho · Check <b>Forecast</b> to include in 3 mo. revenue · Check <b>Super</b> to flag for Super-Deals</div></div>';
@@ -1109,12 +1169,12 @@ function renderAureumGrid() {
   html += '<button class="btn btn-gold btn-sm" onclick="openDealModal(null)">+ New Deal</button></div></div>';
 
   html += '<div class="toolbar">';
-  html += '<input type="text" placeholder="Search deal, client, BDE…" value="' + esc(aureumFilter.search) + '" oninput="aureumFilter.search=this.value; renderAureumGrid()">';
-  html += '<select onchange="aureumFilter.bde=this.value; renderAureumGrid()">' + bdeOpts + '</select>';
-  html += '<select onchange="aureumFilter.stage=this.value; renderAureumGrid()">' + stageOpts + '</select>';
-  html += '<select onchange="aureumFilter.status=this.value; renderAureumGrid()">' + statusOpts + '</select>';
-  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (aureumFilter.forecastOnly ? ' checked' : '') + ' onchange="aureumFilter.forecastOnly=this.checked; renderAureumGrid()"> Forecast only</label>';
-  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (aureumFilter.superOnly ? ' checked' : '') + ' onchange="aureumFilter.superOnly=this.checked; renderAureumGrid()"> Super-deals only</label>';
+  html += searchBox('aureum', 'Search deal, client, BDE…');
+  html += msDropdown('aureum', 'bde',    'BDE',    bdes);
+  html += msDropdown('aureum', 'stage',  'Stage',  ALLOWED_STAGES);
+  html += msDropdown('aureum', 'status', 'Status', Object.keys(STATUS_PILL));
+  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.forecastOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').forecastOnly=this.checked; renderAureumGrid()"> Forecast only</label>';
+  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.superOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').superOnly=this.checked; renderAureumGrid()"> Super-deals only</label>';
   html += '<span class="spacer"></span>';
   html += '<span style="font-size:11px;color:var(--muted)">Showing ' + filtered.length + ' / ' + deals.length + ' deals</span>';
   html += '</div>';
@@ -1252,24 +1312,38 @@ function deleteDeal(idx) {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: 3 mo. revenue (rolling)
 // ─────────────────────────────────────────────────────────────────────────────
-var threeMoFilter = { bde: '' };
 function render3MoRevenue() {
   var deals  = getDeals();
   var anchor = getAnchorMonth();
   var months = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
 
-  // Only deals flagged "Forecast" in Aureum, filtered by BDE if selected
+  // Only deals flagged "Forecast" in Aureum, then search + multi-select filters
   var rows = deals.filter(function(d) {
     if (!d.inForecast) return false;
-    if (threeMoFilter.bde && d.bde !== threeMoFilter.bde) return false;
+    if (!passSearch('3mo', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
+    if (!passMulti('3mo', 'bde',    d.bde))    return false;
+    if (!passMulti('3mo', 'stage',  d.stage))  return false;
+    if (!passMulti('3mo', 'status', d.status)) return false;
     return true;
   });
-  var bdes    = uniqueBdes(deals);
-  var bdeOpts = [''].concat(bdes).map(function(s){ return '<option value="' + esc(s) + '"' + (s === threeMoFilter.bde ? ' selected' : '') + '>' + (s || 'All BDEs') + '</option>'; }).join('');
+  // Group by account for traceability
+  rows.sort(function(a, b) {
+    var ca = (a.client || '').toLowerCase(), cb = (b.client || '').toLowerCase();
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    return (a.dealName || '').toLowerCase() < (b.dealName || '').toLowerCase() ? -1 : 1;
+  });
+  var bdes = uniqueBdes(deals);
 
   var html = '';
   html += '<div class="page-title"><div><h1>3 mo. revenue</h1><div class="sub">Rolling 3-month window · only deals flagged <b>Forecast</b> in Aureum Demand Forecast</div></div>';
-  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">BDE:</label><select onchange="threeMoFilter.bde=this.value; renderTab()">' + bdeOpts + '</select><label style="font-size:11px;color:var(--muted);margin-left:8px">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+  html += '<div class="toolbar">';
+  html += searchBox('3mo', 'Search deal, client, BDE…');
+  html += msDropdown('3mo', 'bde',    'BDE',    bdes);
+  html += msDropdown('3mo', 'stage',  'Stage',  ALLOWED_STAGES);
+  html += msDropdown('3mo', 'status', 'Status', Object.keys(STATUS_PILL));
+  html += '<span class="spacer"></span><span style="font-size:11px;color:var(--muted)">Showing ' + rows.length + ' forecast deals</span>';
+  html += '</div>';
 
   if (!rows.length) {
     html += '<div class="card empty">No deals flagged for forecast yet. Go to <b>Aureum Demand Forecast</b> and check the <b>Fcst</b> box on the deals you want to include in the rolling 3-month view.</div>';
@@ -1581,12 +1655,19 @@ function renderFulfillmentView() {
   var months = [];
   var idx = ALL_MONTHS.indexOf(anchor); if (idx < 0) idx = 0;
   for (var i = 0; i < 9 && idx + i < ALL_MONTHS.length; i++) months.push(ALL_MONTHS[idx + i]);
+  var bdes = uniqueBdes(deals);
+  function passF(d) {
+    if (!passSearch('fulfill', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
+    if (!passMulti('fulfill', 'bde', d.bde)) return false;
+    return true;
+  }
   var html = '';
   html += '<div class="page-title"><div><h1>Fulfillment View (Active Roles + Super-Deals)</h1><div class="sub">Headcount by deal-type for delivery / recruiting prioritization</div></div>';
   html += '<div class="anchor-row"><label>Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+  html += '<div class="toolbar">' + searchBox('fulfill', 'Search deal, client, BDE…') + msDropdown('fulfill', 'bde', 'BDE', bdes) + '</div>';
 
   function fulfillTable(filter, title, isSuper) {
-    var rows = deals.filter(filter);
+    var rows = deals.filter(function(d){ return filter(d) && passF(d); });
     var hcTot = months.map(function(){ return 0; });
     var h = '<div class="card"><div class="card-header"><span class="card-title">' + title + '</span><span class="card-sub">' + rows.length + ' deals</span></div>';
     h += '<div class="scroll-x"><table class="grid-tbl"><thead><tr><th>Client</th><th>Deal</th><th>Stage</th>';
@@ -1621,10 +1702,11 @@ function renderMRRForecast() {
   var deals = getDeals();
   var html = '';
   html += '<div class="page-title"><div><h1>MRR Forecast 2026</h1><div class="sub">Monthly Recurring Revenue projection · adjusted by win rate</div></div></div>';
+  html += '<div class="toolbar">' + searchBox('mrr', 'Search client…') + '</div>';
   var months = ALL_MONTHS;
-  // Group by client
+  // Group by client (search filters by client name)
   var byClient = {};
-  deals.forEach(function(d) { if (!byClient[d.client]) byClient[d.client] = []; byClient[d.client].push(d); });
+  deals.forEach(function(d) { if (!passSearch('mrr', d.client || '')) return; if (!byClient[d.client]) byClient[d.client] = []; byClient[d.client].push(d); });
   var clients = Object.keys(byClient).sort();
   var html2 = '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr><th>Client</th>';
   months.forEach(function(m){ html2 += '<th class="num">' + monthLabel(m) + '</th>'; });
@@ -1655,7 +1737,14 @@ function renderMRRForecast() {
 // TAB: ACTIVE CUSTOMERS - ACTUALS
 // ─────────────────────────────────────────────────────────────────────────────
 function renderActiveCustomers() {
-  var deals = getDeals().filter(function(d){ return /Aureum Active|Active|Expanding/.test(d.status); });
+  var base = getDeals().filter(function(d){ return /Aureum Active|Active|Expanding/.test(d.status); });
+  var bdes = uniqueBdes(base);
+  var deals = base.filter(function(d) {
+    if (!passSearch('active', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
+    if (!passMulti('active', 'status', d.status)) return false;
+    if (!passMulti('active', 'bde', d.bde)) return false;
+    return true;
+  });
   var html = '';
   html += '<div class="page-title"><div><h1>Active Customers — Actuals</h1><div class="sub">Customers currently producing revenue (Active / Expanding / Aureum)</div></div></div>';
   html += '<div class="stat-grid">';
@@ -1663,6 +1752,7 @@ function renderActiveCustomers() {
   html += statCard('Aureum Customers', new Set(deals.filter(function(d){return d.status==='Aureum Active Account';}).map(function(d){return d.client;})).size, 'Aureum-tier accounts', 'aureum');
   html += statCard('Annualized Rev',   fmt$k(deals.reduce(function(s,d){return s + effectivePricing(d)*12;}, 0)), 'Effective MRR × 12 (raw)', 'gold');
   html += '</div>';
+  html += '<div class="toolbar">' + searchBox('active', 'Search deal, client, BDE…') + msDropdown('active', 'bde', 'BDE', bdes) + msDropdown('active', 'status', 'Status', ['Aureum Active Account','Active Client','Expanding']) + '</div>';
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
   html += '<th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th class="num">HC (current)</th><th class="num">MRR/Head</th><th class="num">Monthly $</th><th class="num">Margin %</th>';
   html += '</tr></thead><tbody>';
