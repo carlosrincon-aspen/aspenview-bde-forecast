@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AspenView — Guía de Uso de la Plataforma de Forecast</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230A1928'/%3E%3Crect x='6' y='19' width='4' height='7' rx='1' fill='%23E8B84B' opacity='0.55'/%3E%3Crect x='13' y='15' width='4' height='11' rx='1' fill='%23E8B84B' opacity='0.75'/%3E%3Crect x='20' y='10' width='4' height='16' rx='1' fill='%23E8B84B'/%3E%3Cpath d='M5 18 L12 13 L18 15 L26 6' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M21 6 L26 6 L26 11' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
+  :root {
+    --navy:#0A1928; --navy2:#132336; --gold:#E8B84B; --softblue:#D9F1FB;
+    --gray:#F2F2F2; --dark:#282828; --muted:#5a6a7a; --border:#dfe6ee;
+    --green:#2e7d32; --amber:#b45309; --red:#c62828;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Roboto',Arial,sans-serif; color:var(--navy); background:#e9edf1; line-height:1.6; font-size:14px; }
+  .page { max-width:820px; margin:0 auto; background:white; }
+
+  .cover { background:var(--navy); color:white; padding:70px 60px 60px; position:relative; }
+  .cover .logo-row { display:flex; align-items:center; gap:14px; margin-bottom:60px; }
+  .cover .brand { font-size:22px; font-weight:900; letter-spacing:2px; }
+  .cover .brand span { color:var(--gold); }
+  .cover .tagline { font-size:9px; letter-spacing:2.5px; text-transform:uppercase; color:rgba(255,255,255,0.55); margin-top:2px; }
+  .cover h1 { font-size:38px; font-weight:900; line-height:1.15; margin-bottom:14px; }
+  .cover h1 span { color:var(--gold); }
+  .cover .sub { font-size:16px; color:rgba(255,255,255,0.75); font-weight:400; max-width:520px; }
+  .cover .accent { width:80px; height:5px; background:var(--gold); border-radius:3px; margin:26px 0; }
+  .cover .meta { font-size:12px; color:rgba(255,255,255,0.5); margin-top:50px; letter-spacing:0.5px; }
+
+  .content { padding:48px 60px 60px; }
+  h2 { font-size:23px; font-weight:900; color:var(--navy); margin:42px 0 4px; padding-top:14px; }
+  h2:first-child { margin-top:0; }
+  h2 .num { color:var(--gold); margin-right:10px; }
+  .h2-rule { width:54px; height:4px; background:var(--gold); border-radius:2px; margin:8px 0 20px; }
+  h3 { font-size:16px; font-weight:700; color:var(--navy2); margin:26px 0 8px; }
+  p { margin-bottom:12px; color:var(--dark); }
+  ul,ol { margin:0 0 14px 22px; }
+  li { margin-bottom:6px; color:var(--dark); }
+  strong,b { color:var(--navy); font-weight:700; }
+  code { background:var(--gray); padding:1px 6px; border-radius:4px; font-size:12.5px; font-family:'Roboto Mono',monospace; color:var(--navy2); }
+
+  table { width:100%; border-collapse:collapse; margin:14px 0 20px; font-size:13px; }
+  th { background:var(--navy); color:white; text-align:left; padding:9px 12px; font-weight:700; font-size:12px; }
+  td { padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top; color:var(--dark); }
+  tr:nth-child(even) td { background:#f6f9fc; }
+  table.zebra tr:nth-child(odd) td { background:var(--softblue); }
+
+  .callout { background:var(--softblue); border-left:5px solid var(--navy); border-radius:0 8px 8px 0; padding:14px 18px; margin:18px 0; font-size:13.5px; }
+  .callout.gold { background:#fdf6e6; border-left-color:var(--gold); }
+  .callout .ct { font-weight:700; color:var(--navy); display:block; margin-bottom:3px; }
+
+  .flow { background:var(--navy); color:white; border-radius:10px; padding:24px 28px; margin:20px 0; font-family:'Roboto Mono',monospace; font-size:12.5px; line-height:1.9; white-space:pre-wrap; }
+  .flow b { color:var(--gold); }
+
+  .pill { display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; }
+  .pill-green { background:#e8f5e9; color:var(--green); }
+  .pill-amber { background:#fff8e1; color:var(--amber); }
+  .pill-red { background:#fdecea; color:var(--red); }
+
+  .footer { background:var(--navy); color:rgba(255,255,255,0.6); padding:22px 60px; font-size:11px; display:flex; justify-content:space-between; align-items:center; }
+  .footer .brand { font-weight:900; letter-spacing:1.5px; color:white; }
+  .footer .brand span { color:var(--gold); }
+
+  @media print {
+    body { background:white; font-size:11.5px; }
+    .page { max-width:none; }
+    .cover { padding:60px 48px; min-height:100vh; }
+    .content { padding:32px 48px; }
+    h2 { page-break-after:avoid; }
+    table,.callout,.flow { page-break-inside:avoid; }
+    .no-print { display:none; }
+  }
+  .print-hint { position:fixed; bottom:16px; right:16px; background:var(--gold); color:var(--navy); padding:10px 16px; border-radius:8px; font-weight:700; font-size:12px; box-shadow:0 4px 16px rgba(0,0,0,0.2); cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="cover">
+    <div class="logo-row">
+      <svg width="48" height="42" viewBox="0 0 50 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="13" cy="12" rx="4.2" ry="7.5" stroke="white" stroke-width="2.2"/>
+        <line x1="13" y1="19.5" x2="13" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <ellipse cx="25" cy="9" rx="4.8" ry="8.5" stroke="white" stroke-width="2.2"/>
+        <line x1="25" y1="17.5" x2="25" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <ellipse cx="37" cy="12" rx="4.2" ry="7.5" stroke="white" stroke-width="2.2"/>
+        <line x1="37" y1="19.5" x2="37" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M 3 31 Q 25 42 47 31" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="brand">ASPEN<span>VIEW</span></div>
+        <div class="tagline">Technology Partners</div>
+      </div>
+    </div>
+    <h1>Pronóstico Rodante<br>de Ventas y Readiness<br><span>a 12 Meses</span></h1>
+    <div class="accent"></div>
+    <div class="sub">Guía de Uso — cómo conectar Zoho, ingresar tu forecast y leer cada vista de la plataforma.</div>
+    <div class="meta">AspenView Technology Partners · Plataforma de Pronóstico de Ventas</div>
+  </div>
+
+  <div class="content">
+
+    <h2><span class="num">1</span>Qué hace la plataforma</h2>
+    <div class="h2-rule"></div>
+    <p>Una plataforma de pronóstico en vivo, basada en navegador, que reemplaza el archivo manual de Excel. Se conecta a Zoho CRM, permite agregar tus datos de forecast sobre la información del CRM, y mantiene a todo el equipo viendo los mismos números en tiempo real.</p>
+    <table>
+      <tr><th>Antes — Excel</th><th>Ahora — Plataforma</th></tr>
+      <tr><td>Deals copiados a mano desde Zoho</td><td>Deals traídos automáticamente desde Zoho</td></tr>
+      <tr><td>Cada persona tenía su propio archivo</td><td>Todos comparten una vista en vivo, auto-sincronizada</td></tr>
+      <tr><td>El margen no se medía</td><td>Margen integrado — alimenta el flujo de caja</td></tr>
+      <tr><td>Foto estática mensual</td><td>Pronóstico rodante de 3 meses que avanza con un clic</td></tr>
+      <tr><td>Sin medida de confiabilidad</td><td>Bandas de precisión del pronóstico por horizonte</td></tr>
+    </table>
+    <h3>Conviven dos tipos de datos</h3>
+    <ul>
+      <li><strong>De Zoho (automático):</strong> nombre del deal, cuenta/cliente, stage, dueño (BDE), monto, probabilidad, fecha de cierre — se actualizan cada vez que sincronizas.</li>
+      <li><strong>Manuales (los ingresas tú):</strong> headcount mensual por deal, MRR Aureum, ajuste de win-rate, override de margen, las casillas <strong>Forecast</strong> y <strong>Super-Deal</strong>, y la evaluación cualitativa del Super-Deal.</li>
+    </ul>
+    <div class="callout"><span class="ct">La idea clave</span>Los datos manuales son los que convierten la información cruda del CRM en un pronóstico real, listo para decidir.</div>
+
+    <h2><span class="num">2</span>Cómo ingresar</h2>
+    <div class="h2-rule"></div>
+    <ol>
+      <li>Abre la URL de la plataforma en Chrome o Edge.</li>
+      <li>Haz clic en <strong>Sign in with Google</strong>.</li>
+      <li>Elige tu cuenta <strong>@aspenview.com</strong>. Solo se permiten cuentas @aspenview.com.</li>
+      <li>Caes en la pestaña <strong>Overview</strong>.</li>
+    </ol>
+    <h3>El encabezado (arriba a la derecha)</h3>
+    <table>
+      <tr><th>Indicador</th><th>Significado</th></tr>
+      <tr><td><span class="pill pill-green">Sync · Live</span></td><td>Tus datos están conectados y compartidos. <em>Saving…</em> = guardando un cambio; <em>Live (updated by …)</em> = acaba de llegar el cambio de un compañero.</td></tr>
+      <tr><td><span class="pill pill-amber">Zoho</span></td><td>Connected / Disconnected — clic para conectar o desconectar Zoho.</td></tr>
+      <tr><td>Nombre · Log Out</td><td>Tu identidad y cierre de sesión.</td></tr>
+    </table>
+    <div class="callout"><span class="ct">Compartido en tiempo real</span>Todo lo que editas se comparte. Si el gerente cambia un número, lo ves en segundos — y viceversa.</div>
+
+    <h2><span class="num">3</span>Conectar Zoho</h2>
+    <div class="h2-rule"></div>
+    <p>El token de Zoho dura aproximadamente una hora, así que ocasionalmente tendrás que reconectar.</p>
+    <ol>
+      <li>En el encabezado, haz clic en la píldora <strong>Zoho · Disconnected</strong>.</li>
+      <li>En Zoho, haz clic en <strong>Accept</strong> para autorizar el acceso de lectura a Deals y Accounts.</li>
+      <li>Regresas; la píldora se pone verde: <strong>Zoho · Connected</strong>.</li>
+    </ol>
+    <h3>Traer los deals</h3>
+    <ol>
+      <li>Ve a <strong>Aureum Demand Forecast</strong>.</li>
+      <li>Haz clic en <strong>↻ Sync from Zoho</strong> (arriba a la derecha).</li>
+      <li>Un resumen muestra cuántos deals se trajeron, coincidieron, se omitieron, y cuántos deals manuales se preservan.</li>
+      <li>Haz clic en <strong>Aceptar</strong>. La lista se actualiza con lo último de Zoho.</li>
+    </ol>
+    <p><strong>Qué deals entran</strong> — solo estos stages (todo excepto Closed Lost):</p>
+    <p><code>SQL - Solution Discovery · Stage 2 (WTW) · Commercial Design · Recruitment (Path 2.1) · P.S (Path 2.2) · Pricing · Paper Process / Contracting · Closed Won</code></p>
+    <div class="callout gold"><span class="ct">Tu trabajo está a salvo al re-sincronizar</span>El headcount mensual, MRR Aureum, ediciones de win-rate y las casillas Forecast/Super quedan pegadas a cada deal. Solo los campos de Zoho (stage, monto, dueño) se refrescan.</div>
+
+    <h2><span class="num">4</span>Las pestañas, una por una</h2>
+    <div class="h2-rule"></div>
+
+    <h3>4.1 — Overview</h3>
+    <p>Tu foto ejecutiva: tarjetas KPI (deals, headcount a 3 meses, revenue ajustado, margen $), el selector de <strong>Anchor month</strong>, la tabla de la ventana rodante de 3 meses, y las bandas de <strong>Forecast Reliability</strong> (M0 / M+1 / M+2).</p>
+
+    <h3>4.2 — Aureum Demand Forecast (la lista maestra)</h3>
+    <p>Donde empieza todo. Cada deal de Zoho en los stages permitidos es una fila, <strong>agrupada por cuenta</strong> para que todos los deals de un cliente queden juntos.</p>
+    <table class="zebra">
+      <tr><th>Columna</th><th>Fuente</th><th>Editable</th></tr>
+      <tr><td><strong>Fcst</strong> (casilla)</td><td>Manual</td><td>✅ Marca para incluir en la pestaña 3 mo. revenue</td></tr>
+      <tr><td><strong>Super</strong> (casilla)</td><td>Manual</td><td>✅ Marca para señalar como Super-Deal</td></tr>
+      <tr><td><strong>BDE</strong></td><td>Dueño de Zoho (o heredado)</td><td>Solo lectura · <code>≈</code> inferido de la cuenta · <code>⚠ none</code> sin dueño</td></tr>
+      <tr><td>Status / Client / Deal / Stage / Loc</td><td>Zoho</td><td>Solo lectura · clic en el nombre del deal ↗ para abrirlo en Zoho</td></tr>
+      <tr><td>Columnas mensuales</td><td>Manual</td><td>✅ Escribe el headcount facturable por mes</td></tr>
+      <tr><td><strong>MRR Zoho ($)</strong></td><td>Amount de Zoho</td><td>Solo lectura · verde = tiene valor y se está usando</td></tr>
+      <tr><td><strong>MRR Aureum ($)</strong></td><td>Manual</td><td>✅ Se usa solo cuando MRR Zoho está vacío</td></tr>
+      <tr><td><strong>Win %</strong></td><td>Zoho / manual</td><td>✅ Probabilidad de cierre usada en el pronóstico</td></tr>
+      <tr><td><strong>Margin %</strong></td><td>Margin Rules / manual</td><td>✅ Sobrescribe el margen de este deal</td></tr>
+    </table>
+    <p><strong>Búsqueda y filtros:</strong> la barra de búsqueda filtra por deal, cliente o BDE. Los dropdowns <strong>BDE / Stage / Status</strong> son de selección múltiple — elige dos BDEs a la vez, etc. Un badge muestra el conteo; "✕ Clear" reinicia un filtro.</p>
+
+    <h3>4.3 — 3 mo. revenue (el pronóstico rodante)</h3>
+    <p>Muestra <strong>solo los deals que marcaste con "Fcst"</strong>. Para cada uno, a lo largo de la ventana de 3 meses: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/cabeza), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %). Los totales se consolidan abajo y en tres tarjetas resumen.</p>
+    <div class="callout"><span class="ct">Este es el número que ve la empresa</span>Solo contiene los deals que marcaste deliberadamente — nada se cuela por accidente.</div>
+
+    <h3>4.4 — Forecast Accuracy</h3>
+    <p>Mide qué tan confiable ha sido el pronóstico — <strong>no</strong> es para calificar a nadie. La plataforma toma una foto del pronóstico cada mes; al cerrar un mes ingresas los <strong>Actuals</strong>, y las bandas se recalculan como <strong>promedio ± desviación estándar</strong> por horizonte. Valores por defecto hasta acumular historia: M0 = 80% ±5, M+1 = 75% ±10, M+2 = 30% ±20.</p>
+
+    <h3>4.5 — Super-Deals</h3>
+    <p>La evaluación de programas tier-Aureum. Cada programa es una fila con dropdowns editables y con color: <strong>Deal Confidence, Start Readiness, Readiness Gap, Speed Sensitivity, Ramp Duration, First Phase Timing, Phase Risk Concentration, Program Horizon, Deployment Map.</strong> Edita Peak HC / Phase 1 / Activation / Notes con ✎. Un resumen a nivel deal abajo suma cada deal marcado "Super".</p>
+
+    <h3>4.6 — Fulfillment View</h3>
+    <p>Headcount por tipo de deal (Active Roles + Super-Deal Roles) para priorización de delivery/reclutamiento. Filtra por BDE y busca.</p>
+
+    <h3>4.7 — MRR Forecast 2026</h3>
+    <p>Revenue ajustado por cliente a lo largo de los 12 meses. Léelo por trimestre agrupando las columnas de los meses correspondientes (Ene–Mar = Q1, etc.). Busca por cliente.</p>
+
+    <h3>4.8 — Active Customers — Actuals</h3>
+    <p>Solo clientes que actualmente producen revenue (Active / Expanding / Aureum): headcount actual, MRR por cabeza, $ mensual. Filtra por BDE y status.</p>
+
+    <h3>4.9 — Margin Rules</h3>
+    <p>Los supuestos de margen que alimentan el flujo de caja. El margen se resuelve en este orden:</p>
+    <ol>
+      <li><strong>Override por deal</strong> (el Margin % escrito en el deal) →</li>
+      <li><strong>Regla de Super-Deal</strong> (si está marcado Super) →</li>
+      <li><strong>Regla por Stage</strong> (coincide con el stage del deal) →</li>
+      <li><strong>Default</strong> como respaldo.</li>
+    </ol>
+
+    <h3>4.10 — Settings</h3>
+    <p>Integración Zoho y mapeo de campos, <strong>Export / Import (JSON)</strong> para respaldo, reset, y el recordatorio del flujo diario.</p>
+
+    <h2><span class="num">5</span>Cómo se mueve realmente el pronóstico</h2>
+    <div class="h2-rule"></div>
+    <div class="flow">ZOHO  ──(Sync)──►  Aureum Demand Forecast
+                   │
+   ingresas:  <b>HC mensual</b> + <b>MRR Aureum</b> (si Zoho vacío) + <b>Win %</b> + <b>Margin %</b>
+   marcas:    <b>Forecast</b> ☑   <b>Super</b> ☑
+                   │
+                   ▼
+   deals Forecast ☑ ──►  <b>3 mo. revenue</b>  (HC × MRR/cabeza × Win% × Margin%)
+   deals Super ☑    ──►  resumen <b>Super-Deals</b>
+                   │
+                   ▼
+   KPIs de <b>Overview</b> + bandas de <b>Forecast Accuracy</b> + <b>MRR Forecast</b></div>
+    <p><strong>Las palancas que mueves:</strong> el HC mensual impulsa el revenue proyectado · el MRR (Zoho gana si tiene valor, si no Aureum) es el precio por deal · Win % descuenta por probabilidad · Margin % produce el número de flujo de caja · el Anchor month desliza la ventana · las casillas Forecast/Super deciden qué aparece y dónde.</p>
+
+    <h2><span class="num">6</span>Ritmo recomendado</h2>
+    <div class="h2-rule"></div>
+    <table class="zebra">
+      <tr><th>Cuándo</th><th>Haz esto</th><th>Dónde</th></tr>
+      <tr><td>Cada mañana</td><td>Clic en <strong>↻ Sync from Zoho</strong></td><td>Aureum Demand Forecast</td></tr>
+      <tr><td>Diario</td><td>Actualiza HC mensual, MRR Aureum, win %; marca <strong>Fcst</strong> / <strong>Super</strong></td><td>Aureum Demand Forecast</td></tr>
+      <tr><td>Semanal</td><td>Revisa los números rodantes de 3 meses</td><td>3 mo. revenue</td></tr>
+      <tr><td>Mensual (día 1)</td><td>Mueve el <strong>Anchor month</strong> uno hacia adelante</td><td>Selector Anchor (cualquier pestaña)</td></tr>
+      <tr><td>Mensual (cierre)</td><td><strong>Enter Actuals</strong> para que las bandas aprendan</td><td>Forecast Accuracy</td></tr>
+      <tr><td>Trimestral</td><td>Revisa Margin Rules y evaluaciones Super-Deal con Finanzas</td><td>Margin Rules / Super-Deals</td></tr>
+    </table>
+
+    <h2><span class="num">7</span>Tips y solución de problemas</h2>
+    <div class="h2-rule"></div>
+    <table class="zebra">
+      <tr><th>Síntoma</th><th>Solución</th></tr>
+      <tr><td>El revenue muestra $0</td><td>No hay MRR Zoho ni MRR Aureum — ingresa un valor en MRR Aureum o pon el Amount en Zoho.</td></tr>
+      <tr><td>Un deal no aparece en 3 mo. revenue</td><td>Marca su casilla <strong>Fcst</strong> y confirma que tenga headcount en la ventana del anchor.</td></tr>
+      <tr><td>Login dice "not authorized"</td><td>Usaste una cuenta que no es @aspenview.com. Cambia de cuenta.</td></tr>
+      <tr><td>El sync de Zoho falla (401)</td><td>El token de 1 hora venció. Clic en la píldora Zoho → reconecta.</td></tr>
+      <tr><td>Un deal muestra <code>⚠ none</code> en BDE</td><td>Ningún deal de esa cuenta tiene dueño en Zoho. Asigna uno en Zoho y vuelve a sincronizar.</td></tr>
+      <tr><td>Los cambios no aparecen en otro lado</td><td>Confirma que ambas pantallas muestren <strong>Sync · Live</strong>; haz hard-refresh (Ctrl+Shift+R).</td></tr>
+    </table>
+
+    <h2><span class="num">8</span>Respaldo</h2>
+    <div class="h2-rule"></div>
+    <p>Firestore mantiene la copia compartida, pero exporta un respaldo periódicamente: <strong>Settings → ⬇ Export all data (JSON)</strong>. Para restaurar: <strong>Settings → ⬆ Import data (JSON)</strong>.</p>
+
+  </div>
+
+  <div class="footer">
+    <div class="brand">ASPEN<span>VIEW</span> <span style="color:rgba(255,255,255,0.4);font-weight:400;font-size:10px">Technology Partners</span></div>
+    <div>Pronóstico Rodante de Ventas y Readiness a 12 Meses — Guía de Uso</div>
+  </div>
+
+</div>
+<div class="print-hint no-print" onclick="window.print()">🖨 Imprimir / Guardar como PDF</div>
+</body>
+</html>

@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AspenView — Forecast Platform User Guide</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230A1928'/%3E%3Crect x='6' y='19' width='4' height='7' rx='1' fill='%23E8B84B' opacity='0.55'/%3E%3Crect x='13' y='15' width='4' height='11' rx='1' fill='%23E8B84B' opacity='0.75'/%3E%3Crect x='20' y='10' width='4' height='16' rx='1' fill='%23E8B84B'/%3E%3Cpath d='M5 18 L12 13 L18 15 L26 6' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M21 6 L26 6 L26 11' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
+  :root {
+    --navy:#0A1928; --navy2:#132336; --gold:#E8B84B; --softblue:#D9F1FB;
+    --gray:#F2F2F2; --dark:#282828; --muted:#5a6a7a; --border:#dfe6ee;
+    --green:#2e7d32; --amber:#b45309; --red:#c62828;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Roboto',Arial,sans-serif; color:var(--navy); background:#e9edf1; line-height:1.6; font-size:14px; }
+  .page { max-width:820px; margin:0 auto; background:white; }
+
+  /* COVER */
+  .cover { background:var(--navy); color:white; padding:70px 60px 60px; position:relative; }
+  .cover .logo-row { display:flex; align-items:center; gap:14px; margin-bottom:60px; }
+  .cover .brand { font-size:22px; font-weight:900; letter-spacing:2px; }
+  .cover .brand span { color:var(--gold); }
+  .cover .tagline { font-size:9px; letter-spacing:2.5px; text-transform:uppercase; color:rgba(255,255,255,0.55); margin-top:2px; }
+  .cover h1 { font-size:38px; font-weight:900; line-height:1.15; margin-bottom:14px; }
+  .cover h1 span { color:var(--gold); }
+  .cover .sub { font-size:16px; color:rgba(255,255,255,0.75); font-weight:400; max-width:520px; }
+  .cover .accent { width:80px; height:5px; background:var(--gold); border-radius:3px; margin:26px 0; }
+  .cover .meta { font-size:12px; color:rgba(255,255,255,0.5); margin-top:50px; letter-spacing:0.5px; }
+
+  /* CONTENT */
+  .content { padding:48px 60px 60px; }
+  h2 { font-size:23px; font-weight:900; color:var(--navy); margin:42px 0 4px; padding-top:14px; }
+  h2:first-child { margin-top:0; }
+  h2 .num { color:var(--gold); margin-right:10px; }
+  .h2-rule { width:54px; height:4px; background:var(--gold); border-radius:2px; margin:8px 0 20px; }
+  h3 { font-size:16px; font-weight:700; color:var(--navy2); margin:26px 0 8px; }
+  p { margin-bottom:12px; color:var(--dark); }
+  ul,ol { margin:0 0 14px 22px; }
+  li { margin-bottom:6px; color:var(--dark); }
+  strong,b { color:var(--navy); font-weight:700; }
+  code { background:var(--gray); padding:1px 6px; border-radius:4px; font-size:12.5px; font-family:'Roboto Mono',monospace; color:var(--navy2); }
+
+  table { width:100%; border-collapse:collapse; margin:14px 0 20px; font-size:13px; }
+  th { background:var(--navy); color:white; text-align:left; padding:9px 12px; font-weight:700; font-size:12px; }
+  td { padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top; color:var(--dark); }
+  tr:nth-child(even) td { background:#f6f9fc; }
+  table.zebra tr:nth-child(odd) td { background:var(--softblue); }
+
+  .callout { background:var(--softblue); border-left:5px solid var(--navy); border-radius:0 8px 8px 0; padding:14px 18px; margin:18px 0; font-size:13.5px; }
+  .callout.gold { background:#fdf6e6; border-left-color:var(--gold); }
+  .callout .ct { font-weight:700; color:var(--navy); display:block; margin-bottom:3px; }
+
+  .flow { background:var(--navy); color:white; border-radius:10px; padding:24px 28px; margin:20px 0; font-family:'Roboto Mono',monospace; font-size:12.5px; line-height:1.9; white-space:pre-wrap; }
+  .flow b { color:var(--gold); }
+
+  .pill { display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; }
+  .pill-green { background:#e8f5e9; color:var(--green); }
+  .pill-amber { background:#fff8e1; color:var(--amber); }
+  .pill-red { background:#fdecea; color:var(--red); }
+
+  .footer { background:var(--navy); color:rgba(255,255,255,0.6); padding:22px 60px; font-size:11px; display:flex; justify-content:space-between; align-items:center; }
+  .footer .brand { font-weight:900; letter-spacing:1.5px; color:white; }
+  .footer .brand span { color:var(--gold); }
+
+  @media print {
+    body { background:white; font-size:11.5px; }
+    .page { max-width:none; }
+    .cover { padding:60px 48px; min-height:100vh; }
+    .content { padding:32px 48px; }
+    h2 { page-break-after:avoid; }
+    table,.callout,.flow { page-break-inside:avoid; }
+    .no-print { display:none; }
+  }
+  .print-hint { position:fixed; bottom:16px; right:16px; background:var(--gold); color:var(--navy); padding:10px 16px; border-radius:8px; font-weight:700; font-size:12px; box-shadow:0 4px 16px rgba(0,0,0,0.2); cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- COVER -->
+  <div class="cover">
+    <div class="logo-row">
+      <svg width="48" height="42" viewBox="0 0 50 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <ellipse cx="13" cy="12" rx="4.2" ry="7.5" stroke="white" stroke-width="2.2"/>
+        <line x1="13" y1="19.5" x2="13" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <ellipse cx="25" cy="9" rx="4.8" ry="8.5" stroke="white" stroke-width="2.2"/>
+        <line x1="25" y1="17.5" x2="25" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <ellipse cx="37" cy="12" rx="4.2" ry="7.5" stroke="white" stroke-width="2.2"/>
+        <line x1="37" y1="19.5" x2="37" y2="31" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M 3 31 Q 25 42 47 31" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <div class="brand">ASPEN<span>VIEW</span></div>
+        <div class="tagline">Technology Partners</div>
+      </div>
+    </div>
+    <h1>Rolling 12-Month<br>Sales &amp; Readiness<br><span>Forecast</span></h1>
+    <div class="accent"></div>
+    <div class="sub">User Guide — how to connect Zoho, enter your forecast, and read every view of the platform.</div>
+    <div class="meta">AspenView Technology Partners · Sales Forecasting Platform</div>
+  </div>
+
+  <div class="content">
+
+    <h2><span class="num">1</span>What this platform does</h2>
+    <div class="h2-rule"></div>
+    <p>A live, browser-based forecasting platform that replaces the manual Excel workbook. It connects to Zoho CRM, lets you layer your forecasting inputs on top of the CRM data, and keeps the whole team looking at the same numbers in real time.</p>
+    <table>
+      <tr><th>Before — Excel</th><th>Now — Platform</th></tr>
+      <tr><td>Deals copied by hand from Zoho</td><td>Deals pulled automatically from Zoho</td></tr>
+      <tr><td>Each person had their own file</td><td>Everyone shares one live, auto-synced view</td></tr>
+      <tr><td>Margin not tracked</td><td>Margin built in — feeds cash-flow</td></tr>
+      <tr><td>Static monthly snapshot</td><td>Rolling 3-month forecast that moves with one click</td></tr>
+      <tr><td>No reliability measure</td><td>Forecast-accuracy bands by horizon</td></tr>
+    </table>
+    <h3>Two kinds of data live together</h3>
+    <ul>
+      <li><strong>From Zoho (automatic):</strong> deal name, account/client, stage, owner (BDE), amount, probability, close date — refreshed every time you Sync.</li>
+      <li><strong>Manual (you enter):</strong> monthly headcount per deal, MRR Aureum, win-rate adjustments, margin overrides, the <strong>Forecast</strong> and <strong>Super-Deal</strong> flags, and the Super-Deal qualitative assessment.</li>
+    </ul>
+    <div class="callout"><span class="ct">The key idea</span>The manual inputs are what turn raw CRM data into a real, decision-ready forecast.</div>
+
+    <h2><span class="num">2</span>Getting in</h2>
+    <div class="h2-rule"></div>
+    <ol>
+      <li>Open the platform URL in Chrome or Edge.</li>
+      <li>Click <strong>Sign in with Google</strong>.</li>
+      <li>Choose your <strong>@aspenview.com</strong> account. Only @aspenview.com accounts are allowed.</li>
+      <li>You land on the <strong>Overview</strong> tab.</li>
+    </ol>
+    <h3>The header (top-right)</h3>
+    <table>
+      <tr><th>Indicator</th><th>Meaning</th></tr>
+      <tr><td><span class="pill pill-green">Sync · Live</span></td><td>Your data is connected and shared. <em>Saving…</em> = pushing a change; <em>Live (updated by …)</em> = a teammate's change just arrived.</td></tr>
+      <tr><td><span class="pill pill-amber">Zoho</span></td><td>Connected / Disconnected — click to connect or disconnect Zoho.</td></tr>
+      <tr><td>Name · Log Out</td><td>Your identity and sign-out.</td></tr>
+    </table>
+    <div class="callout"><span class="ct">Shared in real time</span>Everything you edit is shared. If the manager changes a number, you see it within seconds — and vice-versa.</div>
+
+    <h2><span class="num">3</span>Connecting Zoho</h2>
+    <div class="h2-rule"></div>
+    <p>The Zoho token lasts about one hour, so you'll reconnect occasionally.</p>
+    <ol>
+      <li>In the header, click the <strong>Zoho · Disconnected</strong> pill.</li>
+      <li>On Zoho, click <strong>Accept</strong> to authorize read access to Deals and Accounts.</li>
+      <li>You return; the pill turns green: <strong>Zoho · Connected</strong>.</li>
+    </ol>
+    <h3>Pulling the deals</h3>
+    <ol>
+      <li>Go to <strong>Aureum Demand Forecast</strong>.</li>
+      <li>Click <strong>↻ Sync from Zoho</strong> (top-right).</li>
+      <li>A summary shows how many deals were pulled, matched, skipped, and how many manual deals are preserved.</li>
+      <li>Click <strong>Accept</strong>. The list refreshes with the latest from Zoho.</li>
+    </ol>
+    <p><strong>Which deals come in</strong> — only these stages (everything except Closed Lost):</p>
+    <p><code>SQL - Solution Discovery · Stage 2 (WTW) · Commercial Design · Recruitment (Path 2.1) · P.S (Path 2.2) · Pricing · Paper Process / Contracting · Closed Won</code></p>
+    <div class="callout gold"><span class="ct">Your work is safe on re-sync</span>Monthly headcount, MRR Aureum, win-rate edits, and the Forecast/Super flags stay attached to each deal. Only the Zoho fields (stage, amount, owner) get refreshed.</div>
+
+    <h2><span class="num">4</span>The tabs, one by one</h2>
+    <div class="h2-rule"></div>
+
+    <h3>4.1 — Overview</h3>
+    <p>Your executive snapshot: KPI cards (deals, 3-month headcount, adjusted revenue, margin $), the <strong>Anchor month</strong> picker, the rolling 3-month window table, and the <strong>Forecast Reliability</strong> bands (M0 / M+1 / M+2).</p>
+
+    <h3>4.2 — Aureum Demand Forecast (the master list)</h3>
+    <p>Where everything starts. Every Zoho deal in the allowed stages is one row, <strong>grouped by account</strong> so all deals of a client sit together.</p>
+    <table class="zebra">
+      <tr><th>Column</th><th>Source</th><th>Editable</th></tr>
+      <tr><td><strong>Fcst</strong> (checkbox)</td><td>Manual</td><td>✅ Check to include in the 3 mo. revenue tab</td></tr>
+      <tr><td><strong>Super</strong> (checkbox)</td><td>Manual</td><td>✅ Check to flag as a Super-Deal</td></tr>
+      <tr><td><strong>BDE</strong></td><td>Zoho owner (or inherited)</td><td>Read-only · <code>≈</code> inferred from account · <code>⚠ none</code> no owner</td></tr>
+      <tr><td>Status / Client / Deal / Stage / Loc</td><td>Zoho</td><td>Read-only · click the deal name ↗ to open it in Zoho</td></tr>
+      <tr><td>Monthly columns</td><td>Manual</td><td>✅ Type the billable headcount per month</td></tr>
+      <tr><td><strong>MRR Zoho ($)</strong></td><td>Zoho Amount</td><td>Read-only · green = has value & is being used</td></tr>
+      <tr><td><strong>MRR Aureum ($)</strong></td><td>Manual</td><td>✅ Used only when MRR Zoho is empty</td></tr>
+      <tr><td><strong>Win %</strong></td><td>Zoho / manual</td><td>✅ Win probability used in the forecast</td></tr>
+      <tr><td><strong>Margin %</strong></td><td>Margin Rules / manual</td><td>✅ Override margin for this deal</td></tr>
+    </table>
+    <p><strong>Search &amp; filters:</strong> the search box filters by deal, client, or BDE. The <strong>BDE / Stage / Status</strong> dropdowns are multi-select — pick two BDEs at once, etc. A badge shows the count; "✕ Clear" resets a filter.</p>
+
+    <h3>4.3 — 3 mo. revenue (the rolling forecast)</h3>
+    <p>Shows <strong>only the deals you checked "Fcst"</strong>. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %). Totals roll up at the bottom and in three summary cards.</p>
+    <div class="callout"><span class="ct">This is the number the company sees</span>It only contains deals you deliberately flagged — nothing leaks in by accident.</div>
+
+    <h3>4.4 — Forecast Accuracy</h3>
+    <p>Measures how reliable the forecast has been — <strong>not</strong> a way to grade anyone. The platform snapshots the forecast monthly; when a month closes you <strong>Enter Actuals</strong>, and the bands recompute as <strong>mean ± standard deviation</strong> per horizon. Defaults until history builds: M0 = 80% ±5, M+1 = 75% ±10, M+2 = 30% ±20.</p>
+
+    <h3>4.5 — Super-Deals</h3>
+    <p>The Aureum-tier program assessment. Each program is a row with editable, color-coded dropdowns: <strong>Deal Confidence, Start Readiness, Readiness Gap, Speed Sensitivity, Ramp Duration, First Phase Timing, Phase Risk Concentration, Program Horizon, Deployment Map.</strong> Edit Peak HC / Phase 1 / Activation / Notes with ✎. A deal-level rollup below sums every deal flagged "Super".</p>
+
+    <h3>4.6 — Fulfillment View</h3>
+    <p>Headcount by deal-type (Active Roles + Super-Deal Roles) for delivery/recruiting prioritization. Filter by BDE and search.</p>
+
+    <h3>4.7 — MRR Forecast 2026</h3>
+    <p>Adjusted revenue by client across all 12 months. Read it by quarter by grouping the relevant month columns (Jan–Mar = Q1, etc.). Search by client.</p>
+
+    <h3>4.8 — Active Customers — Actuals</h3>
+    <p>Only customers currently producing revenue (Active / Expanding / Aureum): current headcount, MRR per head, monthly $. Filter by BDE and status.</p>
+
+    <h3>4.9 — Margin Rules</h3>
+    <p>The margin assumptions that feed cash-flow. Margin resolves in this order:</p>
+    <ol>
+      <li><strong>Per-deal override</strong> (the Margin % typed on the deal) →</li>
+      <li><strong>Super-Deal rule</strong> (if flagged Super) →</li>
+      <li><strong>Stage rule</strong> (matches the deal's stage) →</li>
+      <li><strong>Default</strong> fallback.</li>
+    </ol>
+
+    <h3>4.10 — Settings</h3>
+    <p>Zoho integration &amp; field mapping, data <strong>Export / Import (JSON)</strong> for backup, reset, and the daily-workflow reminder.</p>
+
+    <h2><span class="num">5</span>How the forecast actually moves</h2>
+    <div class="h2-rule"></div>
+    <div class="flow">ZOHO  ──(Sync)──►  Aureum Demand Forecast
+                   │
+   you enter:  <b>Monthly HC</b> + <b>MRR Aureum</b> (if Zoho blank) + <b>Win %</b> + <b>Margin %</b>
+   you check:  <b>Forecast</b> ☑   <b>Super</b> ☑
+                   │
+                   ▼
+   Forecast ☑ deals ──►  <b>3 mo. revenue</b>  (HC × MRR/head × Win% × Margin%)
+   Super ☑ deals    ──►  <b>Super-Deals</b> rollup
+                   │
+                   ▼
+   <b>Overview</b> KPIs + <b>Forecast Accuracy</b> bands + <b>MRR Forecast</b></div>
+    <p><strong>The levers you pull:</strong> Monthly HC drives projected revenue · MRR (Zoho wins if set, else Aureum) is the price per deal · Win % discounts by probability · Margin % produces the cash-flow number · Anchor month slides the window · the Forecast/Super checkboxes decide what shows up where.</p>
+
+    <h2><span class="num">6</span>Recommended rhythm</h2>
+    <div class="h2-rule"></div>
+    <table class="zebra">
+      <tr><th>When</th><th>Do this</th><th>Where</th></tr>
+      <tr><td>Each morning</td><td>Click <strong>↻ Sync from Zoho</strong></td><td>Aureum Demand Forecast</td></tr>
+      <tr><td>Daily</td><td>Update monthly HC, MRR Aureum, win %; check <strong>Fcst</strong> / <strong>Super</strong></td><td>Aureum Demand Forecast</td></tr>
+      <tr><td>Weekly</td><td>Review the rolling 3-month numbers</td><td>3 mo. revenue</td></tr>
+      <tr><td>Monthly (1st)</td><td>Move the <strong>Anchor month</strong> forward by one</td><td>Anchor picker (any tab)</td></tr>
+      <tr><td>Monthly (close)</td><td><strong>Enter Actuals</strong> so the bands learn</td><td>Forecast Accuracy</td></tr>
+      <tr><td>Quarterly</td><td>Review Margin Rules &amp; Super-Deal assessments with Finance</td><td>Margin Rules / Super-Deals</td></tr>
+    </table>
+
+    <h2><span class="num">7</span>Tips &amp; troubleshooting</h2>
+    <div class="h2-rule"></div>
+    <table class="zebra">
+      <tr><th>Symptom</th><th>Fix</th></tr>
+      <tr><td>Revenue shows $0</td><td>No MRR Zoho and no MRR Aureum — enter an MRR Aureum value or set the Amount in Zoho.</td></tr>
+      <tr><td>A deal isn't in 3 mo. revenue</td><td>Check its <strong>Fcst</strong> box and confirm it has headcount in the anchor window.</td></tr>
+      <tr><td>Sign-in "not authorized"</td><td>You used a non-@aspenview.com account. Switch accounts.</td></tr>
+      <tr><td>Zoho sync fails (401)</td><td>The 1-hour token expired. Click the Zoho pill → reconnect.</td></tr>
+      <tr><td>A deal shows <code>⚠ none</code> for BDE</td><td>No deal in that account has an owner in Zoho. Assign one in Zoho, then re-sync.</td></tr>
+      <tr><td>Changes not showing elsewhere</td><td>Confirm both screens show <strong>Sync · Live</strong>; hard-refresh (Ctrl+Shift+R).</td></tr>
+    </table>
+
+    <h2><span class="num">8</span>Backup</h2>
+    <div class="h2-rule"></div>
+    <p>Firestore keeps the shared copy, but export a backup periodically: <strong>Settings → ⬇ Export all data (JSON)</strong>. To restore: <strong>Settings → ⬆ Import data (JSON)</strong>.</p>
+
+  </div>
+
+  <div class="footer">
+    <div class="brand">ASPEN<span>VIEW</span> <span style="color:rgba(255,255,255,0.4);font-weight:400;font-size:10px">Technology Partners</span></div>
+    <div>Rolling 12-Month Sales &amp; Readiness Forecast — User Guide</div>
+  </div>
+
+</div>
+<div class="print-hint no-print" onclick="window.print()">🖨 Print / Save as PDF</div>
+</body>
+</html>
