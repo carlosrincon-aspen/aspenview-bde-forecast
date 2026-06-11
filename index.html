@@ -745,6 +745,11 @@ function uniqueBdes(deals) {
   var set = {}; deals.forEach(function(d){ if (d.bde) set[d.bde] = 1; });
   return Object.keys(set).sort();
 }
+function bdeCell(d) {
+  if (!d.bde) return '<td style="color:var(--danger);font-size:11px" title="No owner — assign in Zoho">⚠ none</td>';
+  var inferred = d.bdeInferred ? ' <span title="Inferred from another deal in this account" style="color:var(--gold);cursor:help">≈</span>' : '';
+  return '<td style="color:var(--muted);font-size:11px">' + esc(d.bde) + inferred + '</td>';
+}
 function normDealName(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -793,6 +798,23 @@ function sameDeal(a, b) {
   if (a.client && b.client) return clientSimilar(a.client, b.client);
   return true;
 }
+// Every deal must have an owner. For deals with no BDE, inherit the majority owner
+// among same-account siblings (deals whose client matches via clientSimilar).
+function backfillOwners(deals) {
+  var filled = 0;
+  deals.forEach(function(d) {
+    if (d.bde) return;
+    if (!d.client) return;
+    var counts = {};
+    deals.forEach(function(o) {
+      if (o.bde && o !== d && clientSimilar(d.client, o.client)) counts[o.bde] = (counts[o.bde] || 0) + 1;
+    });
+    var best = null, bestN = 0;
+    Object.keys(counts).forEach(function(k) { if (counts[k] > bestN) { bestN = counts[k]; best = k; } });
+    if (best) { d.bde = best; d.bdeInferred = true; filled++; }
+  });
+  return filled;
+}
 // Copies seed-only fields into a target deal where the target has gaps. Never overwrites real data.
 function mergeSeedData(dst, src) {
   if ((!dst.mrrAureum || dst.mrrAureum <= 0) && src.mrrAureum > 0) dst.mrrAureum = src.mrrAureum;
@@ -809,6 +831,14 @@ function mergeSeedData(dst, src) {
 // (2) For each seed deal, finds a similar-named local deal and merges data into it,
 //     or adds as ghost if no match. Local flag prevents re-runs in this browser.
 function autoApplySeedOnce() {
+  // Independent step: backfill owners on every load-once-per-version (runs even if v7 done)
+  if (!load('owners_backfilled_v8', false)) {
+    var dd = getDeals();
+    var n = backfillOwners(dd);
+    if (n > 0) setDeals(dd);
+    save('owners_backfilled_v8', true);
+    console.log('Owner backfill v8: ' + n + ' deals got an owner from account siblings.');
+  }
   if (load('seed_merged_v7', false)) return;
   var deals  = getDeals();
   var zohoDeals = deals.filter(function(d) { return d.zohoId; });
@@ -846,9 +876,11 @@ function autoApplySeedOnce() {
     }
   });
 
-  setDeals(zohoDeals.concat(keepGhosts));
+  var allMerged = zohoDeals.concat(keepGhosts);
+  var ownersFilled = backfillOwners(allMerged);
+  setDeals(allMerged);
   save('seed_merged_v7', true);
-  console.log('Seed merge v7 (with client safeguard): ' + ghostsMerged + ' duplicate ghosts merged into Zoho deals, ' + seedApplied + ' seed deals applied to matches, ' + newGhosts + ' truly Excel-only ghosts.');
+  console.log('Seed merge v7: ' + ghostsMerged + ' ghosts merged, ' + seedApplied + ' seed applied, ' + newGhosts + ' Excel-only ghosts, ' + ownersFilled + ' owners backfilled from account siblings.');
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 function getMarginFor(deal) {
@@ -1059,6 +1091,12 @@ function renderAureumGrid() {
     if (aureumFilter.superOnly    && !isSuperDeal(d)) return false;
     return true;
   });
+  // Account-level traceability: group all deals of the same client together (then by deal name)
+  filtered.sort(function(a, b) {
+    var ca = (a.client || '').toLowerCase(), cb = (b.client || '').toLowerCase();
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    return (a.dealName || '').toLowerCase() < (b.dealName || '').toLowerCase() ? -1 : 1;
+  });
 
   var statusOpts = [''].concat(Object.keys(STATUS_PILL)).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.status ? ' selected' : '') + '>' + (s || 'All statuses') + '</option>'; }).join('');
   var stageOpts  = [''].concat(ALLOWED_STAGES).map(function(s){ return '<option value="' + esc(s) + '"' + (s === aureumFilter.stage ? ' selected' : '') + '>' + (s || 'All stages') + '</option>'; }).join('');
@@ -1097,7 +1135,7 @@ function renderAureumGrid() {
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast  ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.isSuperDeal ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'isSuperDeal\')" title="Mark as Super-Deal"></td>';
-    html += '<td style="color:var(--muted);font-size:11px">' + esc(d.bde || '—') + '</td>';
+    html += bdeCell(d);
     html += '<td>' + statusPill(d.status) + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
     html += '<td>' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="margin-left:4px">Aureum</span>' : '') + '</td>';
@@ -1254,7 +1292,7 @@ function render3MoRevenue() {
     var pph = pricePerHead(d);
     var wr  = getWinRateFor(d);
     html += '<tr>';
-    html += '<td style="color:var(--muted);font-size:11px">' + esc(d.bde || '—') + '</td>';
+    html += bdeCell(d);
     html += '<td>' + statusPill(d.status) + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
     html += '<td>' + dealNameCell(d) + '</td>';
