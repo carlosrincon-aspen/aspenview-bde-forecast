@@ -699,19 +699,24 @@ function syncZohoDeals() {
     });
 
     var skipped = allDeals.length - filtered.length;
-    // Preserve ghost deals (no zohoId) — typically Excel-only entries or manually added
-    var ghosts = existing.filter(function(d) { return !d.zohoId; });
+    // Reconcile prior ghosts against the freshly-pulled Zoho deals: merge matches in, keep
+    // only the truly-not-in-Zoho ones (flagged). This collapses stale duplicates automatically.
+    var priorGhosts = existing.filter(function(d) { return !d.zohoId; });
+    var rec = reconcileGhosts(mapped, priorGhosts);
     var msg = 'Pulled ' + allDeals.length + ' deals from Zoho.\n' +
               '  • ' + filtered.length + ' match the allowed stages\n' +
               '  • ' + skipped + ' skipped (not in ALLOWED_STAGES)\n' +
               '  • ' + seedMatched + ' new deals matched the Excel seed by name\n' +
-              '  • ' + ghosts.length + ' ghost deals (Excel-only / manual) will be preserved\n\n' +
-              'Replace synced Zoho deals with this fresh set? Local edits + ghosts are preserved.';
+              '  • ' + rec.merged + ' prior manual deals reconciled into their Zoho record\n' +
+              '  • ' + rec.flagged + ' deals not found in Zoho (kept & flagged for review)\n\n' +
+              'Replace the deal list with this reconciled set? Your HC / MRR Aureum / flags are preserved.';
     if (!confirm(msg)) return;
-    setDeals(mapped.concat(ghosts));
+    var finalDeals = mapped.concat(rec.kept);
+    backfillOwners(finalDeals);
+    setDeals(finalDeals);
     save('last_zoho_sync', new Date().toISOString());
     renderTab();
-    alert('Zoho sync complete: ' + mapped.length + ' from Zoho + ' + ghosts.length + ' ghosts = ' + (mapped.length + ghosts.length) + ' total deals.');
+    alert('Zoho sync complete: ' + mapped.length + ' from Zoho + ' + rec.kept.length + ' not-in-Zoho = ' + finalDeals.length + ' total. ' + rec.merged + ' duplicates reconciled.');
   });
 }
 
@@ -747,7 +752,8 @@ function dealZohoUrl(d) {
 function dealNameCell(d) {
   var url = dealZohoUrl(d);
   if (url) return '<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--navy);font-weight:700;text-decoration:none;border-bottom:1px dashed var(--gold)" title="Open in Zoho CRM">' + esc(d.dealName) + ' ↗</a>';
-  return '<b>' + esc(d.dealName) + '</b>';
+  var warn = ' <span class="pill pill-red" style="font-size:9px" title="This deal is not linked to a Zoho record — verify it still exists in Zoho. Its stage/owner may be stale.">⚠ not in Zoho</span>';
+  return '<b>' + esc(d.dealName) + '</b>' + warn;
 }
 function toggleDealFlag(idx, field) {
   var deals = getDeals();
@@ -826,24 +832,31 @@ function buildSeedIndex() {
   });
   return idx;
 }
+// Two tokens "match" if equal, or one is a prefix of the other (≥4 chars) — so
+// "info" ≈ "information", "sec" stays distinct from "security" (too short).
+function tokMatch(x, y) {
+  if (x === y) return true;
+  if (x.length >= 4 && y.length >= 4 && (y.indexOf(x) === 0 || x.indexOf(y) === 0)) return true;
+  return false;
+}
 // Returns true if a and b refer to the same deal, allowing for prefix differences
-// like "Istari-Global (for Ball Corp) - " vs the shorter Excel naming.
+// like "Istari-Global (for Ball Corp) - " and word variants like Info/Information.
 function nameSimilar(a, b) {
   var na = normDealName(a);
   var nb = normDealName(b);
   if (!na || !nb) return false;
   if (na === nb) return true;
-  // Substring (one fully contains the other) — must be 10+ chars to avoid short false matches
-  if (na.length >= 10 && nb.indexOf(na) >= 0) return true;
-  if (nb.length >= 10 && na.indexOf(nb) >= 0) return true;
-  // Token overlap — require both sides >= 3 long tokens AND 80%+ of shorter side is in longer
+  // Substring (one fully contains the other)
+  if (na.length >= 8 && nb.indexOf(na) >= 0) return true;
+  if (nb.length >= 8 && na.indexOf(nb) >= 0) return true;
+  // Token overlap with prefix matching — ≥2 common, ≥66% of the shorter side
   var ta = na.split(' ').filter(function(t){ return t.length > 2; });
   var tb = nb.split(' ').filter(function(t){ return t.length > 2; });
-  if (ta.length < 3 || tb.length < 3) return false;
-  var setB = {}; tb.forEach(function(t){ setB[t] = true; });
-  var common = ta.filter(function(t){ return setB[t]; }).length;
+  if (ta.length < 2 || tb.length < 2) return false;
+  var common = 0;
+  ta.forEach(function(x){ if (tb.some(function(y){ return tokMatch(x, y); })) common++; });
   var minLen = Math.min(ta.length, tb.length);
-  return common >= 3 && (common / minLen >= 0.8);
+  return common >= 2 && (common / minLen >= 0.66);
 }
 // Client safeguard: prevents cross-client false matches. One of the client names must
 // be a substring of the other (case-insensitive, normalized). E.g. "ISTARI" ⊂ "Istari-Global".
@@ -862,6 +875,23 @@ function sameDeal(a, b) {
   if (!nameSimilar(a.dealName, b.dealName)) return false;
   if (a.client && b.client) return clientSimilar(a.client, b.client);
   return true;
+}
+// Reconcile Excel ghosts against the live Zoho deal list. A ghost (zohoId='') that
+// matches a real Zoho deal (same name+client) is merged into it and dropped — so the
+// row keeps Zoho's correct stage/owner/link plus the Excel HC/MRR/flags. Ghosts with
+// no Zoho match are kept but flagged notInZoho so the data quality is transparent.
+// Returns { kept: [...remaining ghosts...], merged, flagged }.
+function reconcileGhosts(zohoDeals, ghosts) {
+  var kept = [], merged = 0, flagged = 0;
+  ghosts.forEach(function(g) {
+    var match = null;
+    for (var i = 0; i < zohoDeals.length; i++) {
+      if (sameDeal(g, zohoDeals[i])) { match = zohoDeals[i]; break; }
+    }
+    if (match) { mergeSeedData(match, g); merged++; }
+    else { g.notInZoho = true; flagged++; kept.push(g); }
+  });
+  return { kept: kept, merged: merged, flagged: flagged };
 }
 // Every deal must have an owner. For deals with no BDE, inherit the majority owner
 // among same-account siblings (deals whose client matches via clientSimilar).
@@ -896,6 +926,19 @@ function mergeSeedData(dst, src) {
 // (2) For each seed deal, finds a similar-named local deal and merges data into it,
 //     or adds as ghost if no match. Local flag prevents re-runs in this browser.
 function autoApplySeedOnce() {
+  // v9: reconcile Excel ghosts against the live Zoho deals (improved fuzzy matching),
+  // collapsing duplicates so each row reflects Zoho's stage/owner/link. Then re-backfill owners.
+  if (!load('reconciled_v9', false)) {
+    var dv = getDeals();
+    var zoho = dv.filter(function(d){ return d.zohoId; });
+    var ghosts = dv.filter(function(d){ return !d.zohoId; });
+    var r = reconcileGhosts(zoho, ghosts);
+    var all = zoho.concat(r.kept);
+    backfillOwners(all);
+    setDeals(all);
+    save('reconciled_v9', true);
+    console.log('Reconcile v9: ' + r.merged + ' ghosts merged into Zoho deals & removed, ' + r.flagged + ' kept & flagged not-in-Zoho.');
+  }
   // Independent step: backfill owners on every load-once-per-version (runs even if v7 done)
   if (!load('owners_backfilled_v8', false)) {
     var dd = getDeals();
