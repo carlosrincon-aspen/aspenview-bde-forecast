@@ -1782,7 +1782,8 @@ function renderMRRForecast() {
 // TAB: ACTIVE CUSTOMERS - ACTUALS
 // ─────────────────────────────────────────────────────────────────────────────
 function renderActiveCustomers() {
-  var base = getDeals().filter(function(d){ return /Aureum Active|Active|Expanding/.test(d.status); });
+  // Active = account status is Active/Expanding/Aureum, OR the deal is Closed Won (won = billing).
+  var base = getDeals().filter(function(d){ return /Aureum Active|Active|Expanding/.test(d.status) || d.stage === 'Closed Won'; });
   var bdes = uniqueBdes(base);
   var deals = base.filter(function(d) {
     if (!passSearch('active', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
@@ -1791,7 +1792,7 @@ function renderActiveCustomers() {
     return true;
   });
   var html = '';
-  html += '<div class="page-title"><div><h1>Active Customers — Actuals</h1><div class="sub">Customers currently producing revenue (Active / Expanding / Aureum)</div></div></div>';
+  html += '<div class="page-title"><div><h1>Active Customers — Actuals</h1><div class="sub">Customers currently producing revenue (Active / Expanding / Aureum, plus Closed Won deals)</div></div></div>';
   html += '<div class="stat-grid">';
   html += statCard('Active Customers', new Set(deals.map(function(d){return d.client;})).size, deals.length + ' deals', 'good');
   html += statCard('Aureum Customers', new Set(deals.filter(function(d){return d.status==='Aureum Active Account';}).map(function(d){return d.client;})).size, 'Aureum-tier accounts', 'aureum');
