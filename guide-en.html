@@ -117,10 +117,10 @@
     </table>
     <h3>Two kinds of data live together</h3>
     <ul>
-      <li><strong>From Zoho (automatic):</strong> deal name, account/client, stage, owner (BDE), amount, probability, close date — refreshed every time you Sync.</li>
-      <li><strong>Manual (you enter):</strong> monthly headcount per deal, MRR Aureum, win-rate adjustments, margin overrides, the <strong>Forecast</strong> and <strong>Super-Deal</strong> flags, and the Super-Deal qualitative assessment.</li>
+      <li><strong>From Zoho (automatic):</strong> deal name, account/client, stage, owner (BDE), <strong>MRR</strong>, probability, close date, account status, and the <strong>Target Margin Band</strong> — refreshed every time you Sync. Zoho is the source of truth.</li>
+      <li><strong>Manual (you enter):</strong> monthly headcount per deal, MRR Aureum (fallback when Zoho's MRR is blank), win-rate adjustments, margin overrides, the <strong>Forecast</strong> and <strong>Super-Deal</strong> flags, and the Super-Deal qualitative assessment.</li>
     </ul>
-    <div class="callout"><span class="ct">The key idea</span>The manual inputs are what turn raw CRM data into a real, decision-ready forecast.</div>
+    <div class="callout"><span class="ct">The key idea</span>The manual inputs turn raw CRM data into a real, decision-ready forecast. The <strong>Playground</strong> tab lets you draft changes side-by-side with Zoho and push approved updates back to the CRM in one click.</div>
 
     <h2><span class="num">2</span>Getting in</h2>
     <div class="h2-rule"></div>
@@ -144,9 +144,10 @@
     <p>The Zoho token lasts about one hour, so you'll reconnect occasionally.</p>
     <ol>
       <li>In the header, click the <strong>Zoho · Disconnected</strong> pill.</li>
-      <li>On Zoho, click <strong>Accept</strong> to authorize read access to Deals and Accounts.</li>
+      <li>On Zoho, click <strong>Accept</strong> to authorize access to Deals (read + write) and Accounts (read).</li>
       <li>You return; the pill turns green: <strong>Zoho · Connected</strong>.</li>
     </ol>
+    <div class="callout gold"><span class="ct">Write scope</span>The platform requests <code>ZohoCRM.modules.Deals.WRITE</code> so the Playground's <strong>Push approved to Zoho</strong> button can update records. If your Zoho admin hasn't enabled write yet, the rest of the platform still works; only the push action will surface a clear message asking the admin to enable the scope.</div>
     <h3>Pulling the deals</h3>
     <ol>
       <li>Go to <strong>Aureum Demand Forecast</strong>.</li>
@@ -165,62 +166,84 @@
     <p>Your executive snapshot: KPI cards (deals, 3-month headcount, adjusted revenue, margin $), the <strong>Anchor month</strong> picker, the rolling 3-month window table, and the <strong>Forecast Reliability</strong> bands (M0 / M+1 / M+2).</p>
 
     <h3>4.2 — Aureum Demand Forecast (the master list)</h3>
-    <p>Where everything starts. Every Zoho deal in the allowed stages is one row, <strong>grouped by account</strong> so all deals of a client sit together.</p>
+    <p>Where everything starts. Every Zoho deal in the allowed stages is one row, <strong>grouped by account</strong> so all deals of a client sit together. The header row is <strong>sticky</strong>: it stays visible as you scroll, so you never lose which month a column is.</p>
     <table class="zebra">
       <tr><th>Column</th><th>Source</th><th>Editable</th></tr>
       <tr><td><strong>Fcst</strong> (checkbox)</td><td>Manual</td><td>✅ Check to include in the 3 mo. revenue tab</td></tr>
       <tr><td><strong>Super</strong> (checkbox)</td><td>Manual</td><td>✅ Check to flag as a Super-Deal</td></tr>
+      <tr><td><strong>In Excel</strong> (✓)</td><td>Auto</td><td>Read-only · ✓ if the deal existed in the original Excel workbook · filter the column to compare against Don's baseline.</td></tr>
       <tr><td><strong>BDE</strong></td><td>Zoho owner (or inherited)</td><td>Read-only · <code>≈</code> inferred from account · <code>⚠ none</code> no owner</td></tr>
       <tr><td>Status / Client / Deal / Stage / Loc</td><td>Zoho</td><td>Read-only · click the deal name ↗ to open it in Zoho</td></tr>
+      <tr><td><strong>Win %</strong></td><td>Zoho / Stage Rules / manual</td><td>✅ Win probability used in the forecast. Moved to the LEFT of the month columns for quick scanning.</td></tr>
+      <tr><td><strong>Margin %</strong></td><td>Zoho <code>Target_Margin_Band</code> / Stage Rules / manual</td><td>✅ Override margin for this deal. Green tint = pulled from Zoho. <span class="pill pill-amber">⚠ missing margin</span> appears on Commercial-Design-and-later deals with no margin set.</td></tr>
       <tr><td>Monthly columns</td><td>Manual</td><td>✅ Type the billable headcount per month</td></tr>
-      <tr><td><strong>MRR Zoho ($)</strong></td><td>Zoho Amount</td><td>Read-only · green = has value & is being used</td></tr>
+      <tr><td><strong>MRR Zoho ($)</strong></td><td>Zoho <code>MRR</code> field</td><td>Read-only · green = has value & is being used. Falls back to Amount only if MRR is missing.</td></tr>
       <tr><td><strong>MRR Aureum ($)</strong></td><td>Manual</td><td>✅ Used only when MRR Zoho is empty</td></tr>
-      <tr><td><strong>Win %</strong></td><td>Zoho / manual</td><td>✅ Win probability used in the forecast</td></tr>
-      <tr><td><strong>Margin %</strong></td><td>Margin Rules / manual</td><td>✅ Override margin for this deal</td></tr>
+      <tr><td><strong>✕</strong> (delete)</td><td>—</td><td>Removes a not-in-Zoho ghost row inline. Zoho-linked rows must be deleted in Zoho.</td></tr>
     </table>
-    <p><strong>Search &amp; filters:</strong> the search box filters by deal, client, or BDE. The <strong>BDE / Stage / Status</strong> dropdowns are multi-select — pick two BDEs at once, etc. A badge shows the count; "✕ Clear" resets a filter.</p>
+    <p><strong>Search &amp; filters:</strong> the search box filters by deal, client, or BDE. The <strong>BDE / Stage / Status / In&nbsp;Excel</strong> dropdowns are multi-select — pick two BDEs at once, etc. A badge shows the count; "✕ Clear" resets a filter.</p>
+    <p><strong>+ New Deal</strong> opens Zoho's new-deal form in a new tab. New deals are always created in Zoho — never locally — so the CRM stays the system of record.</p>
 
     <h3>4.3 — 3 mo. revenue (the rolling forecast)</h3>
-    <p>Shows <strong>only the deals you checked "Fcst"</strong>. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %). Totals roll up at the bottom and in three summary cards.</p>
+    <p>Shows <strong>only the deals you checked "Fcst"</strong>. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %). Win % and Margin % sit on the LEFT for fast scanning. Totals roll up at the bottom and in three summary cards.</p>
     <div class="callout"><span class="ct">This is the number the company sees</span>It only contains deals you deliberately flagged — nothing leaks in by accident.</div>
 
-    <h3>4.4 — Forecast Accuracy</h3>
+    <h3>4.4 — Playground (Zoho vs Manual, with approve &amp; push)</h3>
+    <p>The scenario sandbox. Side-by-side, per deal, you see what Zoho says today and what you've drafted manually for <strong>Headcount</strong>, <strong>MRR</strong>, <strong>Win %</strong> and <strong>Margin %</strong>. Every difference is highlighted with a Zoho → Playground arrow.</p>
+    <ol>
+      <li><strong>Draft</strong> changes on the Aureum tab as usual — they show up here as diffs.</li>
+      <li><strong>Approve</strong> the deals whose drafts are ready (per-row checkbox). Approval is shared with the team.</li>
+      <li>Click <strong>↗ Push approved to Zoho</strong>. The platform sends a PATCH to Zoho for each approved deal — updating <code>Total_Headcount</code>, <code>MRR</code>, <code>Probability</code>, and <code>Target_Margin_Band</code> — then clears the approved flag and stamps <em>pushedAt</em>.</li>
+    </ol>
+    <div class="callout gold"><span class="ct">Zoho is the system of record</span>Pushed values become the new Zoho truth on the next Sync. If your OAuth client doesn't have the <code>Deals.WRITE</code> scope yet, the push action explains exactly what your Zoho admin needs to enable.</div>
+
+    <h3>4.5 — Forecast Accuracy</h3>
     <p>Measures how reliable the forecast has been — <strong>not</strong> a way to grade anyone. The platform snapshots the forecast monthly; when a month closes you <strong>Enter Actuals</strong>, and the bands recompute as <strong>mean ± standard deviation</strong> per horizon. Defaults until history builds: M0 = 80% ±5, M+1 = 75% ±10, M+2 = 30% ±20.</p>
 
-    <h3>4.5 — Super-Deals</h3>
+    <h3>4.6 — Super-Deals</h3>
     <p>The Aureum-tier program assessment. Each program is a row with editable, color-coded dropdowns: <strong>Deal Confidence, Start Readiness, Readiness Gap, Speed Sensitivity, Ramp Duration, First Phase Timing, Phase Risk Concentration, Program Horizon, Deployment Map.</strong> Edit Peak HC / Phase 1 / Activation / Notes with ✎. A deal-level rollup below sums every deal flagged "Super".</p>
 
-    <h3>4.6 — Fulfillment View</h3>
+    <h3>4.7 — Fulfillment View</h3>
     <p>Headcount by deal-type (Active Roles + Super-Deal Roles) for delivery/recruiting prioritization. Filter by BDE and search.</p>
 
-    <h3>4.7 — MRR Forecast 2026</h3>
+    <h3>4.8 — MRR Forecast 2026</h3>
     <p>Adjusted revenue by client across all 12 months. Read it by quarter by grouping the relevant month columns (Jan–Mar = Q1, etc.). Search by client.</p>
 
-    <h3>4.8 — Active Customers — Actuals</h3>
-    <p>Only customers currently producing revenue (Active / Expanding / Aureum): current headcount, MRR per head, monthly $. Filter by BDE and status.</p>
+    <h3>4.9 — Active Customers — Actuals</h3>
+    <p>Customers currently producing revenue (Active / Expanding / Aureum) <strong>plus Closed Won</strong>: current headcount, MRR per head, monthly $. Filter by BDE and status.</p>
 
-    <h3>4.9 — Margin Rules</h3>
-    <p>The margin assumptions that feed cash-flow. Margin resolves in this order:</p>
+    <h3>4.10 — Stage Rules</h3>
+    <p>The defaults that fill in Win % and Margin % when a deal doesn't have its own. Edit the table per stage; both columns are editable. The cascade is:</p>
     <ol>
-      <li><strong>Per-deal override</strong> (the Margin % typed on the deal) →</li>
-      <li><strong>Super-Deal rule</strong> (if flagged Super) →</li>
-      <li><strong>Stage rule</strong> (matches the deal's stage) →</li>
+      <li><strong>Per-deal override</strong> (Win % / Margin % typed on the deal) →</li>
+      <li><strong>Zoho</strong> (<code>Probability</code> for Win, <code>Target_Margin_Band</code> for Margin) →</li>
+      <li><strong>Super-Deal rule</strong> (if the deal is flagged Super) →</li>
+      <li><strong>Stage rule</strong> (matches the deal's current Zoho stage) →</li>
       <li><strong>Default</strong> fallback.</li>
     </ol>
 
-    <h3>4.10 — Settings</h3>
-    <p>Zoho integration &amp; field mapping, data <strong>Export / Import (JSON)</strong> for backup, reset, and the daily-workflow reminder.</p>
+    <h3>4.11 — Cleanup</h3>
+    <p>Reconcile deals that came from the original Excel but couldn't be matched to a Zoho record. For each unmatched deal, the platform shows the best Zoho candidate from the <strong>same account</strong> (active deals first, then Closed Lost in red) with a Match %.</p>
+    <ul>
+      <li><strong>Merge</strong> — point the row at the chosen Zoho deal; the row becomes synced going forward.</li>
+      <li><strong>Kill</strong> — delete the ghost row if it doesn't correspond to anything in Zoho.</li>
+    </ul>
+    <p>The goal is to eventually empty this tab — once every deal is linked to Zoho, Don's Excel can be retired.</p>
+
+    <h3>4.12 — Settings</h3>
+    <p>Zoho integration &amp; field mapping (<code>MRR</code>, <code>Total_Headcount</code>, <code>Target_Margin_Band</code>, <code>Account_Status</code>), data <strong>Export / Import (JSON)</strong> for backup, reset, and the daily-workflow reminder.</p>
 
     <h2><span class="num">5</span>How the forecast actually moves</h2>
     <div class="h2-rule"></div>
-    <div class="flow">ZOHO  ──(Sync)──►  Aureum Demand Forecast
-                   │
+    <div class="flow">ZOHO  ──(Sync)──►  Aureum Demand Forecast  ◄──(Push approved)──┐
+                   │                                              │
    you enter:  <b>Monthly HC</b> + <b>MRR Aureum</b> (if Zoho blank) + <b>Win %</b> + <b>Margin %</b>
-   you check:  <b>Forecast</b> ☑   <b>Super</b> ☑
-                   │
-                   ▼
+   you check:  <b>Forecast</b> ☑   <b>Super</b> ☑                  │
+                   │                                              │
+                   ▼                                              │
    Forecast ☑ deals ──►  <b>3 mo. revenue</b>  (HC × MRR/head × Win% × Margin%)
-   Super ☑ deals    ──►  <b>Super-Deals</b> rollup
+   Super ☑ deals    ──►  <b>Super-Deals</b> rollup                │
+   diffs vs Zoho   ──►  <b>Playground</b> ──(approve)─────────────┘
                    │
                    ▼
    <b>Overview</b> KPIs + <b>Forecast Accuracy</b> bands + <b>MRR Forecast</b></div>
@@ -232,10 +255,11 @@
       <tr><th>When</th><th>Do this</th><th>Where</th></tr>
       <tr><td>Each morning</td><td>Click <strong>↻ Sync from Zoho</strong></td><td>Aureum Demand Forecast</td></tr>
       <tr><td>Daily</td><td>Update monthly HC, MRR Aureum, win %; check <strong>Fcst</strong> / <strong>Super</strong></td><td>Aureum Demand Forecast</td></tr>
-      <tr><td>Weekly</td><td>Review the rolling 3-month numbers</td><td>3 mo. revenue</td></tr>
+      <tr><td>Weekly</td><td>Review the rolling 3-month numbers; review the Playground and <strong>push approved changes to Zoho</strong></td><td>3 mo. revenue · Playground</td></tr>
+      <tr><td>Weekly</td><td>Clear the Cleanup tab — merge or kill any not-in-Zoho ghosts</td><td>Cleanup</td></tr>
       <tr><td>Monthly (1st)</td><td>Move the <strong>Anchor month</strong> forward by one</td><td>Anchor picker (any tab)</td></tr>
       <tr><td>Monthly (close)</td><td><strong>Enter Actuals</strong> so the bands learn</td><td>Forecast Accuracy</td></tr>
-      <tr><td>Quarterly</td><td>Review Margin Rules &amp; Super-Deal assessments with Finance</td><td>Margin Rules / Super-Deals</td></tr>
+      <tr><td>Quarterly</td><td>Review <strong>Stage Rules</strong> &amp; Super-Deal assessments with Finance</td><td>Stage Rules / Super-Deals</td></tr>
     </table>
 
     <h2><span class="num">7</span>Tips &amp; troubleshooting</h2>
@@ -246,6 +270,8 @@
       <tr><td>A deal isn't in 3 mo. revenue</td><td>Check its <strong>Fcst</strong> box and confirm it has headcount in the anchor window.</td></tr>
       <tr><td>Sign-in "not authorized"</td><td>You used a non-@aspenview.com account. Switch accounts.</td></tr>
       <tr><td>Zoho sync fails (401)</td><td>The 1-hour token expired. Click the Zoho pill → reconnect.</td></tr>
+      <tr><td>Push to Zoho says "scope missing"</td><td>The OAuth client lacks <code>ZohoCRM.modules.Deals.WRITE</code>. Ask the Zoho admin to enable it at api-console.zoho.com, then Disconnect + Connect from the Zoho pill so the new permission takes effect.</td></tr>
+      <tr><td>A deal shows <span class="pill pill-amber">⚠ missing margin</span></td><td>It's in Commercial Design or later but has no margin. Set the <code>Target_Margin_Band</code> in Zoho, or type a value in the Margin % cell.</td></tr>
       <tr><td>A deal shows <code>⚠ none</code> for BDE</td><td>No deal in that account has an owner in Zoho. Assign one in Zoho, then re-sync.</td></tr>
       <tr><td>Changes not showing elsewhere</td><td>Confirm both screens show <strong>Sync · Live</strong>; hard-refresh (Ctrl+Shift+R).</td></tr>
     </table>
