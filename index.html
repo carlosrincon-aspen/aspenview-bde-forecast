@@ -106,7 +106,10 @@
   .pill-aureum { background: #B2EBF2; color: #00838f; }
   .pill-gray   { background: var(--bg); color: var(--muted); }
 
-  .scroll-x { overflow-x: auto; }
+  .scroll-x { overflow-x: auto; max-height: 70vh; overflow-y: auto; }
+  /* Sticky header rows inside scrollable grids */
+  .scroll-x table.grid-tbl thead th { position: sticky; top: 0; z-index: 5; }
+  .scroll-x table.grid-tbl thead tr:nth-child(2) th { top: 28px; }
   .grid-tbl { font-size: 11.5px; min-width: 1100px; }
   .grid-tbl th { font-size: 9.5px; padding: 6px 7px; }
   .grid-tbl td { padding: 6px 7px; }
@@ -301,7 +304,7 @@ var TABS = [
   { id: 'fulfillment', label: 'Fulfillment View' },
   { id: 'mrr',         label: 'MRR Forecast 2026' },
   { id: 'active',      label: 'Active Customers - Actuals' },
-  { id: 'margin',      label: 'Margin Rules' },
+  { id: 'margin',      label: 'Stage Rules' },
   { id: 'settings',    label: 'Settings' }
 ];
 
@@ -333,18 +336,22 @@ var STATUS_PILL = {
   'Closed Lost':           'pill-red'
 };
 
+// Stage Rules — per-stage standard Win % AND Margin % (Michael's model). As a deal
+// progresses, both can evolve. Order: manual override → Zoho target margin → stage rule.
 var DEFAULT_MARGIN_RULES = [
-  { dealType: 'SQL - Solution Discovery',     margin: 0.30, note: 'Early-stage; conservative default' },
-  { dealType: 'Stage 2 (WTW)',                margin: 0.38, note: 'Mid-stage; not yet priced' },
-  { dealType: 'Commercial Design',            margin: 0.38, note: 'Solution scoped; not yet priced' },
-  { dealType: 'Recruitment (Path 2.1)',       margin: 0.35, note: 'Default for staffing engagements' },
-  { dealType: 'P.S (Path 2.2)',               margin: 0.45, note: 'PS / solutioning work — higher margin' },
-  { dealType: 'Pricing',                      margin: 0.40, note: 'Live pricing conversation' },
-  { dealType: 'Paper Process / Contracting',  margin: 0.42, note: 'Contracts in flight' },
-  { dealType: 'Closed Won',                   margin: 0.42, note: 'Booked' },
-  { dealType: 'Aureum / Super-Deal',          margin: 0.40, note: 'Applied when the Super-Deal checkbox is on' },
-  { dealType: 'Default',                      margin: 0.35, note: 'Fallback when no other rule matches' }
+  { dealType: 'SQL - Solution Discovery',     winRate: 0.10, margin: 0.40, note: 'Early stage — low probability, standard margin' },
+  { dealType: 'Stage 2 (WTW)',                winRate: 0.20, margin: 0.40, note: 'Working-toward-win; not yet priced' },
+  { dealType: 'Commercial Design',            winRate: 0.30, margin: 0.40, note: 'Margin should come from Zoho commercial-design target' },
+  { dealType: 'Recruitment (Path 2.1)',       winRate: 0.50, margin: 0.35, note: 'Staffing engagements' },
+  { dealType: 'P.S (Path 2.2)',               winRate: 0.50, margin: 0.45, note: 'Professional services — higher margin' },
+  { dealType: 'Pricing',                      winRate: 0.75, margin: 0.40, note: 'Margin should come from the pricing module' },
+  { dealType: 'Paper Process / Contracting',  winRate: 0.90, margin: 0.42, note: 'Contract in flight — SO margin' },
+  { dealType: 'Closed Won',                   winRate: 1.00, margin: 0.42, note: 'Booked' },
+  { dealType: 'Aureum / Super-Deal',          winRate: 0.50, margin: 0.40, note: 'Applied when the Super-Deal checkbox is on' },
+  { dealType: 'Default',                      winRate: 0.30, margin: 0.35, note: 'Fallback when no other rule matches' }
 ];
+// Stages where a real commercial-design target margin is expected. If absent, we flag it.
+var MARGIN_EXPECTED_STAGES = ['Commercial Design','Pricing','Paper Process / Contracting','Closed Won'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SEED DEALS (from the AspenView Rolling 12-Month Sales & Readiness Forecast, APR'26 — 78 deals)
@@ -399,6 +406,7 @@ function getDeals() {
     // Dual-MRR migration: pricing = Zoho.Amount (sync target). mrrAureum = Don's manual.
     // Legacy data with pricing but no mrrAureum: move value to mrrAureum (it was Don's, not Zoho's).
     if (d.mrrAureum   === undefined) { d.mrrAureum = d.pricing || 0; }
+    if (d.inExcel     === undefined) d.inExcel = false;  // set by v11 migration / sync
   });
   return deals;
 }
@@ -723,6 +731,7 @@ function syncZohoDeals() {
         // Flags: if user has touched this deal before, respect their flag; else use seed default
         inForecast:            prior ? !!p.inForecast  : (seed ? !!seed.inForecast  : false),
         isSuperDeal:           prior ? !!p.isSuperDeal : (seed ? !!seed.isSuperDeal : false),
+        inExcel:               !!seed || !!(prior && prior.inExcel),  // matched Don's Excel seed
         marginOverride:        p.marginOverride
       };
     });
@@ -930,7 +939,7 @@ function reconcileGhosts(zohoDeals, ghosts) {
       if (sameDeal(g, zohoDeals[i])) { match = zohoDeals[i]; break; }
     }
     if (match) { mergeSeedData(match, g); merged++; }
-    else { g.notInZoho = true; flagged++; kept.push(g); }
+    else { g.notInZoho = true; g.inExcel = true; flagged++; kept.push(g); }
   });
   return { kept: kept, merged: merged, flagged: flagged };
 }
@@ -961,6 +970,7 @@ function mergeSeedData(dst, src) {
   }
   if (src.inForecast  && !dst.inForecast)  dst.inForecast  = true;
   if (src.isSuperDeal && !dst.isSuperDeal) dst.isSuperDeal = true;
+  dst.inExcel = true;  // src always comes from Don's Excel seed/ghost
 }
 // Idempotent seed merge with smart name matching — called AFTER Firestore fetch.
 // (1) Merges existing ghosts into matching Zoho deals (cleanup of v5 duplicates),
@@ -987,6 +997,21 @@ function autoApplySeedOnce() {
     if (n > 0) setDeals(dd);
     save('owners_backfilled_v8', true);
     console.log('Owner backfill v8: ' + n + ' deals got an owner from account siblings.');
+  }
+  // v11: mark which deals are in Don's Excel (matched a seed deal, or are not-in-Zoho ghosts).
+  if (!load('inexcel_flagged_v11', false)) {
+    var de = getDeals();
+    var changed = 0;
+    de.forEach(function(d) {
+      var inX = !d.zohoId; // ghosts came from Excel
+      if (!inX) {
+        for (var i = 0; i < SEED_DEALS.length; i++) { if (sameDeal(d, SEED_DEALS[i])) { inX = true; break; } }
+      }
+      if (d.inExcel !== inX) { d.inExcel = inX; changed++; }
+    });
+    if (changed > 0) setDeals(de);
+    save('inexcel_flagged_v11', true);
+    console.log('In-Excel flag v11: ' + de.filter(function(d){return d.inExcel;}).length + ' deals marked as in Don\'s Excel.');
   }
   if (load('seed_merged_v7', false)) return;
   var deals  = getDeals();
@@ -1032,8 +1057,16 @@ function autoApplySeedOnce() {
   console.log('Seed merge v7: ' + ghostsMerged + ' ghosts merged, ' + seedApplied + ' seed applied, ' + newGhosts + ' Excel-only ghosts, ' + ownersFilled + ' owners backfilled from account siblings.');
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
+// Margin resolution (Michael's model):
+//   1. Manual override (Don types it in the playground)
+//   2. Zoho commercial-design target margin  ← HOOK: deal.zohoMargin (filled once the
+//      Zoho margin field API name is wired into the sync). Today usually undefined.
+//   3. Super-Deal rule (if flagged)
+//   4. Stage standard margin
+//   5. Default
 function getMarginFor(deal) {
   if (deal.marginOverride !== undefined && deal.marginOverride !== null && deal.marginOverride !== '') return parseFloat(deal.marginOverride);
+  if (deal.zohoMargin !== undefined && deal.zohoMargin !== null && deal.zohoMargin !== '' && parseFloat(deal.zohoMargin) > 0) return parseFloat(deal.zohoMargin);
   var rules = getMarginRules();
   if (isSuperDeal(deal)) { var r = rules.find(function(r){ return r.dealType === 'Aureum / Super-Deal'; }); if (r) return r.margin; }
   var match = rules.find(function(r) { return r.dealType === deal.stage; });
@@ -1041,8 +1074,19 @@ function getMarginFor(deal) {
   var fb = rules.find(function(r) { return r.dealType === 'Default'; });
   return fb ? fb.margin : 0.35;
 }
+// True when a deal that SHOULD have a real target margin (Commercial Design+) is falling
+// back to a stage default — i.e. neither a manual override nor a Zoho target margin is set.
+function marginIsMissing(deal) {
+  if (MARGIN_EXPECTED_STAGES.indexOf(deal.stage) < 0) return false;
+  var hasManual = deal.marginOverride !== undefined && deal.marginOverride !== null && deal.marginOverride !== '';
+  var hasZoho   = deal.zohoMargin !== undefined && deal.zohoMargin !== null && deal.zohoMargin !== '' && parseFloat(deal.zohoMargin) > 0;
+  return !hasManual && !hasZoho;
+}
 function getWinRateFor(deal) {
   if (deal.winRateAdj !== undefined && deal.winRateAdj !== null && deal.winRateAdj !== '') return parseFloat(deal.winRateAdj);
+  var rules = getMarginRules();
+  var match = rules.find(function(r){ return r.dealType === deal.stage; });
+  if (match && match.winRate !== undefined) return match.winRate;
   var s = STAGES.find(function(s){ return s.id === deal.stage; });
   return s ? s.winRate : 0.3;
 }
@@ -1238,6 +1282,7 @@ function renderAureumGrid() {
     if (!passMulti('aureum', 'bde',    d.bde))    return false;
     if (f.forecastOnly && !d.inForecast) return false;
     if (f.superOnly    && !isSuperDeal(d)) return false;
+    if (f.excelOnly    && !d.inExcel) return false;
     return true;
   });
   // Account-level traceability: group all deals of the same client together (then by deal name)
@@ -1252,7 +1297,7 @@ function renderAureumGrid() {
   var html = '';
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">All deals from Zoho · Check <b>Forecast</b> to include in 3 mo. revenue · Check <b>Super</b> to flag for Super-Deals</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
-  html += '<button class="btn btn-gold btn-sm" onclick="openDealModal(null)">+ New Deal</button></div></div>';
+  html += '<button class="btn btn-gold btn-sm" onclick="newDealInZoho()">+ New Deal (in Zoho)</button></div></div>';
 
   html += '<div class="toolbar">';
   html += searchBox('aureum', 'Search deal, client, BDE…');
@@ -1261,6 +1306,7 @@ function renderAureumGrid() {
   html += msDropdown('aureum', 'status', 'Status', Object.keys(STATUS_PILL));
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.forecastOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').forecastOnly=this.checked; renderAureumGrid()"> Forecast only</label>';
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.superOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').superOnly=this.checked; renderAureumGrid()"> Super-deals only</label>';
+  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.excelOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').excelOnly=this.checked; renderAureumGrid()"> In Don\'s Excel</label>';
   html += '<span class="spacer"></span>';
   html += '<span style="font-size:11px;color:var(--muted)">Showing ' + filtered.length + ' / ' + deals.length + ' deals</span>';
   html += '</div>';
@@ -1268,11 +1314,13 @@ function renderAureumGrid() {
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
   html += '<th title="Include this deal in the 3 mo. revenue tab">Fcst</th>';
   html += '<th title="Flag this deal as a Super-Deal / Aureum">Super</th>';
+  html += '<th title="✓ = this deal is in Don\'s Excel forecast">Excel</th>';
   html += '<th>BDE</th><th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th>Loc</th><th>1st Bill.</th>';
+  html += '<th class="num" title="MRR from Zoho — read-only, auto-filled by Sync">MRR Zoho</th>';
+  html += '<th class="num" title="MRR Aureum — Don\'s manual override. Used when MRR Zoho is empty.">MRR Aureum</th>';
+  html += '<th class="num">Win %</th><th class="num">Margin %</th>';
   months.forEach(function(m){ html += '<th class="num">' + monthLabel(m) + '</th>'; });
-  html += '<th class="num" title="MRR from Zoho — read-only, auto-filled by Sync">MRR Zoho ($)</th>';
-  html += '<th class="num" title="MRR Aureum — Don\'s manual override. Used when MRR Zoho is empty.">MRR Aureum ($)</th>';
-  html += '<th class="num">Win %</th><th class="num">Margin %</th><th></th>';
+  html += '<th></th>';
   html += '</tr></thead><tbody>';
 
   filtered.forEach(function(d) {
@@ -1281,6 +1329,7 @@ function renderAureumGrid() {
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast  ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.isSuperDeal ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'isSuperDeal\')" title="Mark as Super-Deal"></td>';
+    html += '<td style="text-align:center">' + (d.inExcel ? '<span style="color:var(--success)" title="In Don\'s Excel forecast">&#10003;</span>' : '<span style="color:var(--border)" title="Not in Don\'s Excel">–</span>') + '</td>';
     html += bdeCell(d);
     html += '<td>' + statusPill(d.status) + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
@@ -1289,6 +1338,12 @@ function renderAureumGrid() {
     html += '<td style="color:var(--muted)">' + esc(d.location) + '</td>';
     html += '<td style="color:var(--muted)">' + esc(d.firstBillableMonth) + '</td>';
     var pricePerH = pricePerHead(d);
+    var zohoActive = (d.pricing && d.pricing > 0);
+    html += '<td class="num" style="background:' + (zohoActive ? '#E8F5E9' : 'transparent') + ';color:var(--muted);font-variant-numeric:tabular-nums" title="' + (zohoActive ? 'Zoho value — winning the calculation' : 'Empty in Zoho — Aureum wins') + '">' + (zohoActive ? fmt$k(d.pricing) : '—') + '</td>';
+    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.mrrAureum || '') + '" onchange="updateDealField(' + dealIdx + ', \'mrrAureum\', this.value)" title="Don\'s manual MRR. Used when MRR Zoho is empty." placeholder="0"></td>';
+    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
+    var mMiss = marginIsMissing(d);
+    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getMarginFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'marginOverride\', this.value/100)"' + (mMiss ? ' style="border-color:var(--amber);background:#fff8e1"' : '') + ' title="' + (mMiss ? 'No target margin set — using stage default. Set a target in Zoho or here.' : 'Margin %') + '">' + (mMiss ? '' : '') + '</td>';
     months.forEach(function(m) {
       var hc = (d.monthlyHC || {})[m] || 0;
       var cls = '';
@@ -1299,12 +1354,7 @@ function renderAureumGrid() {
       }
       html += '<td class="cell-hc ' + cls + '"><input type="number" min="0" value="' + (hc || '') + '" onchange="updateDealHC(' + dealIdx + ', \'' + m + '\', this.value)" placeholder="0"></td>';
     });
-    var zohoActive = (d.pricing && d.pricing > 0);
-    html += '<td class="num" style="background:' + (zohoActive ? '#E8F5E9' : 'transparent') + ';color:var(--muted);font-variant-numeric:tabular-nums" title="' + (zohoActive ? 'Zoho value — winning the calculation' : 'Empty in Zoho — Aureum wins') + '">' + (zohoActive ? fmt$k(d.pricing) : '—') + '</td>';
-    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.mrrAureum || '') + '" onchange="updateDealField(' + dealIdx + ', \'mrrAureum\', this.value)" title="Don\'s manual MRR. Used when MRR Zoho is empty." placeholder="0"></td>';
-    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
-    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getMarginFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'marginOverride\', this.value/100)"></td>';
-    html += '<td><button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')">&#9998;</button></td>';
+    html += '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')" title="Edit">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + dealIdx + ')" title="Delete this deal from the dashboard">&#10005;</button></td>';
     html += '</tr>';
   });
 
@@ -1312,9 +1362,9 @@ function renderAureumGrid() {
   var tot = { hc: months.map(function(){ return 0; }) };
   filtered.forEach(function(d){ months.forEach(function(m, i){ tot.hc[i] += (d.monthlyHC || {})[m] || 0; }); });
   html += '<tr style="background:var(--navy);color:white;font-weight:700">';
-  html += '<td colspan="9" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
+  html += '<td colspan="14" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
   tot.hc.forEach(function(v) { html += '<td class="num" style="color:white">' + v + '</td>'; });
-  html += '<td colspan="5"></td></tr>';
+  html += '<td></td></tr>';
 
   html += '</tbody></table></div></div>';
 
@@ -1393,6 +1443,21 @@ function saveDeal(idx) {
 function deleteDeal(idx) {
   if (!confirm('Delete this deal?')) return;
   var deals = getDeals(); deals.splice(idx, 1); setDeals(deals); closeModal(); renderTab();
+}
+// Inline "kill" a row (e.g. a stale/renamed duplicate not in Zoho)
+function killDeal(idx) {
+  var deals = getDeals();
+  var d = deals[idx]; if (!d) return;
+  var note = d.zohoId ? '\n\nNote: this deal IS in Zoho — deleting here only removes it from the dashboard, not from Zoho. The next Sync will bring it back unless you remove/close it in Zoho.' : '';
+  if (!confirm('Delete "' + (d.dealName || 'this deal') + '" from the dashboard?' + note)) return;
+  deals.splice(idx, 1); setDeals(deals); renderTab();
+}
+// New deals are always created in Zoho (source of truth), then synced in.
+function newDealInZoho() {
+  var url = 'https://crm.zoho.' + ZOHO_DC + '/crm/tab/Potentials/create';
+  if (confirm('New deals are created in Zoho (the source of truth), then pulled in via Sync.\n\nOpen Zoho to create the deal now?')) {
+    window.open(url, '_blank', 'noopener');
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1864,36 +1929,41 @@ function renderActiveCustomers() {
 function renderMarginRules() {
   var rules = getMarginRules();
   var html = '';
-  html += '<div class="page-title"><div><h1>Margin Rules</h1><div class="sub">Default margin % by deal type. Per-deal overrides take precedence. Used by 3 mo. revenue and cash-flow margin $.</div></div>';
+  html += '<div class="page-title"><div><h1>Stage Rules — Win % &amp; Margin %</h1><div class="sub">Standard win rate and margin per stage. As a deal progresses, both can evolve. Per-deal overrides &amp; Zoho target margin take precedence.</div></div>';
   html += '<div><button class="btn btn-ghost btn-sm" onclick="resetMarginRules()">Reset to Defaults</button> <button class="btn btn-gold btn-sm" onclick="openMarginRuleModal(null)">+ Add Rule</button></div></div>';
-  html += '<div class="card"><table><thead><tr><th>Deal Type / Stage</th><th class="num">Default Margin %</th><th>Note</th><th></th></tr></thead><tbody>';
+  html += '<div class="card"><table><thead><tr><th>Stage / Deal Type</th><th class="num">Win %</th><th class="num">Margin %</th><th>Note</th><th></th></tr></thead><tbody>';
   rules.forEach(function(r, i) {
     html += '<tr><td><b>' + esc(r.dealType) + '</b></td>';
-    html += '<td class="num"><input type="number" min="0" max="100" step="1" value="' + Math.round(r.margin * 100) + '" onchange="updateMarginRule(' + i + ', this.value/100)" style="width:70px;padding:3px 7px;text-align:right;border:1px solid var(--border);border-radius:4px;font-family:inherit"></td>';
+    html += '<td class="num"><input type="number" min="0" max="100" step="1" value="' + (r.winRate !== undefined ? Math.round(r.winRate * 100) : '') + '" onchange="updateMarginRule(' + i + ', \'winRate\', this.value/100)" style="width:64px;padding:3px 7px;text-align:right;border:1px solid var(--border);border-radius:4px;font-family:inherit" placeholder="—"></td>';
+    html += '<td class="num"><input type="number" min="0" max="100" step="1" value="' + Math.round(r.margin * 100) + '" onchange="updateMarginRule(' + i + ', \'margin\', this.value/100)" style="width:64px;padding:3px 7px;text-align:right;border:1px solid var(--border);border-radius:4px;font-family:inherit"></td>';
     html += '<td style="color:var(--muted);font-size:11.5px">' + esc(r.note || '') + '</td>';
     html += '<td><button class="btn btn-ghost btn-sm" onclick="openMarginRuleModal(' + i + ')">&#9998;</button></td></tr>';
   });
   html += '</tbody></table></div>';
-  html += '<div class="card"><div class="card-header"><span class="card-title">How margin is resolved per deal</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">How Win % and Margin % are resolved per deal</span></div>';
+  html += '<div style="font-size:12.5px;color:var(--muted);line-height:1.7"><b>Win %:</b> per-deal value (from Zoho probability or typed by hand) → this stage rule.<br><b>Margin %:</b></div>';
   html += '<ol style="font-size:12.5px;color:var(--muted);line-height:1.7;padding-left:20px">';
-  html += '<li><b>Per-deal override</b> — if the Margin % field on a deal is set, it wins.</li>';
-  html += '<li><b>Aureum / Super-Deal</b> — if total HC ≥ 50, the Super-Deal rule applies.</li>';
-  html += '<li><b>By Deal Stage</b> — looks up the rule matching the deal\'s current stage (e.g. <i>Pricing</i>, <i>Recruitment</i>).</li>';
-  html += '<li><b>Default</b> — fallback if nothing matched.</li>';
-  html += '</ol></div>';
+  html += '<li><b>Per-deal override</b> — the Margin % typed on a deal wins.</li>';
+  html += '<li><b>Zoho target margin</b> — the commercial-design target margin from Zoho <span style="color:var(--amber)">(wiring pending the Zoho field API name)</span>.</li>';
+  html += '<li><b>Super-Deal rule</b> — if flagged Super.</li>';
+  html += '<li><b>Stage rule</b> — the standard margin for the deal\'s stage.</li>';
+  html += '<li><b>Default</b> — fallback.</li>';
+  html += '</ol>';
+  html += '<div style="font-size:12.5px;color:var(--muted);margin-top:8px">Deals in Commercial Design or later that lack a real target margin show an <span style="color:var(--amber)">amber Margin %</span> in the grid — a cue to set the target in Zoho.</div></div>';
   document.getElementById('mainContent').innerHTML = html;
 }
-function updateMarginRule(idx, val) {
+function updateMarginRule(idx, field, val) {
   var rules = getMarginRules();
-  rules[idx].margin = parseFloat(val) || 0;
+  rules[idx][field] = parseFloat(val) || 0;
   setMarginRules(rules);
 }
 function openMarginRuleModal(idx) {
   var rules = getMarginRules();
-  var r = idx === null ? { dealType:'', margin: 0.35, note:'' } : rules[idx];
-  var html = '<h3>' + (idx === null ? 'Add Margin Rule' : 'Edit Margin Rule') + '</h3>';
-  html += '<div class="form-group"><label>Deal Type / Stage</label><input id="r_type" value="' + esc(r.dealType) + '" placeholder="e.g. Pricing"></div>';
-  html += '<div class="form-group"><label>Margin %</label><input type="number" min="0" max="100" step="1" id="r_margin" value="' + Math.round(r.margin * 100) + '"></div>';
+  var r = idx === null ? { dealType:'', winRate: 0.30, margin: 0.35, note:'' } : rules[idx];
+  var html = '<h3>' + (idx === null ? 'Add Stage Rule' : 'Edit Stage Rule') + '</h3>';
+  html += '<div class="form-group"><label>Stage / Deal Type</label><input id="r_type" value="' + esc(r.dealType) + '" placeholder="e.g. Pricing"></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Win %</label><input type="number" min="0" max="100" step="1" id="r_win" value="' + (r.winRate !== undefined ? Math.round(r.winRate * 100) : '') + '"></div>';
+  html += '<div class="form-group"><label>Margin %</label><input type="number" min="0" max="100" step="1" id="r_margin" value="' + Math.round(r.margin * 100) + '"></div></div>';
   html += '<div class="form-group"><label>Note</label><textarea id="r_note">' + esc(r.note || '') + '</textarea></div>';
   html += '<div class="modal-actions">';
   if (idx !== null) html += '<button class="btn btn-danger" onclick="deleteMarginRule(' + idx + ')">Delete</button>';
@@ -1903,7 +1973,8 @@ function openMarginRuleModal(idx) {
 }
 function saveMarginRule(idx) {
   var rules = getMarginRules();
-  var r = { dealType: document.getElementById('r_type').value.trim(), margin: (parseFloat(document.getElementById('r_margin').value) || 0) / 100, note: document.getElementById('r_note').value };
+  var winV = document.getElementById('r_win').value;
+  var r = { dealType: document.getElementById('r_type').value.trim(), winRate: winV === '' ? undefined : (parseFloat(winV) || 0) / 100, margin: (parseFloat(document.getElementById('r_margin').value) || 0) / 100, note: document.getElementById('r_note').value };
   if (idx === null) rules.push(r); else rules[idx] = r;
   setMarginRules(rules);
   closeModal();
