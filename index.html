@@ -899,10 +899,21 @@ function clientSimilar(a, b) {
   if (nb.length >= 3 && na.indexOf(nb) >= 0) return true;
   return false;
 }
-// True if two deals can be considered the same engagement (name + client both match).
-// If either side lacks a client, falls back to name match only.
+// True if two deals are the same engagement. Names must be similar. The client check
+// normally guards against cross-client false matches, BUT a strong name signal overrides
+// it — handles cases like Excel client "Zilliant" vs Zoho account "Madison Dearborn
+// Partners" where the deal is named "MDP – [Zilliant]".
 function sameDeal(a, b) {
   if (!nameSimilar(a.dealName, b.dealName)) return false;
+  var na = normDealName(a.dealName), nb = normDealName(b.dealName);
+  var aTok = na.split(' ').filter(function(t){ return t.length > 2; });
+  // Strong override 1: exact normalized deal name with ≥2 meaningful tokens
+  if (na === nb && aTok.length >= 2) return true;
+  // Strong override 2: one side's client name appears inside the other side's deal name
+  var ca = normDealName(a.client), cb = normDealName(b.client);
+  if (ca && ca.length >= 4 && nb.indexOf(ca) >= 0) return true;
+  if (cb && cb.length >= 4 && na.indexOf(cb) >= 0) return true;
+  // Default: require client similarity to avoid cross-client false positives
   if (a.client && b.client) return clientSimilar(a.client, b.client);
   return true;
 }
@@ -958,7 +969,7 @@ function mergeSeedData(dst, src) {
 function autoApplySeedOnce() {
   // v9: reconcile Excel ghosts against the live Zoho deals (improved fuzzy matching),
   // collapsing duplicates so each row reflects Zoho's stage/owner/link. Then re-backfill owners.
-  if (!load('reconciled_v9', false)) {
+  if (!load('reconciled_v10', false)) {
     var dv = getDeals();
     var zoho = dv.filter(function(d){ return d.zohoId; });
     var ghosts = dv.filter(function(d){ return !d.zohoId; });
@@ -966,8 +977,8 @@ function autoApplySeedOnce() {
     var all = zoho.concat(r.kept);
     backfillOwners(all);
     setDeals(all);
-    save('reconciled_v9', true);
-    console.log('Reconcile v9: ' + r.merged + ' ghosts merged into Zoho deals & removed, ' + r.flagged + ' kept & flagged not-in-Zoho.');
+    save('reconciled_v10', true);
+    console.log('Reconcile v10: ' + r.merged + ' ghosts merged into Zoho deals & removed, ' + r.flagged + ' kept & flagged not-in-Zoho.');
   }
   // Independent step: backfill owners on every load-once-per-version (runs even if v7 done)
   if (!load('owners_backfilled_v8', false)) {
