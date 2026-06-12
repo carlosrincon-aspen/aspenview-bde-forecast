@@ -309,6 +309,7 @@ var TABS = [
   { id: 'mrr',         label: 'MRR Forecast 2026' },
   { id: 'active',      label: 'Active Customers - Actuals' },
   { id: 'margin',      label: 'Stage Rules' },
+  { id: 'cleanup',     label: 'Cleanup' },
   { id: 'settings',    label: 'Settings' }
 ];
 
@@ -964,6 +965,30 @@ function reconcileGhosts(zohoDeals, ghosts) {
   });
   return { kept: kept, merged: merged, flagged: flagged };
 }
+// Similarity score 0–1 between two deal names (token overlap with prefix matching).
+function nameScore(a, b) {
+  var na = normDealName(a), nb = normDealName(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  var ta = na.split(' ').filter(function(t){ return t.length > 2; });
+  var tb = nb.split(' ').filter(function(t){ return t.length > 2; });
+  if (!ta.length || !tb.length) return 0;
+  var common = 0;
+  ta.forEach(function(x){ if (tb.some(function(y){ return tokMatch(x, y); })) common++; });
+  var score = common / Math.max(ta.length, tb.length);
+  // small boost when clients also align
+  if (a.client && b.client && clientSimilar(a.client, b.client)) score = Math.min(1, score + 0.15);
+  return score;
+}
+// Best matching Zoho deal for a ghost, by name score. Returns { deal, idx, score } or null.
+function bestZohoCandidate(ghost, zohoDeals, deals) {
+  var best = null;
+  zohoDeals.forEach(function(z) {
+    var sc = nameScore({ dealName: ghost.dealName, client: ghost.client }, { dealName: z.dealName, client: z.client });
+    if (!best || sc > best.score) best = { deal: z, idx: deals.indexOf(z), score: sc };
+  });
+  return best;
+}
 // Every deal must have an owner. For deals with no BDE, inherit the majority owner
 // among same-account siblings (deals whose client matches via clientSimilar).
 function backfillOwners(deals) {
@@ -1229,6 +1254,7 @@ function renderTab() {
   if (currentTab === 'mrr')         return renderMRRForecast();
   if (currentTab === 'active')      return renderActiveCustomers();
   if (currentTab === 'margin')      return renderMarginRules();
+  if (currentTab === 'cleanup')     return renderCleanup();
   if (currentTab === 'settings')    return renderSettings();
 }
 
@@ -2025,6 +2051,74 @@ function deleteMarginRule(idx) {
 function resetMarginRules() {
   if (!confirm('Reset margin rules to defaults?')) return;
   setMarginRules(DEFAULT_MARGIN_RULES);
+  renderTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: CLEANUP — reconcile "not in Zoho" deals with their best Zoho candidate
+// ─────────────────────────────────────────────────────────────────────────────
+function renderCleanup() {
+  var deals = getDeals();
+  var zohoDeals = deals.filter(function(d){ return d.zohoId; });
+  var ghosts = deals.filter(function(d){ return !d.zohoId; });
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Cleanup</h1><div class="sub">Deals not linked to Zoho, with their closest Zoho match. Merge duplicates, kill stale rows, or create the real deal in Zoho.</div></div>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="syncZohoDeals()">↻ Sync from Zoho</button></div>';
+
+  html += '<div class="stat-grid">';
+  html += statCard('Not in Zoho', ghosts.length, 'Excel-only / unmatched deals', ghosts.length ? 'gold' : 'good');
+  html += statCard('Linked to Zoho', zohoDeals.length, 'Clean rows with a Zoho link', 'good');
+  html += statCard('Total deals', deals.length, 'Across the platform', 'aureum');
+  html += '</div>';
+
+  if (!ghosts.length) {
+    html += '<div class="card empty">🎉 Every deal is linked to Zoho — nothing to clean up.</div>';
+    document.getElementById('mainContent').innerHTML = html;
+    return;
+  }
+
+  // Sort ghosts by best-candidate score descending (most likely matches first)
+  var rows = ghosts.map(function(g) {
+    return { ghost: g, gIdx: deals.indexOf(g), cand: bestZohoCandidate(g, zohoDeals, deals) };
+  }).sort(function(a, b) { return (b.cand ? b.cand.score : 0) - (a.cand ? a.cand.score : 0); });
+
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl" style="min-width:1100px"><thead><tr>';
+  html += '<th>Not-in-Zoho Deal</th><th>Client</th><th>Stage</th><th class="num">Match %</th><th>Closest Zoho Deal</th><th>Zoho Client</th><th>Actions</th>';
+  html += '</tr></thead><tbody>';
+  rows.forEach(function(r) {
+    var g = r.ghost, c = r.cand;
+    var pct = c ? Math.round(c.score * 100) : 0;
+    var pctCls = pct >= 80 ? 'pill-green' : pct >= 55 ? 'pill-gold' : 'pill-red';
+    html += '<tr>';
+    html += '<td><b>' + esc(g.dealName) + '</b></td>';
+    html += '<td>' + esc(g.client) + '</td>';
+    html += '<td>' + stagePill(g.stage) + '</td>';
+    html += '<td class="num">' + (c ? '<span class="pill ' + pctCls + '">' + pct + '%</span>' : '—') + '</td>';
+    if (c && c.deal) {
+      var url = dealZohoUrl(c.deal);
+      html += '<td>' + (url ? '<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--navy);border-bottom:1px dashed var(--gold);text-decoration:none">' + esc(c.deal.dealName) + ' ↗</a>' : esc(c.deal.dealName)) + '</td>';
+      html += '<td style="color:var(--muted)">' + esc(c.deal.client) + '</td>';
+      html += '<td style="white-space:nowrap"><button class="btn btn-gold btn-sm" onclick="mergeCleanup(' + r.gIdx + ',' + c.idx + ')" title="Merge this row into the Zoho deal — keeps Zoho stage/owner/link plus this row\'s HC/MRR/flags">Merge →</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + r.gIdx + ')" title="Delete this stale row">&#10005;</button></td>';
+    } else {
+      html += '<td colspan="2" style="color:var(--muted)">No candidate found</td>';
+      html += '<td><button class="btn btn-danger btn-sm" onclick="killDeal(' + r.gIdx + ')">&#10005; Kill</button></td>';
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table></div></div>';
+  html += '<div class="legend"><span style="font-style:italic"><b>Merge →</b> collapses the Excel row into its Zoho deal (recommended when Match % is high). <b>✕</b> deletes a stale/duplicate row. Leave it alone if it\'s a real deal that should be created in Zoho first.</span></div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+function mergeCleanup(ghostIdx, candidateIdx) {
+  var deals = getDeals();
+  var g = deals[ghostIdx], c = deals[candidateIdx];
+  if (!g || !c) return;
+  if (!confirm('Merge "' + (g.dealName||'') + '" into the Zoho deal "' + (c.dealName||'') + '"?\n\nThe Zoho deal keeps its stage/owner/link; this row\'s HC, MRR Aureum and Forecast/Super flags fill any gaps. The Excel row is then removed.')) return;
+  mergeSeedData(c, g);
+  deals.splice(ghostIdx, 1);
+  setDeals(deals);
   renderTab();
 }
 
