@@ -274,6 +274,10 @@ var ZOHO_CLIENT_ID  = '1000.IDIKQZQT1WD4JUK97IYAFVWKEFSAPC';
 var ZOHO_REDIRECT   = window.location.origin + window.location.pathname;
 var ZOHO_API        = 'https://www.zohoapis.com/crm/v3';
 var ZOHO_DC         = 'com'; // Zoho data center: 'com' (US), 'eu', 'in', 'au', 'jp'
+// Zoho Deals field API names. MRR Zoho comes from the MRR field (NOT Amount, which is often blank).
+var ZOHO_MRR_FIELD    = 'MRR';                // monthly recurring revenue per deal
+var ZOHO_MARGIN_FIELD = 'Target_Margin_Band'; // commercial-design target margin
+var ZOHO_BASE_FIELDS  = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description';
 
 // Exact Zoho Deal Stage API Names that should appear in the dashboard.
 // Edit this list if your Zoho stage names change.
@@ -630,20 +634,31 @@ function zohoGet(token, path, cb) {
 }
 // Paginate through ALL Zoho deals across pages of 200
 function fetchAllZohoDeals(token, cb) {
-  var FIELDS = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description,Target_Margin_Band';
+  var EXTRA = [ZOHO_MRR_FIELD, ZOHO_MARGIN_FIELD].filter(Boolean).join(',');
+  var FIELDS_FULL = ZOHO_BASE_FIELDS + (EXTRA ? ',' + EXTRA : '');
   var all = [];
-  function fetchPage(page) {
-    zohoGet(token, '/Deals?fields=' + FIELDS + '&per_page=200&page=' + page, function(err, d) {
-      if (err) return cb(err);
+  // Resilient: if a custom field API name is wrong, Zoho rejects the whole query — so on a
+  // page-1 field error we retry with base fields only (sync still works; extras just stay blank).
+  function fetchPage(page, fields, triedFallback) {
+    zohoGet(token, '/Deals?fields=' + fields + '&per_page=200&page=' + page, function(err, d) {
+      if (err) {
+        if (!triedFallback && page === 1 && /invalid|not present|no such|field/i.test(err.message || '')) {
+          console.warn('Deals fetch failed with extra fields (' + EXTRA + '); retrying with base fields. ' + err.message);
+          window._zohoFieldWarning = 'Could not read fields: ' + EXTRA + '. Check the API names in Settings. Sync used base fields only.';
+          return fetchPage(1, ZOHO_BASE_FIELDS, true);
+        }
+        return cb(err);
+      }
       var batch = (d && d.data) || [];
       all = all.concat(batch);
       var moreRecords = d && d.info && d.info.more_records;
       if (!moreRecords || batch.length === 0) return cb(null, all);
       if (page >= 50) return cb(null, all); // safety stop at 10,000 deals
-      fetchPage(page + 1);
+      fetchPage(page + 1, fields, triedFallback);
     });
   }
-  fetchPage(1);
+  window._zohoFieldWarning = '';
+  fetchPage(1, FIELDS_FULL, false);
 }
 
 // Paginate the Accounts module and build a map: normalized account name → Account_Status.
@@ -702,7 +717,9 @@ function syncZohoDeals() {
       var seedSum = sumMonths(seedHc);
       var localHc = p.monthlyHC || {};
       var hasLocalHc = Object.keys(localHc).length > 0;
-      var zohoAmount = parseFloat(r.Amount) || 0;
+      // MRR Zoho: the MRR field is the real monthly recurring revenue. Amount is usually blank.
+      var zohoMRRfield = parseFloat(r[ZOHO_MRR_FIELD]) || 0;
+      var zohoAmount = zohoMRRfield > 0 ? zohoMRRfield : (parseFloat(r.Amount) || 0);
       var zohoProb   = (r.Probability !== undefined && r.Probability !== null) ? (parseFloat(r.Probability) || 0) / 100 : null;
       var acctName   = (r.Account_Name && r.Account_Name.name) || p.client || (seed && seed.client) || '';
       var zohoStatus = statusByAccount[normDealName(acctName)] || '';  // Account_Status from Zoho Accounts
@@ -733,8 +750,8 @@ function syncZohoDeals() {
         isSuperDeal:           prior ? !!p.isSuperDeal : (seed ? !!seed.isSuperDeal : false),
         inExcel:               !!seed || !!(prior && prior.inExcel),  // matched Don's Excel seed
         // Zoho commercial-design target margin (Target_Margin_Band). Source of truth for margin.
-        zohoMargin:            parseMarginBand(r.Target_Margin_Band),
-        zohoMarginBand:        (r.Target_Margin_Band !== undefined && r.Target_Margin_Band !== null) ? String(r.Target_Margin_Band) : '',
+        zohoMargin:            parseMarginBand(r[ZOHO_MARGIN_FIELD]),
+        zohoMarginBand:        (r[ZOHO_MARGIN_FIELD] !== undefined && r[ZOHO_MARGIN_FIELD] !== null) ? String(r[ZOHO_MARGIN_FIELD]) : '',
         marginOverride:        p.marginOverride
       };
     });
@@ -757,7 +774,8 @@ function syncZohoDeals() {
     setDeals(finalDeals);
     save('last_zoho_sync', new Date().toISOString());
     renderTab();
-    alert('Zoho sync complete: ' + mapped.length + ' from Zoho + ' + rec.kept.length + ' not-in-Zoho = ' + finalDeals.length + ' total. ' + rec.merged + ' duplicates reconciled.');
+    var warn = window._zohoFieldWarning ? '\n\n⚠ ' + window._zohoFieldWarning : '';
+    alert('Zoho sync complete: ' + mapped.length + ' from Zoho + ' + rec.kept.length + ' not-in-Zoho = ' + finalDeals.length + ' total. ' + rec.merged + ' duplicates reconciled.' + warn);
   });
   });
 }
