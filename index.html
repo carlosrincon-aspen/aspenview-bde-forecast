@@ -611,7 +611,7 @@ function connectZoho() {
   }
   var url = 'https://accounts.zoho.com/oauth/v2/auth?response_type=token' +
     '&client_id=' + ZOHO_CLIENT_ID +
-    '&scope=' + encodeURIComponent('ZohoCRM.modules.Deals.READ,ZohoCRM.modules.Accounts.READ') +
+    '&scope=' + encodeURIComponent('ZohoCRM.modules.Deals.READ,ZohoCRM.modules.Deals.WRITE,ZohoCRM.modules.Accounts.READ') +
     '&redirect_uri=' + encodeURIComponent(ZOHO_REDIRECT) +
     '&access_type=online';
   window.location.href = url;
@@ -638,6 +638,27 @@ function zohoGet(token, path, cb) {
     else cb(new Error(xhr.status + ': ' + xhr.responseText));
   };
   xhr.send();
+}
+// PATCH a single Zoho deal. payload = { Field_API_Name: value, ... }
+function zohoPatchDeal(token, dealId, payload, cb) {
+  var xhr = new XMLHttpRequest();
+  xhr.open('PATCH', ZOHO_API + '/Deals/' + encodeURIComponent(dealId), true);
+  xhr.setRequestHeader('Authorization', 'Zoho-oauthtoken ' + token);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState !== 4) return;
+    if (xhr.status >= 200 && xhr.status < 300) {
+      try {
+        var resp = JSON.parse(xhr.responseText);
+        var rec = resp && resp.data && resp.data[0];
+        // Zoho responds 200 but the record can still have a per-record failure (status:'error')
+        if (rec && rec.status === 'error') return cb(new Error((rec.code || 'ERROR') + ': ' + ((rec.message) || xhr.responseText)));
+        return cb(null, rec || resp);
+      } catch(e) { return cb(e); }
+    }
+    cb(new Error(xhr.status + ': ' + xhr.responseText));
+  };
+  xhr.send(JSON.stringify({ data: [payload] }));
 }
 // Paginate through ALL Zoho deals across pages of 200
 function fetchAllZohoDeals(token, cb) {
@@ -2137,18 +2158,82 @@ function revertPlayground(idx) {
   setDeals(deals);
   renderTab();
 }
+// Push approved playground edits back to Zoho via PATCH /Deals/{id}.
+// Requires ZohoCRM.modules.Deals.WRITE scope on the OAuth app + the user re-authorized.
+// If scope is missing, Zoho returns 401/INVALID_OAUTH/OAUTH_SCOPE_MISMATCH and we surface clearly.
 function pushApprovedToZoho() {
+  var token = getZohoToken();
+  if (!token) { alert('Connect Zoho first (click the Zoho pill in the header).'); return; }
   var deals = getDeals();
   var approved = deals.filter(function(d){ return d.approved && d.zohoId && dealHasPlaygroundEdits(d); });
   if (!approved.length) { alert('No approved deals with pending changes to push.'); return; }
-  var msg = 'Push ' + approved.length + ' approved deal(s) back to Zoho?\n\n';
-  msg += '⚠ This requires WRITE scope on Zoho CRM (currently the integration is READ-only). ';
-  msg += 'Coordinate with the Zoho admin to:\n';
-  msg += '  1. Grant the OAuth app ZohoCRM.modules.Deals.WRITE scope\n';
-  msg += '  2. Re-authorize the connection here\n';
-  msg += '  3. Confirm field mappings (Amount/MRR, Probability, Target_Margin_Band)\n\n';
-  msg += 'Once those are in place, this button will PATCH each approved deal in Zoho.\n\nNo data is being sent yet.';
-  alert(msg);
+
+  var preview = approved.slice(0, 5).map(function(d){
+    var diff = playgroundDiff(d);
+    var bits = [];
+    if (diff.hc)     bits.push('HC ' + diff.hc.zoho + '→' + diff.hc.play);
+    if (diff.mrr)    bits.push('MRR ' + fmt$k(diff.mrr.zoho) + '→' + fmt$k(diff.mrr.play));
+    if (diff.win)    bits.push('Win ' + fmtPct(diff.win.zoho) + '→' + fmtPct(diff.win.play));
+    if (diff.margin) bits.push('Margin ' + (diff.margin.zoho !== null ? fmtPct(diff.margin.zoho) : '—') + '→' + fmtPct(diff.margin.play));
+    return '  • ' + d.dealName + ': ' + bits.join(', ');
+  }).join('\n');
+  var more = approved.length > 5 ? '\n  ... and ' + (approved.length - 5) + ' more' : '';
+
+  if (!confirm('Push ' + approved.length + ' approved deal(s) to Zoho?\n\n' + preview + more + '\n\nThis will UPDATE the records in Zoho CRM (write operation).')) return;
+
+  var btn = document.querySelectorAll('.btn-gold');
+  // Disable all gold buttons during push
+  var pushBtn = null;
+  for (var i = 0; i < btn.length; i++) { if (btn[i].textContent.indexOf('Push approved') >= 0) { pushBtn = btn[i]; break; } }
+  if (pushBtn) { pushBtn.disabled = true; pushBtn.textContent = 'Pushing 0/' + approved.length + '…'; }
+
+  var pushed = 0, failed = 0, errors = [], done = 0;
+  approved.forEach(function(d) {
+    var diff = playgroundDiff(d);
+    var payload = {};
+    if (diff.hc)     payload[ZOHO_HC_FIELD]     = diff.hc.play;
+    if (diff.mrr)    payload[ZOHO_MRR_FIELD]    = diff.mrr.play;
+    if (diff.win)    payload.Probability         = Math.round(diff.win.play * 100);
+    if (diff.margin) payload[ZOHO_MARGIN_FIELD] = Math.round(diff.margin.play * 100) + '%';
+
+    zohoPatchDeal(token, d.zohoId, payload, function(err, _resp) {
+      done++;
+      if (err) {
+        failed++;
+        errors.push((d.dealName || d.zohoId) + ' — ' + err.message);
+      } else {
+        pushed++;
+        // Update snapshots to the new Zoho-side values so the diff clears.
+        if (diff.hc)     d.zoho_totalHC     = diff.hc.play;
+        if (diff.mrr)    d.pricing          = diff.mrr.play;
+        if (diff.win)    d.zoho_winRateAdj  = diff.win.play;
+        if (diff.margin) d.zohoMargin       = diff.margin.play;
+        d.approved = false; delete d.approvedBy;
+        d.pushedAt = new Date().toISOString();
+        d.pushedBy = (currentUser && currentUser.name) || '';
+      }
+      if (pushBtn) pushBtn.textContent = 'Pushing ' + done + '/' + approved.length + '…';
+      if (done === approved.length) {
+        setDeals(deals);
+        if (pushBtn) { pushBtn.disabled = false; pushBtn.textContent = '↗ Push approved to Zoho'; }
+        var msg = pushed + ' deal(s) updated in Zoho.';
+        if (failed) {
+          msg += '\n\n' + failed + ' failed:\n' + errors.slice(0, 5).join('\n');
+          if (errors.length > 5) msg += '\n…and ' + (errors.length - 5) + ' more';
+          if (/401|INVALID_TOKEN|OAUTH_SCOPE|INVALID_OAUTH|forbidden|403/i.test(errors.join(' '))) {
+            msg += '\n\n⚠ Looks like the Zoho OAuth app is missing the Deals.WRITE scope.\n' +
+                   '  1. Have the Zoho admin add ZohoCRM.modules.Deals.WRITE to the OAuth client at api-console.zoho.com.\n' +
+                   '  2. Click the Zoho pill in the header → Disconnect → Connect (you\'ll be asked to grant write access).\n' +
+                   '  3. Try Push again.';
+          } else if (/INVALID_DATA|MANDATORY_NOT_FOUND|invalid|not present|no such|field/i.test(errors.join(' '))) {
+            msg += '\n\n⚠ A field name may be wrong. Confirm the API names in Settings (MRR / Probability / Target_Margin_Band / Total_Headcount).';
+          }
+        }
+        alert(msg);
+        renderTab();
+      }
+    });
+  });
 }
 function renderPlayground() {
   var deals = getDeals();
