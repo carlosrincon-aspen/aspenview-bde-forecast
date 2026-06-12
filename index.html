@@ -277,6 +277,7 @@ var ZOHO_DC         = 'com'; // Zoho data center: 'com' (US), 'eu', 'in', 'au', 
 // Zoho Deals field API names. MRR Zoho comes from the MRR field (NOT Amount, which is often blank).
 var ZOHO_MRR_FIELD    = 'MRR';                // monthly recurring revenue per deal
 var ZOHO_MARGIN_FIELD = 'Target_Margin_Band'; // commercial-design target margin
+var ZOHO_HC_FIELD     = 'Total_Headcount';    // total headcount on the deal (single number in Zoho)
 var ZOHO_BASE_FIELDS  = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description';
 
 // Exact Zoho Deal Stage API Names that should appear in the dashboard.
@@ -640,7 +641,7 @@ function zohoGet(token, path, cb) {
 }
 // Paginate through ALL Zoho deals across pages of 200
 function fetchAllZohoDeals(token, cb) {
-  var EXTRA = [ZOHO_MRR_FIELD, ZOHO_MARGIN_FIELD].filter(Boolean).join(',');
+  var EXTRA = [ZOHO_MRR_FIELD, ZOHO_MARGIN_FIELD, ZOHO_HC_FIELD].filter(Boolean).join(',');
   var FIELDS_FULL = ZOHO_BASE_FIELDS + (EXTRA ? ',' + EXTRA : '');
   var all = [];
   // Resilient: if a custom field API name is wrong, Zoho rejects the whole query — so on a
@@ -760,6 +761,8 @@ function syncZohoDeals() {
         winRateAdj:            (zohoProb !== null && zohoProb > 0) ? zohoProb : ((p.winRateAdj !== undefined && p.winRateAdj > 0) ? p.winRateAdj : ((seed && seed.winRateAdj) || 0.5)),
         // Snapshot of Zoho's probability at this sync (for Playground diff vs current value)
         zoho_winRateAdj:       (zohoProb !== null) ? zohoProb : (p.zoho_winRateAdj !== undefined ? p.zoho_winRateAdj : null),
+        // Snapshot of Zoho's Total Headcount (single number) for Playground diff vs sum of monthly HC
+        zoho_totalHC:          (r[ZOHO_HC_FIELD] !== undefined && r[ZOHO_HC_FIELD] !== null && r[ZOHO_HC_FIELD] !== '') ? (parseFloat(r[ZOHO_HC_FIELD]) || 0) : (p.zoho_totalHC !== undefined ? p.zoho_totalHC : null),
         winRate:               p.winRate !== undefined ? p.winRate : ((seed && seed.winRate) || 0.5),
         // HC plan: local if any, else seed (Zoho doesn't track monthly HC)
         monthlyHC:             hasLocalHc ? localHc : (seedSum > 0 ? JSON.parse(JSON.stringify(seedHc)) : {}),
@@ -2085,7 +2088,13 @@ function resetMarginRules() {
 // Detect whether a deal has any manual override that differs from Zoho's snapshot.
 // Returns an object with per-field diffs (each can be null = no diff) plus a boolean any.
 function playgroundDiff(d) {
-  var diff = { mrr: null, win: null, margin: null, any: false };
+  var diff = { hc: null, mrr: null, win: null, margin: null, any: false };
+  // HC override: Zoho stores a single Total Headcount; the playground stores monthly HC. Compare totals.
+  var playHc = sumMonths(d.monthlyHC || {});
+  if (d.zoho_totalHC !== null && d.zoho_totalHC !== undefined && Math.abs(playHc - d.zoho_totalHC) > 0.5) {
+    diff.hc = { zoho: d.zoho_totalHC, play: playHc };
+    diff.any = true;
+  }
   // MRR override: user typed an mrrAureum that differs from the Zoho MRR (pricing).
   // Filling a gap (Zoho=0, Aureum>0) is NOT an override — it's just providing a value.
   if (d.mrrAureum > 0 && d.pricing > 0 && Math.abs(d.mrrAureum - d.pricing) > 0.5) {
@@ -2181,6 +2190,7 @@ function renderPlayground() {
     var idx = deals.indexOf(d);
     var diff = playgroundDiff(d);
     var changes = [];
+    if (diff.hc)     changes.push({ field:'Total HC',z: String(diff.hc.zoho),               p: String(diff.hc.play),               delta: (diff.hc.play - diff.hc.zoho >= 0 ? '+' : '') + (diff.hc.play - diff.hc.zoho) });
     if (diff.mrr)    changes.push({ field:'MRR',     z: fmt$k(diff.mrr.zoho),               p: fmt$k(diff.mrr.play),               delta: fmt$k(diff.mrr.play - diff.mrr.zoho) });
     if (diff.win)    changes.push({ field:'Win %',   z: fmtPct(diff.win.zoho),              p: fmtPct(diff.win.play),              delta: ((diff.win.play - diff.win.zoho) * 100).toFixed(0) + ' pp' });
     if (diff.margin) changes.push({ field:'Margin %',z: (diff.margin.zoho !== null ? fmtPct(diff.margin.zoho) : '—'), p: fmtPct(diff.margin.play), delta: (diff.margin.zoho !== null ? ((diff.margin.play - diff.margin.zoho) * 100).toFixed(0) + ' pp' : '—') });
