@@ -965,27 +965,32 @@ function reconcileGhosts(zohoDeals, ghosts) {
   });
   return { kept: kept, merged: merged, flagged: flagged };
 }
-// Similarity score 0–1 between two deal names (token overlap with prefix matching).
+// Similarity score 0–1 between two deals (compares dealName tokens; small boost if clients align).
 function nameScore(a, b) {
-  var na = normDealName(a), nb = normDealName(b);
+  var na = normDealName(a && a.dealName), nb = normDealName(b && b.dealName);
   if (!na || !nb) return 0;
-  if (na === nb) return 1;
-  var ta = na.split(' ').filter(function(t){ return t.length > 2; });
-  var tb = nb.split(' ').filter(function(t){ return t.length > 2; });
-  if (!ta.length || !tb.length) return 0;
-  var common = 0;
-  ta.forEach(function(x){ if (tb.some(function(y){ return tokMatch(x, y); })) common++; });
-  var score = common / Math.max(ta.length, tb.length);
-  // small boost when clients also align
-  if (a.client && b.client && clientSimilar(a.client, b.client)) score = Math.min(1, score + 0.15);
-  return score;
+  var base;
+  if (na === nb) base = 1;
+  else {
+    var ta = na.split(' ').filter(function(t){ return t.length > 2; });
+    var tb = nb.split(' ').filter(function(t){ return t.length > 2; });
+    if (!ta.length || !tb.length) return 0;
+    var common = 0;
+    ta.forEach(function(x){ if (tb.some(function(y){ return tokMatch(x, y); })) common++; });
+    base = common / Math.max(ta.length, tb.length);
+  }
+  if (a && b && a.client && b.client && clientSimilar(a.client, b.client)) base = Math.min(1, base + 0.15);
+  return base;
 }
-// Best matching Zoho deal for a ghost, by name score. Returns { deal, idx, score } or null.
+// Best matching Zoho deal for a ghost. Prefers deals in the SAME account (client similar),
+// then the closest name within that account; falls back to global best name match.
 function bestZohoCandidate(ghost, zohoDeals, deals) {
+  var sameAcct = zohoDeals.filter(function(z){ return ghost.client && z.client && clientSimilar(ghost.client, z.client); });
+  var pool = sameAcct.length ? sameAcct : zohoDeals;
   var best = null;
-  zohoDeals.forEach(function(z) {
-    var sc = nameScore({ dealName: ghost.dealName, client: ghost.client }, { dealName: z.dealName, client: z.client });
-    if (!best || sc > best.score) best = { deal: z, idx: deals.indexOf(z), score: sc };
+  pool.forEach(function(z) {
+    var sc = nameScore(ghost, z);
+    if (!best || sc > best.score) best = { deal: z, idx: deals.indexOf(z), score: sc, sameAccount: sameAcct.length > 0 };
   });
   return best;
 }
