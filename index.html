@@ -309,6 +309,7 @@ var TABS = [
   { id: 'mrr',         label: 'MRR Forecast 2026' },
   { id: 'active',      label: 'Active Customers - Actuals' },
   { id: 'margin',      label: 'Stage Rules' },
+  { id: 'playground',  label: 'Playground' },
   { id: 'cleanup',     label: 'Cleanup' },
   { id: 'settings',    label: 'Settings' }
 ];
@@ -757,6 +758,8 @@ function syncZohoDeals() {
         mrrAureum:             p.mrrAureum !== undefined ? p.mrrAureum : ((seed && seed.mrrAureum) || 0),
         // Win rate adjusted: Zoho's Probability > local edit > seed > default 0.5
         winRateAdj:            (zohoProb !== null && zohoProb > 0) ? zohoProb : ((p.winRateAdj !== undefined && p.winRateAdj > 0) ? p.winRateAdj : ((seed && seed.winRateAdj) || 0.5)),
+        // Snapshot of Zoho's probability at this sync (for Playground diff vs current value)
+        zoho_winRateAdj:       (zohoProb !== null) ? zohoProb : (p.zoho_winRateAdj !== undefined ? p.zoho_winRateAdj : null),
         winRate:               p.winRate !== undefined ? p.winRate : ((seed && seed.winRate) || 0.5),
         // HC plan: local if any, else seed (Zoho doesn't track monthly HC)
         monthlyHC:             hasLocalHc ? localHc : (seedSum > 0 ? JSON.parse(JSON.stringify(seedHc)) : {}),
@@ -1275,6 +1278,7 @@ function renderTab() {
   if (currentTab === 'mrr')         return renderMRRForecast();
   if (currentTab === 'active')      return renderActiveCustomers();
   if (currentTab === 'margin')      return renderMarginRules();
+  if (currentTab === 'playground')  return renderPlayground();
   if (currentTab === 'cleanup')     return renderCleanup();
   if (currentTab === 'settings')    return renderSettings();
 }
@@ -2073,6 +2077,138 @@ function resetMarginRules() {
   if (!confirm('Reset margin rules to defaults?')) return;
   setMarginRules(DEFAULT_MARGIN_RULES);
   renderTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: PLAYGROUND — Zoho (source of truth) vs Manual scenario, with Approve & Push flow
+// ─────────────────────────────────────────────────────────────────────────────
+// Detect whether a deal has any manual override that differs from Zoho's snapshot.
+// Returns an object with per-field diffs (each can be null = no diff) plus a boolean any.
+function playgroundDiff(d) {
+  var diff = { mrr: null, win: null, margin: null, any: false };
+  // MRR override: user typed an mrrAureum that differs from the Zoho MRR (pricing).
+  // Filling a gap (Zoho=0, Aureum>0) is NOT an override — it's just providing a value.
+  if (d.mrrAureum > 0 && d.pricing > 0 && Math.abs(d.mrrAureum - d.pricing) > 0.5) {
+    diff.mrr = { zoho: d.pricing, play: d.mrrAureum };
+    diff.any = true;
+  }
+  // Win Rate override: current winRateAdj differs from snapshot of Zoho probability.
+  if (d.zoho_winRateAdj !== null && d.zoho_winRateAdj !== undefined && d.winRateAdj !== undefined && Math.abs(d.winRateAdj - d.zoho_winRateAdj) > 0.005) {
+    diff.win = { zoho: d.zoho_winRateAdj, play: d.winRateAdj };
+    diff.any = true;
+  }
+  // Margin override: user typed a marginOverride that differs from Zoho's Target_Margin_Band.
+  if (d.marginOverride !== undefined && d.marginOverride !== null && d.marginOverride !== '') {
+    var ov = parseFloat(d.marginOverride);
+    var z = (d.zohoMargin !== undefined && d.zohoMargin !== null) ? parseFloat(d.zohoMargin) : null;
+    if (z === null || Math.abs(ov - z) > 0.005) {
+      diff.margin = { zoho: z, play: ov };
+      diff.any = true;
+    }
+  }
+  return diff;
+}
+function dealHasPlaygroundEdits(d) { return playgroundDiff(d).any; }
+function toggleApproved(idx) {
+  var deals = getDeals();
+  if (!deals[idx]) return;
+  deals[idx].approved = !deals[idx].approved;
+  if (deals[idx].approved) deals[idx].approvedBy = (currentUser && currentUser.name) || ''; else { delete deals[idx].approvedBy; }
+  setDeals(deals);
+  renderTab();
+}
+function revertPlayground(idx) {
+  var deals = getDeals();
+  var d = deals[idx]; if (!d) return;
+  if (!confirm('Revert this deal\'s playground edits and use Zoho values?\n\nThis clears MRR Aureum override, Margin Override, and resets Win % to Zoho\'s probability.')) return;
+  if (d.mrrAureum > 0 && d.pricing > 0) d.mrrAureum = 0;
+  d.marginOverride = undefined;
+  if (d.zoho_winRateAdj !== null && d.zoho_winRateAdj !== undefined) d.winRateAdj = d.zoho_winRateAdj;
+  d.approved = false; delete d.approvedBy;
+  setDeals(deals);
+  renderTab();
+}
+function pushApprovedToZoho() {
+  var deals = getDeals();
+  var approved = deals.filter(function(d){ return d.approved && d.zohoId && dealHasPlaygroundEdits(d); });
+  if (!approved.length) { alert('No approved deals with pending changes to push.'); return; }
+  var msg = 'Push ' + approved.length + ' approved deal(s) back to Zoho?\n\n';
+  msg += '⚠ This requires WRITE scope on Zoho CRM (currently the integration is READ-only). ';
+  msg += 'Coordinate with the Zoho admin to:\n';
+  msg += '  1. Grant the OAuth app ZohoCRM.modules.Deals.WRITE scope\n';
+  msg += '  2. Re-authorize the connection here\n';
+  msg += '  3. Confirm field mappings (Amount/MRR, Probability, Target_Margin_Band)\n\n';
+  msg += 'Once those are in place, this button will PATCH each approved deal in Zoho.\n\nNo data is being sent yet.';
+  alert(msg);
+}
+function renderPlayground() {
+  var deals = getDeals();
+  var edited = deals.filter(function(d){ return d.zohoId && dealHasPlaygroundEdits(d); });
+  var approvedCount = edited.filter(function(d){ return d.approved; }).length;
+  var pendingCount  = edited.length - approvedCount;
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Playground — Zoho vs Manual</h1><div class="sub">Zoho is the source of truth. Edit freely in Aureum; review your scenario here, approve what you want, then push it back to Zoho.</div></div>';
+  html += '<button class="btn btn-gold btn-sm" onclick="pushApprovedToZoho()" title="Push approved playground edits back to Zoho — needs Zoho WRITE scope">↗ Push approved to Zoho</button></div>';
+
+  html += '<div class="stat-grid">';
+  html += statCard('Deals with edits', edited.length, 'Differences vs Zoho', edited.length ? 'gold' : 'good');
+  html += statCard('Pending review',   pendingCount,  'Not approved yet', pendingCount ? 'gold' : 'good');
+  html += statCard('Approved (ready)', approvedCount, 'Will be pushed to Zoho', approvedCount ? 'good' : 'aureum');
+  html += '</div>';
+
+  // Stage 2 banner explaining the write-back state
+  html += '<div class="callout" style="background:#FFF8E1;border-left:5px solid var(--gold);padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:14px;font-size:13px">';
+  html += '<b style="color:var(--navy)">Phase 2 — write-back to Zoho</b><br>';
+  html += 'The Approve flow is live; the actual API push waits on the Zoho admin granting <code>ZohoCRM.modules.Deals.WRITE</code> scope. Until then, "Push approved" shows the steps required and sends nothing.';
+  html += '</div>';
+
+  if (!edited.length) {
+    html += '<div class="card empty">✅ No manual edits yet. Tweak HC, MRR Aureum, Win %, or Margin % in <b>Aureum Demand Forecast</b> and they will appear here for review.</div>';
+    document.getElementById('mainContent').innerHTML = html;
+    return;
+  }
+
+  // Sort: pending first, then approved
+  edited.sort(function(a, b) { return (a.approved?1:0) - (b.approved?1:0); });
+
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl" style="min-width:1300px"><thead><tr>';
+  html += '<th style="width:30px">Approved</th><th>Deal</th><th>Client</th><th>BDE</th><th>Stage</th>';
+  html += '<th class="num">Field</th><th class="num">Zoho (Source of Truth)</th><th class="num">Playground (Manual)</th><th class="num">Δ</th>';
+  html += '<th>Actions</th></tr></thead><tbody>';
+
+  edited.forEach(function(d) {
+    var idx = deals.indexOf(d);
+    var diff = playgroundDiff(d);
+    var changes = [];
+    if (diff.mrr)    changes.push({ field:'MRR',     z: fmt$k(diff.mrr.zoho),               p: fmt$k(diff.mrr.play),               delta: fmt$k(diff.mrr.play - diff.mrr.zoho) });
+    if (diff.win)    changes.push({ field:'Win %',   z: fmtPct(diff.win.zoho),              p: fmtPct(diff.win.play),              delta: ((diff.win.play - diff.win.zoho) * 100).toFixed(0) + ' pp' });
+    if (diff.margin) changes.push({ field:'Margin %',z: (diff.margin.zoho !== null ? fmtPct(diff.margin.zoho) : '—'), p: fmtPct(diff.margin.play), delta: (diff.margin.zoho !== null ? ((diff.margin.play - diff.margin.zoho) * 100).toFixed(0) + ' pp' : '—') });
+
+    changes.forEach(function(ch, j) {
+      html += '<tr' + (d.approved ? ' style="background:#E8F5E9"' : '') + '>';
+      if (j === 0) {
+        html += '<td rowspan="' + changes.length + '" style="text-align:center"><input type="checkbox" ' + (d.approved ? 'checked ' : '') + 'onchange="toggleApproved(' + idx + ')" title="Approve this deal\'s changes for push to Zoho"></td>';
+        html += '<td rowspan="' + changes.length + '">' + dealNameCell(d) + (d.approvedBy ? '<br><span style="font-size:10px;color:var(--success)">✓ ' + esc(d.approvedBy) + '</span>' : '') + '</td>';
+        html += '<td rowspan="' + changes.length + '">' + esc(d.client) + '</td>';
+        html += '<td rowspan="' + changes.length + '" style="font-size:11px;color:var(--muted)">' + esc(d.bde || '—') + '</td>';
+        html += '<td rowspan="' + changes.length + '">' + stagePill(d.stage) + '</td>';
+      }
+      html += '<td><b>' + ch.field + '</b></td>';
+      html += '<td class="num" style="color:var(--muted)">' + ch.z + '</td>';
+      html += '<td class="num num-bold" style="color:var(--gold)">' + ch.p + '</td>';
+      html += '<td class="num" style="color:var(--navy)">' + ch.delta + '</td>';
+      if (j === 0) {
+        html += '<td rowspan="' + changes.length + '" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="revertPlayground(' + idx + ')" title="Discard manual edits and use Zoho values">↶ Revert</button></td>';
+      }
+      html += '</tr>';
+    });
+  });
+  html += '</tbody></table></div></div>';
+
+  html += '<div class="legend" style="margin-top:10px"><span style="font-style:italic"><b>Workflow:</b> 1) Edit in Aureum → 2) Diffs appear here → 3) Tick <b>Approved</b> on the scenarios you want to commit → 4) Click <b>↗ Push approved to Zoho</b> (Phase 2). <b>Revert</b> wipes the manual edits and restores Zoho values for that deal.</span></div>';
+
+  document.getElementById('mainContent').innerHTML = html;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
