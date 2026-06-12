@@ -630,7 +630,7 @@ function zohoGet(token, path, cb) {
 }
 // Paginate through ALL Zoho deals across pages of 200
 function fetchAllZohoDeals(token, cb) {
-  var FIELDS = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description';
+  var FIELDS = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description,Target_Margin_Band';
   var all = [];
   function fetchPage(page) {
     zohoGet(token, '/Deals?fields=' + FIELDS + '&per_page=200&page=' + page, function(err, d) {
@@ -732,6 +732,9 @@ function syncZohoDeals() {
         inForecast:            prior ? !!p.inForecast  : (seed ? !!seed.inForecast  : false),
         isSuperDeal:           prior ? !!p.isSuperDeal : (seed ? !!seed.isSuperDeal : false),
         inExcel:               !!seed || !!(prior && prior.inExcel),  // matched Don's Excel seed
+        // Zoho commercial-design target margin (Target_Margin_Band). Source of truth for margin.
+        zohoMargin:            parseMarginBand(r.Target_Margin_Band),
+        zohoMarginBand:        (r.Target_Margin_Band !== undefined && r.Target_Margin_Band !== null) ? String(r.Target_Margin_Band) : '',
         marginOverride:        p.marginOverride
       };
     });
@@ -1104,6 +1107,21 @@ function dealRevenueForMonth(deal, monthKey) {
   var hc = (deal.monthlyHC || {})[monthKey] || 0;
   return hc * (deal.pricing && deal.totalHC ? (deal.pricing / Math.max(1, sumMonths(deal.monthlyHC) || deal.totalHC)) : (deal.pricing || 0));
 }
+// Parse Zoho's Target_Margin_Band into a 0–1 margin. Handles a plain number (40 or 0.40),
+// a range ("30-40%" → midpoint 0.35), or a single % ("35%" → 0.35). Returns null if no
+// number can be found (e.g. a label like "High") so the stage default is used instead.
+function parseMarginBand(val) {
+  if (val === null || val === undefined || val === '') return null;
+  var s = String(val);
+  var nums = (s.match(/\d+(?:\.\d+)?/g) || []).map(parseFloat);
+  if (!nums.length) return null;
+  var v;
+  if (nums.length >= 2) v = (nums[0] + nums[1]) / 2; // midpoint of a band
+  else v = nums[0];
+  if (v > 1) v = v / 100;          // 40 → 0.40
+  if (v < 0 || v > 1) return null; // sanity
+  return v;
+}
 // Effective deal total: MRR Zoho (pricing) wins when populated; otherwise MRR Aureum (Don's manual).
 function effectivePricing(deal) {
   if (deal && deal.pricing && deal.pricing > 0) return deal.pricing;
@@ -1343,7 +1361,9 @@ function renderAureumGrid() {
     html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.mrrAureum || '') + '" onchange="updateDealField(' + dealIdx + ', \'mrrAureum\', this.value)" title="Don\'s manual MRR. Used when MRR Zoho is empty." placeholder="0"></td>';
     html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
     var mMiss = marginIsMissing(d);
-    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getMarginFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'marginOverride\', this.value/100)"' + (mMiss ? ' style="border-color:var(--amber);background:#fff8e1"' : '') + ' title="' + (mMiss ? 'No target margin set — using stage default. Set a target in Zoho or here.' : 'Margin %') + '">' + (mMiss ? '' : '') + '</td>';
+    var mTitle = mMiss ? 'No target margin set — using stage default. Set Target_Margin_Band in Zoho or type here.'
+                       : (d.zohoMargin > 0 ? ('From Zoho Target_Margin_Band: ' + esc(d.zohoMarginBand || (Math.round(d.zohoMargin*100)+'%'))) : 'Margin %');
+    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getMarginFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'marginOverride\', this.value/100)"' + (mMiss ? ' style="border-color:var(--amber);background:#fff8e1"' : (d.zohoMargin > 0 ? ' style="border-color:var(--success);background:#E8F5E9"' : '')) + ' title="' + mTitle + '"></td>';
     months.forEach(function(m) {
       var hc = (d.monthlyHC || {})[m] || 0;
       var cls = '';
