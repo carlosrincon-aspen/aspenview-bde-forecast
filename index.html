@@ -426,6 +426,10 @@ function getAnchorMonth()  { return load('anchor_month', currentMonthKey()); }
 function setAnchorMonth(m) { save('anchor_month', m); }
 function getSuperPrograms()  { return load('super_programs', SUPER_PROGRAMS_SEED); }
 function setSuperPrograms(p) { save('super_programs', p); }
+// Closed Lost Zoho deals — kept separately for the Cleanup tab so users can see ALL deals
+// of an account when matching ghosts. Not used in any main forecast view.
+function getLostDeals() { return load('lost_deals', []); }
+function setLostDeals(d) { save('lost_deals', d); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE (shared state across Carlos / Michael / Don)
@@ -707,6 +711,18 @@ function syncZohoDeals() {
     var seedIdx = buildSeedIndex();
 
     var filtered = allDeals.filter(function(r) { return ALLOWED_STAGES.indexOf(r.Stage) >= 0; });
+    // Capture Closed Lost deals separately for the Cleanup tab (not used in any main forecast view)
+    var lostMapped = allDeals.filter(function(r){ return r.Stage === 'Closed Lost'; }).map(function(r) {
+      return {
+        zohoId: r.id,
+        dealName: r.Deal_Name || '',
+        client: (r.Account_Name && r.Account_Name.name) || '',
+        stage: 'Closed Lost',
+        bde: (r.Owner && r.Owner.name) || '',
+        zohoLost: true
+      };
+    });
+    setLostDeals(lostMapped);
 
     var seedMatched = 0;
     var mapped = filtered.map(function(r) {
@@ -2064,17 +2080,18 @@ function resetMarginRules() {
 // ─────────────────────────────────────────────────────────────────────────────
 function renderCleanup() {
   var deals = getDeals();
+  var lostDeals = getLostDeals();
   var zohoDeals = deals.filter(function(d){ return d.zohoId; });
   var ghosts = deals.filter(function(d){ return !d.zohoId; });
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Cleanup</h1><div class="sub">Deals not linked to Zoho, with their closest Zoho match. Merge duplicates, kill stale rows, or create the real deal in Zoho.</div></div>';
+  html += '<div class="page-title"><div><h1>Cleanup</h1><div class="sub">Account-centric matching: for each not-in-Zoho deal we show ALL Zoho deals from the same account (active + Closed Lost) so you can pick the right one.</div></div>';
   html += '<button class="btn btn-ghost btn-sm" onclick="syncZohoDeals()">↻ Sync from Zoho</button></div>';
 
   html += '<div class="stat-grid">';
   html += statCard('Not in Zoho', ghosts.length, 'Excel-only / unmatched deals', ghosts.length ? 'gold' : 'good');
   html += statCard('Linked to Zoho', zohoDeals.length, 'Clean rows with a Zoho link', 'good');
-  html += statCard('Total deals', deals.length, 'Across the platform', 'aureum');
+  html += statCard('Closed-Lost in Zoho', lostDeals.length, 'Hidden from main views; shown here for context', 'aureum');
   html += '</div>';
 
   if (!ghosts.length) {
@@ -2083,36 +2100,62 @@ function renderCleanup() {
     return;
   }
 
-  // Sort ghosts by best-candidate score descending (most likely matches first)
+  // For each ghost, find ALL Zoho deals (active + Closed Lost) in the SAME account.
+  // No "best guess" — show them all so the user can decide.
   var rows = ghosts.map(function(g) {
-    return { ghost: g, gIdx: deals.indexOf(g), cand: bestZohoCandidate(g, zohoDeals, deals) };
-  }).sort(function(a, b) { return (b.cand ? b.cand.score : 0) - (a.cand ? a.cand.score : 0); });
+    var actives = zohoDeals.filter(function(z){ return g.client && z.client && clientSimilar(g.client, z.client); });
+    var losts   = lostDeals.filter(function(z){ return g.client && z.client && clientSimilar(g.client, z.client); });
+    return { ghost: g, gIdx: deals.indexOf(g), actives: actives, losts: losts };
+  });
+  // Sort: ghosts with NO candidates last; otherwise alphabetical by client
+  rows.sort(function(a, b) {
+    var ac = (a.actives.length + a.losts.length) > 0 ? 0 : 1;
+    var bc = (b.actives.length + b.losts.length) > 0 ? 0 : 1;
+    if (ac !== bc) return ac - bc;
+    return (a.ghost.client || '').toLowerCase() < (b.ghost.client || '').toLowerCase() ? -1 : 1;
+  });
 
-  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl" style="min-width:1100px"><thead><tr>';
-  html += '<th>Not-in-Zoho Deal</th><th>Client</th><th>Stage</th><th class="num">Match %</th><th>Closest Zoho Deal</th><th>Zoho Client</th><th>Actions</th>';
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl" style="min-width:1200px"><thead><tr>';
+  html += '<th style="width:25%">Not-in-Zoho Deal</th><th>Client (Excel)</th><th>Stage</th>';
+  html += '<th style="width:45%">Zoho deals in the same account → pick one to merge into</th>';
+  html += '<th>Action</th>';
   html += '</tr></thead><tbody>';
   rows.forEach(function(r) {
-    var g = r.ghost, c = r.cand;
-    var pct = c ? Math.round(c.score * 100) : 0;
-    var pctCls = pct >= 80 ? 'pill-green' : pct >= 55 ? 'pill-gold' : 'pill-red';
+    var g = r.ghost;
+    var total = r.actives.length + r.losts.length;
     html += '<tr>';
     html += '<td><b>' + esc(g.dealName) + '</b></td>';
-    html += '<td>' + esc(g.client) + '</td>';
+    html += '<td>' + esc(g.client || '—') + '</td>';
     html += '<td>' + stagePill(g.stage) + '</td>';
-    html += '<td class="num">' + (c ? '<span class="pill ' + pctCls + '">' + pct + '%</span>' : '—') + '</td>';
-    if (c && c.deal) {
-      var url = dealZohoUrl(c.deal);
-      html += '<td>' + (url ? '<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--navy);border-bottom:1px dashed var(--gold);text-decoration:none">' + esc(c.deal.dealName) + ' ↗</a>' : esc(c.deal.dealName)) + '</td>';
-      html += '<td style="color:var(--muted)">' + esc(c.deal.client) + '</td>';
-      html += '<td style="white-space:nowrap"><button class="btn btn-gold btn-sm" onclick="mergeCleanup(' + r.gIdx + ',' + c.idx + ')" title="Merge this row into the Zoho deal — keeps Zoho stage/owner/link plus this row\'s HC/MRR/flags">Merge →</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + r.gIdx + ')" title="Delete this stale row">&#10005;</button></td>';
+    html += '<td>';
+    if (total === 0) {
+      html += '<span style="color:var(--muted);font-style:italic">No deals found in Zoho for this account. Create the deal in Zoho, then re-sync.</span>';
     } else {
-      html += '<td colspan="2" style="color:var(--muted)">No candidate found</td>';
-      html += '<td><button class="btn btn-danger btn-sm" onclick="killDeal(' + r.gIdx + ')">&#10005; Kill</button></td>';
+      r.actives.forEach(function(c) {
+        var idx = deals.indexOf(c);
+        var url = dealZohoUrl(c);
+        html += '<div style="margin-bottom:5px;padding:6px 9px;background:var(--bg);border-radius:5px;border-left:3px solid var(--success)">';
+        html += '<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--navy);font-weight:600;text-decoration:none">' + esc(c.dealName) + ' ↗</a>';
+        html += ' ' + stagePill(c.stage);
+        if (c.bde) html += ' <span style="color:var(--muted);font-size:11px">· ' + esc(c.bde) + '</span>';
+        html += ' <button class="btn btn-gold btn-sm" style="margin-left:8px" onclick="mergeCleanup(' + r.gIdx + ',' + idx + ')" title="Merge this Excel row into the Zoho deal">Merge →</button>';
+        html += '</div>';
+      });
+      r.losts.forEach(function(c) {
+        var url = dealZohoUrl(c);
+        html += '<div style="margin-bottom:5px;padding:6px 9px;background:#fdecea;border-radius:5px;border-left:3px solid var(--danger);opacity:0.85">';
+        html += '<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--navy);font-weight:600;text-decoration:none">' + esc(c.dealName) + ' ↗</a>';
+        html += ' <span class="pill pill-red">Closed Lost</span>';
+        if (c.bde) html += ' <span style="color:var(--muted);font-size:11px">· ' + esc(c.bde) + '</span>';
+        html += '</div>';
+      });
     }
+    html += '</td>';
+    html += '<td style="white-space:nowrap"><button class="btn btn-danger btn-sm" onclick="killDeal(' + r.gIdx + ')" title="Delete this Excel row from the dashboard">&#10005; Kill</button></td>';
     html += '</tr>';
   });
   html += '</tbody></table></div></div>';
-  html += '<div class="legend"><span style="font-style:italic"><b>Merge →</b> collapses the Excel row into its Zoho deal (recommended when Match % is high). <b>✕</b> deletes a stale/duplicate row. Leave it alone if it\'s a real deal that should be created in Zoho first.</span></div>';
+  html += '<div class="legend" style="margin-top:10px"><span style="font-style:italic"><b>Green border</b> = active Zoho deal — click <b>Merge →</b> to keep that Zoho row (with its stage/owner/link) plus the Excel HC/MRR/flags. <b>Red border</b> = Closed Lost in Zoho — usually means the engagement died; consider killing the ghost or creating a new active deal in Zoho.</span></div>';
 
   document.getElementById('mainContent').innerHTML = html;
 }
