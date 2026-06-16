@@ -190,7 +190,7 @@
     <ol>
       <li><strong>Redacta</strong> los cambios en la pestaña Aureum como siempre — aquí aparecen como diffs.</li>
       <li><strong>Aprueba</strong> los deals cuyos borradores están listos (casilla por fila). La aprobación se comparte con el equipo.</li>
-      <li>Clic en <strong>↗ Push approved to Zoho</strong>. La plataforma envía un PATCH a Zoho por cada deal aprobado — actualizando <code>Total_Headcount</code>, <code>MRR</code>, <code>Probability</code> y <code>Target_Margin_Band</code> — luego limpia la bandera de aprobado y estampa <em>pushedAt</em>.</li>
+      <li>Clic en <strong>↗ Push approved to Zoho</strong>. La plataforma envía un PATCH a Zoho por cada deal aprobado — actualizando <code>Headcounts</code>, <code>MRR</code>, <code>Probability</code> y <code>Target_Margin_Band</code> — luego limpia la bandera de aprobado y estampa <em>pushedAt</em>.</li>
     </ol>
     <div class="callout gold"><span class="ct">Zoho es el sistema de registro</span>Los valores empujados se vuelven la nueva verdad de Zoho en el siguiente Sync. Si el OAuth client aún no tiene el scope <code>Deals.WRITE</code>, la acción de push explica exactamente lo que el admin de Zoho necesita habilitar.</div>
 
@@ -228,7 +228,7 @@
     <p>La meta es eventualmente vaciar esta pestaña — cuando cada deal esté enlazado a Zoho, el Excel de Don se puede retirar.</p>
 
     <h3>4.12 — Settings</h3>
-    <p>Integración Zoho y mapeo de campos (<code>MRR</code>, <code>Total_Headcount</code>, <code>Target_Margin_Band</code>, <code>Account_Status</code>), <strong>Export / Import (JSON)</strong> para respaldo, reset, y el recordatorio del flujo diario.</p>
+    <p>Integración Zoho y mapeo de campos (<code>MRR</code>, <code>Headcounts</code>, <code>Target_Margin_Band</code>, <code>Account_Status</code>), <strong>Export / Import (JSON)</strong> para respaldo, reset, y el recordatorio del flujo diario.</p>
 
     <h2><span class="num">5</span>Cómo se mueve realmente el pronóstico</h2>
     <div class="h2-rule"></div>

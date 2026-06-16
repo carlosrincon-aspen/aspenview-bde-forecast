@@ -279,7 +279,7 @@ var ZOHO_DC         = 'com'; // Zoho data center: 'com' (US), 'eu', 'in', 'au', 
 // Zoho Deals field API names. MRR Zoho comes from the MRR field (NOT Amount, which is often blank).
 var ZOHO_MRR_FIELD    = 'MRR';                // monthly recurring revenue per deal
 var ZOHO_MARGIN_FIELD = 'Target_Margin_Band'; // commercial-design target margin
-var ZOHO_HC_FIELD     = 'Total_Headcount';    // total headcount on the deal (single number in Zoho)
+var ZOHO_HC_FIELD     = 'Headcounts';         // total headcount on the deal (single number in Zoho)
 var ZOHO_BASE_FIELDS  = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description';
 
 // Exact Zoho Deal Stage API Names that should appear in the dashboard.
@@ -2635,7 +2635,7 @@ function pushApprovedToZoho() {
                    '  2. Click the Zoho pill in the header → Disconnect → Connect (you\'ll be asked to grant write access).\n' +
                    '  3. Try Push again.';
           } else if (/INVALID_DATA|MANDATORY_NOT_FOUND|invalid|not present|no such|field/i.test(errors.join(' '))) {
-            msg += '\n\n⚠ A field name may be wrong. Confirm the API names in Settings (MRR / Probability / Target_Margin_Band / Total_Headcount).';
+            msg += '\n\n⚠ A field name may be wrong. Confirm the API names in Settings (MRR / Probability / Target_Margin_Band / Headcounts).';
           }
         }
         logActivity('Zoho', 'Push to Zoho', pushed + ' updated · ' + failed + ' failed');

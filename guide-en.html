@@ -193,7 +193,7 @@
     <ol>
       <li><strong>Draft</strong> changes on the Aureum tab as usual — they show up here as diffs.</li>
       <li><strong>Approve</strong> the deals whose drafts are ready (per-row checkbox). Approval is shared with the team.</li>
-      <li>Click <strong>↗ Push approved to Zoho</strong>. The platform sends a PATCH to Zoho for each approved deal — updating <code>Total_Headcount</code>, <code>MRR</code>, <code>Probability</code>, and <code>Target_Margin_Band</code> — then clears the approved flag and stamps <em>pushedAt</em>.</li>
+      <li>Click <strong>↗ Push approved to Zoho</strong>. The platform sends a PATCH to Zoho for each approved deal — updating <code>Headcounts</code>, <code>MRR</code>, <code>Probability</code>, and <code>Target_Margin_Band</code> — then clears the approved flag and stamps <em>pushedAt</em>.</li>
     </ol>
     <div class="callout gold"><span class="ct">Zoho is the system of record</span>Pushed values become the new Zoho truth on the next Sync. If your OAuth client doesn't have the <code>Deals.WRITE</code> scope yet, the push action explains exactly what your Zoho admin needs to enable.</div>
 
@@ -231,7 +231,7 @@
     <p>The goal is to eventually empty this tab — once every deal is linked to Zoho, Don's Excel can be retired.</p>
 
     <h3>4.12 — Settings</h3>
-    <p>Zoho integration &amp; field mapping (<code>MRR</code>, <code>Total_Headcount</code>, <code>Target_Margin_Band</code>, <code>Account_Status</code>), data <strong>Export / Import (JSON)</strong> for backup, reset, and the daily-workflow reminder.</p>
+    <p>Zoho integration &amp; field mapping (<code>MRR</code>, <code>Headcounts</code>, <code>Target_Margin_Band</code>, <code>Account_Status</code>), data <strong>Export / Import (JSON)</strong> for backup, reset, and the daily-workflow reminder.</p>
 
     <h2><span class="num">5</span>How the forecast actually moves</h2>
     <div class="h2-rule"></div>
