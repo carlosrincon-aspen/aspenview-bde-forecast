@@ -1947,7 +1947,36 @@ function weekShortLabel(weekKey) {
   return m.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// Snapshot shape: {weekKey, takenAt, takenBy, anchorMonth, dealsForecasted, totalHC, totalAdjRev, isDemo}
+// Snapshot shape: {weekKey, takenAt, takenBy, anchorMonth, dealsForecasted,
+// totalHC, totalAdjRev, isDemo, deals: [perDeal contributions]}.
+// deals is populated for snapshots taken AFTER the drill-down feature shipped;
+// older snapshots and the seeded demo points have it undefined, in which case
+// the drill-down falls back to the current forecast list with a disclaimer.
+function computeTrendDealList() {
+  var deals  = getDeals();
+  var anchor = getAnchorMonth();
+  var months = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
+  return deals.filter(function(d){ return d.inForecast; }).map(function(d) {
+    var hc = 0, adjRev = 0;
+    months.forEach(function(mk) {
+      hc     += (d.monthlyHC || {})[mk] || 0;
+      adjRev += adjustedRevenue(d, mk);
+    });
+    return {
+      dealName: d.dealName,
+      client:   d.client || '',
+      bde:      d.bde || '',
+      stage:    d.stage || '',
+      zohoId:   d.zohoId || '',
+      hc:       hc,
+      mrr:      effectivePricing(d),
+      win:      getWinRateFor(d),
+      margin:   getMarginFor(d),
+      adjRev:   adjRev,
+      isSuperDeal: !!d.isSuperDeal
+    };
+  });
+}
 function computeTrendTotalsNow() {
   var deals  = getDeals();
   var anchor = getAnchorMonth();
@@ -1978,6 +2007,7 @@ function ensureWeeklyTrendSnapshot() {
     dealsForecasted: t.dealsForecasted,
     totalHC: t.totalHC,
     totalAdjRev: t.totalAdjRev,
+    deals: computeTrendDealList(),
     isDemo: false
   });
   // Keep ordered by weekKey for deterministic rendering.
@@ -2121,11 +2151,12 @@ function renderForecastTrend() {
   html += '</div>';
 
   // Three chart cards
-  html += '<div class="card"><div class="card-header"><span class="card-title">Deals forecasted</span><span class="card-sub">Count of deals with Fcst ☑</span></div>';
+  var clickHint = ' · <b style="color:var(--gold)">Click any point</b> to see the deals behind it';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Deals forecasted</span><span class="card-sub">Count of deals with Fcst ☑' + clickHint + '</span></div>';
   html += '<div style="height:240px;position:relative"><canvas id="trendChartDeals"></canvas></div></div>';
-  html += '<div class="card"><div class="card-header"><span class="card-title">Total Headcount</span><span class="card-sub">Sum of HC across the 3-month anchor window</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Total Headcount</span><span class="card-sub">Sum of HC across the 3-month anchor window' + clickHint + '</span></div>';
   html += '<div style="height:240px;position:relative"><canvas id="trendChartHC"></canvas></div></div>';
-  html += '<div class="card"><div class="card-header"><span class="card-title">Total Adj. Revenue ($)</span><span class="card-sub">HC × MRR × Win % across the 3-month anchor window</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Total Adj. Revenue ($)</span><span class="card-sub">HC × MRR × Win % across the 3-month anchor window' + clickHint + '</span></div>';
   html += '<div style="height:240px;position:relative"><canvas id="trendChartMRR"></canvas></div></div>';
 
   // Raw history table
@@ -2133,7 +2164,10 @@ function renderForecastTrend() {
   html += '<table><thead><tr><th>Week</th><th>Anchor</th><th>Taken by</th><th class="num">Deals fcst</th><th class="num">Total HC</th><th class="num">Adj. Revenue</th><th></th></tr></thead><tbody>';
   allSnaps.slice().reverse().forEach(function(s) {
     var badge = s.isDemo ? ' <span class="pill" style="font-size:9px;background:#fff8e1;color:#b45309">demo</span>' : '';
-    html += '<tr><td><b>' + s.weekKey + '</b> <span style="color:var(--muted);font-size:11px">(' + weekShortLabel(s.weekKey) + ')</span>' + badge + '</td>';
+    // Find this snapshot in the aggregated points so the modal can open the right one.
+    var pointIdx = points.indexOf(s);
+    var clickAttr = pointIdx >= 0 ? ' style="cursor:pointer" onclick="openTrendDealsModal(' + pointIdx + ')" title="Click to see deals in this snapshot"' : '';
+    html += '<tr' + clickAttr + '><td><b>' + s.weekKey + '</b> <span style="color:var(--muted);font-size:11px">(' + weekShortLabel(s.weekKey) + ')</span>' + badge + '</td>';
     html += '<td style="color:var(--muted);font-size:11px">' + monthLabel(s.anchorMonth) + '</td>';
     html += '<td style="color:var(--muted);font-size:11px">' + esc(s.takenBy || '—') + '</td>';
     html += '<td class="num">' + s.dealsForecasted + '</td>';
@@ -2146,9 +2180,11 @@ function renderForecastTrend() {
   document.getElementById('mainContent').innerHTML = html;
 
   // Render the three charts (Chart.js v4)
+  _currentTrendPoints = points;
   setTimeout(function() { renderTrendCharts(points); }, 0);
 }
 var _trendChartInstances = {};
+var _currentTrendPoints  = [];  // referenced by chart onClick to open the drill-down
 function renderTrendCharts(points) {
   if (typeof Chart === 'undefined') return;
   Object.keys(_trendChartInstances).forEach(function(k) {
@@ -2162,6 +2198,11 @@ function renderTrendCharts(points) {
     responsive: true, maintainAspectRatio: false,
     plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
     interaction: { mode: 'nearest', intersect: false },
+    onClick: function(evt, els) {
+      if (!els || !els.length) return;
+      openTrendDealsModal(els[0].index);
+    },
+    onHover: function(evt, els) { evt.native.target.style.cursor = (els && els.length) ? 'pointer' : 'default'; },
     scales: {
       x: { grid: { display: false }, ticks: { font: { family: 'Roboto', size: 11 }, color: '#5a6a7a' } },
       y: { beginAtZero: true, grid: { color: '#eef2f6' }, ticks: { font: { family: 'Roboto', size: 11 }, color: '#5a6a7a' } }
@@ -2171,6 +2212,9 @@ function renderTrendCharts(points) {
     var ctx = document.getElementById(canvasId);
     if (!ctx) return;
     var opts = JSON.parse(JSON.stringify(baseOpts));
+    // Reattach handlers — JSON.parse strips functions
+    opts.onClick = baseOpts.onClick;
+    opts.onHover = baseOpts.onHover;
     if (fmtFn) {
       opts.scales.y.ticks.callback = function(v){ return fmtFn(v); };
       opts.plugins.tooltip.callbacks = { label: function(ctx2){ return fmtFn(ctx2.parsed.y); } };
@@ -2188,6 +2232,77 @@ function renderTrendCharts(points) {
   mkChart('trendChartDeals', points.map(function(s){ return s.dealsForecasted; }), navy);
   mkChart('trendChartHC',    points.map(function(s){ return s.totalHC; }),         navy);
   mkChart('trendChartMRR',   points.map(function(s){ return s.totalAdjRev; }),     gold, function(v){ return fmt$k(v); });
+}
+
+function openTrendDealsModal(pointIndex) {
+  var snap = _currentTrendPoints[pointIndex];
+  if (!snap) return;
+  // Option A behavior: if the snapshot has no frozen deals list (demo or pre-feature
+  // snapshot), show today's forecast list as an approximation with a clear disclaimer.
+  var dealsList = (snap.deals && snap.deals.length) ? snap.deals : computeTrendDealList();
+  var approximate = !(snap.deals && snap.deals.length);
+
+  // Sort by Adj. Revenue desc so the biggest contributors are on top.
+  dealsList = dealsList.slice().sort(function(a, b){ return (b.adjRev || 0) - (a.adjRev || 0); });
+
+  var html = '';
+  html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+  html += '<div><h3 style="margin:0">Deals in this snapshot</h3>';
+  html += '<div style="font-size:12px;color:var(--muted);margin-top:3px"><b>' + esc(snap.weekKey) + '</b> · ' + esc(weekShortLabel(snap.weekKey)) + ' · anchor ' + esc(monthLabel(snap.anchorMonth)) + '</div></div>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="closeModal()">✕ Close</button></div>';
+
+  if (approximate) {
+    html += '<div style="background:#fff8e1;border-left:3px solid var(--gold);padding:8px 12px;border-radius:0 6px 6px 0;font-size:12px;color:var(--navy);margin-bottom:10px">';
+    html += '<b>Approximation.</b> This snapshot was taken before the per-deal drill-down was available, so the list below shows the <b>current</b> forecast deals (today\'s state), not the exact list at the time of the snapshot. Real per-snapshot lists start with snapshots taken from today forward.';
+    html += '</div>';
+  }
+
+  // KPI strip
+  html += '<div style="display:flex;gap:14px;margin-bottom:12px;flex-wrap:wrap">';
+  html += '<div style="padding:8px 14px;background:#f6f9fc;border-radius:6px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Deals</div><div style="font-size:18px;font-weight:900">' + snap.dealsForecasted + '</div></div>';
+  html += '<div style="padding:8px 14px;background:#f6f9fc;border-radius:6px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Total HC (3-mo)</div><div style="font-size:18px;font-weight:900">' + (snap.totalHC || 0).toLocaleString() + '</div></div>';
+  html += '<div style="padding:8px 14px;background:#fdf6e6;border-radius:6px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.4px">Adj. Revenue (3-mo)</div><div style="font-size:18px;font-weight:900;color:var(--navy)">' + fmt$k(snap.totalAdjRev || 0) + '</div></div>';
+  html += '</div>';
+
+  // Table
+  html += '<div style="max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:6px">';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0;background:var(--navy);color:white"><tr>';
+  html += '<th style="text-align:left;padding:9px 10px">Client</th>';
+  html += '<th style="text-align:left;padding:9px 10px">Deal</th>';
+  html += '<th style="text-align:left;padding:9px 10px">BDE</th>';
+  html += '<th style="text-align:left;padding:9px 10px">Stage</th>';
+  html += '<th style="text-align:right;padding:9px 10px">HC (3-mo)</th>';
+  html += '<th style="text-align:right;padding:9px 10px">MRR</th>';
+  html += '<th style="text-align:right;padding:9px 10px">Win %</th>';
+  html += '<th style="text-align:right;padding:9px 10px">Margin %</th>';
+  html += '<th style="text-align:right;padding:9px 10px">Adj. Revenue</th>';
+  html += '</tr></thead><tbody>';
+  dealsList.forEach(function(d, i) {
+    var bg = i % 2 === 0 ? 'white' : '#f9fbfd';
+    var dealCell = esc(d.dealName);
+    if (d.zohoId) {
+      var url = 'https://crm.zoho.' + ZOHO_DC + '/crm/tab/Potentials/' + encodeURIComponent(d.zohoId);
+      dealCell = '<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--navy);text-decoration:none;border-bottom:1px dashed var(--gold)">' + esc(d.dealName) + ' ↗</a>';
+    }
+    var superBadge = d.isSuperDeal ? ' <span class="pill pill-gold" style="font-size:9px">SUPER</span>' : '';
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid var(--border)">';
+    html += '<td style="padding:7px 10px">' + esc(d.client) + '</td>';
+    html += '<td style="padding:7px 10px"><b>' + dealCell + '</b>' + superBadge + '</td>';
+    html += '<td style="padding:7px 10px;color:var(--muted);font-size:11px">' + esc(d.bde || '—') + '</td>';
+    html += '<td style="padding:7px 10px">' + stagePill(d.stage) + '</td>';
+    html += '<td style="padding:7px 10px;text-align:right">' + (d.hc || 0) + '</td>';
+    html += '<td style="padding:7px 10px;text-align:right">' + fmt$k(d.mrr || 0) + '</td>';
+    html += '<td style="padding:7px 10px;text-align:right">' + fmtPct(d.win) + '</td>';
+    html += '<td style="padding:7px 10px;text-align:right">' + fmtPct(d.margin) + '</td>';
+    html += '<td style="padding:7px 10px;text-align:right;font-weight:700">' + fmt$k(d.adjRev || 0) + '</td>';
+    html += '</tr>';
+  });
+  if (!dealsList.length) {
+    html += '<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--muted)">No deals in this snapshot.</td></tr>';
+  }
+  html += '</tbody></table></div>';
+
+  openModal(html);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
