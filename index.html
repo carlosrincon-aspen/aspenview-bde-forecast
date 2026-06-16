@@ -314,6 +314,7 @@ var TABS = [
   { id: 'active',      label: 'Active Customers - Actuals' },
   { id: 'margin',      label: 'Stage Rules' },
   { id: 'cleanup',     label: 'Cleanup' },
+  { id: 'admin',       label: 'Admin Panel', adminOnly: true },
   { id: 'settings',    label: 'Settings' }
 ];
 
@@ -437,13 +438,86 @@ function setLostDeals(d) { save('lost_deals', d); }
 function getTrendSnapshots()  { return load('trend_snapshots', []); }
 function setTrendSnapshots(s) { save('trend_snapshots', s); }
 
+// ── Admin Panel state ──
+function getAdminExtra()   { return load('admin_extra', []); }
+function setAdminExtra(a)  { save('admin_extra', a); }
+function getKnownUsers()   { return load('known_users', {}); }
+function setKnownUsers(u)  { save('known_users', u); }
+function getActivityLog()  { return load('activity_log', []); }
+function setActivityLog(l) { save('activity_log', l); }
+function getErrorLog()     { return load('error_log', []); }
+function setErrorLog(l)    { save('error_log', l); }
+
+// True when the user is a hardcoded manager OR was granted admin via the panel.
+function isAdmin(u) {
+  u = u || currentUser;
+  if (!u) return false;
+  if (u.role === 'manager') return true;
+  return getAdminExtra().indexOf((u.email || '').toLowerCase()) >= 0;
+}
+function recordKnownUser(u) {
+  if (!u || !u.email) return;
+  var users = getKnownUsers();
+  var k = u.email.toLowerCase();
+  var now = new Date().toISOString();
+  var prev = users[k] || {};
+  users[k] = {
+    email:      u.email,
+    name:       u.name || prev.name || u.email,
+    firstSeen:  prev.firstSeen || now,
+    lastSeen:   now,
+    loginCount: (prev.loginCount || 0) + 1,
+    role:       u.role || prev.role || 'bde'
+  };
+  setKnownUsers(users);
+}
+function logActivity(source, action, details) {
+  var log = getActivityLog();
+  log.push({
+    ts:      new Date().toISOString(),
+    source:  source || 'app',
+    action:  action || '',
+    details: details || '',
+    actor:   (currentUser && currentUser.email) || 'anon'
+  });
+  if (log.length > 200) log = log.slice(-200);
+  setActivityLog(log);
+}
+function logError(source, code, endpoint, message) {
+  var log = getErrorLog();
+  log.push({
+    ts:       new Date().toISOString(),
+    source:   source || 'app',
+    code:     String(code || ''),
+    endpoint: endpoint || '',
+    message:  String(message || '').slice(0, 500),
+    actor:    (currentUser && currentUser.email) || 'anon'
+  });
+  if (log.length > 100) log = log.slice(-100);
+  setErrorLog(log);
+}
+function timeAgo(iso) {
+  if (!iso) return '—';
+  var s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60)        return s + 's ago';
+  if (s < 3600)      return Math.floor(s / 60) + 'm ago';
+  if (s < 86400)     return Math.floor(s / 3600) + 'h ago';
+  if (s < 86400 * 7) return Math.floor(s / 86400) + 'd ago';
+  return new Date(iso).toLocaleDateString();
+}
+function userStatus(lastSeen) {
+  if (!lastSeen) return 'idle';
+  var hours = (Date.now() - new Date(lastSeen).getTime()) / 3600000;
+  return hours < 24 ? 'active' : 'idle';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE (shared state across Carlos / Michael / Don)
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -578,7 +652,10 @@ function loginAs(u) {
   save('current_user', u);
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appScreen').style.display   = 'flex';
-  document.getElementById('headerUser').textContent    = u.name + ' · ' + (u.role === 'manager' ? 'Manager' : 'BDE');
+  recordKnownUser(u);
+  logActivity('Auth', 'Sign in', u.name + ' (' + u.role + ')');
+  var roleLabel = isAdmin(u) ? 'Admin' : (u.role === 'manager' ? 'Manager' : 'BDE');
+  document.getElementById('headerUser').textContent    = u.name + ' · ' + roleLabel;
   // autoApplySeedOnce is called from fbInitDataSync after Firestore fetch (or from degrade fallback)
   ensureMonthlySnapshot();
   renderTopNav();
@@ -643,7 +720,7 @@ function zohoGet(token, path, cb) {
     if (xhr.readyState !== 4) return;
     if (xhr.status === 200) { try { cb(null, JSON.parse(xhr.responseText)); } catch(e) { cb(e); } }
     else if (xhr.status === 204) cb(null, { data: [] });
-    else cb(new Error(xhr.status + ': ' + xhr.responseText));
+    else { logError('Zoho', xhr.status, path, xhr.responseText); cb(new Error(xhr.status + ': ' + xhr.responseText)); }
   };
   xhr.send();
 }
@@ -660,10 +737,11 @@ function zohoPatchDeal(token, dealId, payload, cb) {
         var resp = JSON.parse(xhr.responseText);
         var rec = resp && resp.data && resp.data[0];
         // Zoho responds 200 but the record can still have a per-record failure (status:'error')
-        if (rec && rec.status === 'error') return cb(new Error((rec.code || 'ERROR') + ': ' + ((rec.message) || xhr.responseText)));
+        if (rec && rec.status === 'error') { logError('Zoho', rec.code || 'ERROR', '/Deals/' + dealId, rec.message || xhr.responseText); return cb(new Error((rec.code || 'ERROR') + ': ' + ((rec.message) || xhr.responseText))); }
         return cb(null, rec || resp);
-      } catch(e) { return cb(e); }
+      } catch(e) { logError('Zoho', 'PARSE', '/Deals/' + dealId, e.message); return cb(e); }
     }
+    logError('Zoho', xhr.status, 'PATCH /Deals/' + dealId, xhr.responseText);
     cb(new Error(xhr.status + ': ' + xhr.responseText));
   };
   xhr.send(JSON.stringify({ data: [payload] }));
@@ -827,6 +905,7 @@ function syncZohoDeals() {
     save('last_zoho_sync', new Date().toISOString());
     renderTab();
     var warn = window._zohoFieldWarning ? '\n\n⚠ ' + window._zohoFieldWarning : '';
+    logActivity('Zoho', 'Sync from Zoho', mapped.length + ' pulled · ' + rec.merged + ' merged · ' + rec.flagged + ' flagged');
     alert('Zoho sync complete: ' + mapped.length + ' from Zoho + ' + rec.kept.length + ' not-in-Zoho = ' + finalDeals.length + ' total. ' + rec.merged + ' duplicates reconciled.' + warn);
   });
   });
@@ -1256,6 +1335,7 @@ function ensureMonthlySnapshot() {
   });
   snaps.push(snap);
   setSnapshots(snaps);
+  logActivity('Forecast', 'Monthly snapshot', key + ' · ' + deals.length + ' deals');
 }
 // Compute accuracy bands: for each historical snapshot, compare its predictions for
 // target month X (where X is one of the snapshot's M0/M1/M2 horizons) against the
@@ -1295,7 +1375,9 @@ function computeAccuracyBands() {
 // TOP NAV + ROUTING
 // ─────────────────────────────────────────────────────────────────────────────
 function renderTopNav() {
-  document.getElementById('topnav').innerHTML = TABS.map(function(t) {
+  document.getElementById('topnav').innerHTML = TABS.filter(function(t){
+    return !t.adminOnly || isAdmin();
+  }).map(function(t) {
     return '<button class="topnav-btn' + (currentTab === t.id ? ' active' : '') + '" onclick="selectTab(\'' + t.id + '\')">' + esc(t.label) + '</button>';
   }).join('');
 }
@@ -1313,6 +1395,7 @@ function renderTab() {
   if (currentTab === 'margin')      return renderMarginRules();
   if (currentTab === 'playground')  return renderPlayground();
   if (currentTab === 'cleanup')     return renderCleanup();
+  if (currentTab === 'admin')       return renderAdminPanel();
   if (currentTab === 'settings')    return renderSettings();
 }
 
@@ -1856,6 +1939,7 @@ function ensureWeeklyTrendSnapshot() {
   // Keep ordered by weekKey for deterministic rendering.
   snaps.sort(function(a,b){ return a.weekKey < b.weekKey ? -1 : a.weekKey > b.weekKey ? 1 : 0; });
   setTrendSnapshots(snaps);
+  logActivity('Forecast', 'Weekly trend snapshot', key + ' · ' + t.dealsForecasted + ' deals · ' + t.totalHC + ' HC');
 }
 function forceTrendSnapshot() {
   var snaps = getTrendSnapshots();
@@ -2509,6 +2593,7 @@ function pushApprovedToZoho() {
             msg += '\n\n⚠ A field name may be wrong. Confirm the API names in Settings (MRR / Probability / Target_Margin_Band / Total_Headcount).';
           }
         }
+        logActivity('Zoho', 'Push to Zoho', pushed + ' updated · ' + failed + ' failed');
         alert(msg);
         renderTab();
       }
@@ -2678,6 +2763,213 @@ function mergeCleanup(ghostIdx, candidateIdx) {
   mergeSeedData(c, g);
   deals.splice(ghostIdx, 1);
   setDeals(deals);
+  renderTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: ADMIN PANEL — operations health, team management, audit log
+// ─────────────────────────────────────────────────────────────────────────────
+// Admins-only. Allows granting/revoking admin access via UI (so the project does
+// not depend on edits to the hardcoded USERS map), and exposes the live activity
+// + error logs so anyone with access can diagnose issues without the original
+// builder being present.
+var adminSubTab = 'team';
+function setAdminSubTab(t) { adminSubTab = t; renderTab(); }
+
+function renderAdminPanel() {
+  if (!isAdmin()) {
+    document.getElementById('mainContent').innerHTML = '<div class="card"><div class="empty">Admin access required. Ask a manager to grant you access from the Admin Panel → Team tab.</div></div>';
+    return;
+  }
+  var users    = getKnownUsers();
+  var emails   = Object.keys(users);
+  var admins   = emails.filter(function(e){ return isAdmin({ email: e, role: (users[e] || {}).role }); });
+  var activity = getActivityLog();
+  var errors   = getErrorLog();
+  var activeToday = emails.filter(function(e){ return userStatus(users[e].lastSeen) === 'active'; });
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Admin Panel</h1><div class="sub">Operations, team, and audit — managed without code edits so the platform is not a single-person dependency.</div></div></div>';
+
+  // KPI cards
+  html += '<div class="stat-grid" style="margin-bottom:18px">';
+  html += statCard('Team members',  emails.length,        'have signed in',           'aureum');
+  html += statCard('Admins',        admins.length,        'with Admin Panel access',  'gold');
+  html += statCard('Active today',  activeToday.length,   'seen in the last 24h',     activeToday.length ? 'good' : 'gold');
+  html += statCard('Errors (7d)',   countErrors7d(errors),'logged in the last week',  countErrors7d(errors) ? 'gold' : 'good');
+  html += '</div>';
+
+  // Sub-tabs
+  html += '<div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px">';
+  [['team','Team'],['activity','Activity'],['errors','Errors']].forEach(function(p) {
+    var cls = adminSubTab === p[0] ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
+    var n = p[0] === 'activity' ? activity.length : (p[0] === 'errors' ? errors.length : emails.length);
+    html += '<button class="' + cls + '" onclick="setAdminSubTab(\'' + p[0] + '\')">' + p[1] + ' <span style="opacity:.65;font-size:11px">(' + n + ')</span></button>';
+  });
+  html += '</div>';
+
+  if (adminSubTab === 'team')     html += adminTeamSection(users, emails);
+  if (adminSubTab === 'activity') html += adminActivitySection(activity);
+  if (adminSubTab === 'errors')   html += adminErrorsSection(errors);
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+function countErrors7d(errors) {
+  var weekAgo = Date.now() - 7 * 86400000;
+  return errors.filter(function(e){ return new Date(e.ts).getTime() >= weekAgo; }).length;
+}
+
+function adminTeamSection(users, emails) {
+  var html = '';
+  // Grant admin form
+  html += '<div class="card" style="margin-bottom:14px"><div class="card-header"><span class="card-title">Grant admin access</span><span class="card-sub">Adds the user to the Admin Panel — they keep their BDE/Manager role for everything else</span></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center;padding:0 4px">';
+  html += '<input id="adminEmailInput" type="email" placeholder="name@aspenview.com" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">';
+  html += '<button class="btn btn-gold btn-sm" onclick="grantAdminFromInput()">+ Add admin</button>';
+  html += '</div></div>';
+
+  // Members table
+  html += '<div class="card"><div class="card-header"><span class="card-title">Team members</span><span class="card-sub">' + emails.length + ' have signed in to the platform</span></div>';
+  if (!emails.length) {
+    html += '<div class="empty">No team members tracked yet. They appear here on first sign-in.</div></div>';
+    return html;
+  }
+  // Sort: admins first, then active, then by lastSeen desc.
+  emails.sort(function(a, b) {
+    var ua = users[a], ub = users[b];
+    var aa = isAdmin({email:a, role:ua.role}) ? 0 : 1;
+    var ba = isAdmin({email:b, role:ub.role}) ? 0 : 1;
+    if (aa !== ba) return aa - ba;
+    return (ub.lastSeen || '').localeCompare(ua.lastSeen || '');
+  });
+  html += '<table><thead><tr><th>Member</th><th>Email</th><th>Role</th><th>Last active</th><th>Status</th><th>Admin</th><th></th></tr></thead><tbody>';
+  emails.forEach(function(e) {
+    var u = users[e];
+    var status = userStatus(u.lastSeen);
+    var statusCls = status === 'active' ? 'pill-green' : 'pill-gray';
+    var isHardcoded = (function(){ var hc = false; Object.keys(USERS).forEach(function(k){ if (USERS[k].email.toLowerCase() === e.toLowerCase()) hc = true; }); return hc; })();
+    var isUserAdmin = isAdmin({ email: e, role: u.role });
+    var youBadge = (currentUser && currentUser.email && currentUser.email.toLowerCase() === e.toLowerCase()) ? ' <span class="pill pill-gold" style="font-size:9px;margin-left:4px">YOU</span>' : '';
+    html += '<tr>';
+    html += '<td><b>' + esc(u.name || e) + '</b>' + youBadge + '<div style="font-size:11px;color:var(--muted)">' + u.loginCount + ' login' + (u.loginCount === 1 ? '' : 's') + ' · since ' + new Date(u.firstSeen).toLocaleDateString() + '</div></td>';
+    html += '<td style="color:var(--muted);font-size:11.5px">' + esc(e) + '</td>';
+    html += '<td><span class="pill ' + (u.role === 'manager' ? 'pill-blue' : 'pill-gray') + '" style="font-size:10px">' + esc(u.role || 'bde').toUpperCase() + '</span></td>';
+    html += '<td style="color:var(--muted);font-size:11.5px">' + timeAgo(u.lastSeen) + '</td>';
+    html += '<td><span class="pill ' + statusCls + '" style="font-size:10px">' + (status === 'active' ? '● ACTIVE' : '● IDLE') + '</span></td>';
+    html += '<td>' + (isUserAdmin ? '<span class="pill pill-gold" style="font-size:10px">★ ADMIN</span>' : '<span style="color:var(--muted);font-size:11px">—</span>') + '</td>';
+    html += '<td>';
+    if (isHardcoded) {
+      html += '<span style="font-size:10.5px;color:var(--muted)" title="Hardcoded in USERS map — cannot revoke from UI">code-defined</span>';
+    } else if (isUserAdmin) {
+      html += '<button class="btn btn-ghost btn-sm" onclick="revokeAdmin(\'' + esc(e) + '\')">Revoke admin</button>';
+    } else {
+      html += '<button class="btn btn-ghost btn-sm" onclick="grantAdmin(\'' + esc(e) + '\')">Grant admin</button>';
+    }
+    html += '</td></tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+function grantAdminFromInput() {
+  var input = document.getElementById('adminEmailInput');
+  var email = (input && input.value || '').trim().toLowerCase();
+  if (!email) return;
+  if (!/@aspenview\.com$/i.test(email)) { alert('Only @aspenview.com emails can be granted admin.'); return; }
+  grantAdmin(email);
+  if (input) input.value = '';
+}
+function grantAdmin(email) {
+  email = email.toLowerCase();
+  var list = getAdminExtra();
+  if (list.indexOf(email) >= 0) { alert(email + ' already has admin access.'); return; }
+  list.push(email);
+  setAdminExtra(list);
+  logActivity('Admin', 'Grant admin', email);
+  renderTab();
+  renderTopNav();
+}
+function revokeAdmin(email) {
+  email = email.toLowerCase();
+  if (!confirm('Revoke admin access for ' + email + '?')) return;
+  var list = getAdminExtra().filter(function(e){ return e !== email; });
+  setAdminExtra(list);
+  logActivity('Admin', 'Revoke admin', email);
+  renderTab();
+  renderTopNav();
+}
+
+function sourceClass(source) {
+  var s = (source || '').toLowerCase();
+  if (s === 'zoho')      return 'background:#fff4d6;color:#946700';
+  if (s === 'firestore' || s === 'firebase') return 'background:#fde2e2;color:#9a2222';
+  if (s === 'auth')      return 'background:#e3effd;color:#1d4a86';
+  if (s === 'admin')     return 'background:#fdf6e6;color:#946700';
+  if (s === 'forecast')  return 'background:#e6f4ea;color:#1b6232';
+  return 'background:#eef2f6;color:#5a6a7a';
+}
+
+function adminActivitySection(activity) {
+  var html = '';
+  html += '<div class="card"><div class="card-header"><span class="card-title"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2e7d32;animation:pulse 1.6s infinite;vertical-align:middle;margin-right:6px"></span>Activity Stream</span><span class="card-sub">Last ' + Math.min(activity.length, 50) + ' events · updates in real-time</span></div>';
+  if (!activity.length) {
+    html += '<div class="empty">No activity recorded yet. Try syncing Zoho or taking a snapshot.</div></div>';
+    return html;
+  }
+  html += '<table><thead><tr><th>Source</th><th>Action</th><th>Details</th><th>Actor</th><th>When</th></tr></thead><tbody>';
+  activity.slice().reverse().slice(0, 50).forEach(function(ev) {
+    html += '<tr>';
+    html += '<td><span style="display:inline-block;padding:3px 9px;border-radius:4px;font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;' + sourceClass(ev.source) + '">' + esc(ev.source) + '</span></td>';
+    html += '<td><b>' + esc(ev.action) + '</b></td>';
+    html += '<td style="font-size:11.5px;color:var(--muted)">' + esc(ev.details) + '</td>';
+    html += '<td style="font-size:11.5px;color:var(--muted)">' + esc(ev.actor) + '</td>';
+    html += '<td style="font-size:11px;color:var(--muted);white-space:nowrap" title="' + esc(ev.ts) + '">' + timeAgo(ev.ts) + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function adminErrorsSection(errors) {
+  var html = '';
+  // Counts by integration & code
+  var bySource = {}, byCode = {};
+  errors.forEach(function(e){
+    bySource[e.source] = (bySource[e.source] || 0) + 1;
+    byCode[e.code]     = (byCode[e.code] || 0) + 1;
+  });
+  html += '<div class="stat-grid" style="margin-bottom:14px">';
+  Object.keys(bySource).sort(function(a,b){ return bySource[b] - bySource[a]; }).slice(0,3).forEach(function(s){
+    html += statCard(s, bySource[s], 'errors logged', 'gold');
+  });
+  if (!Object.keys(bySource).length) html += statCard('No errors', '0', 'all integrations healthy', 'good');
+  html += '</div>';
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Error Log</span><span class="card-sub">' + errors.length + ' logged · most recent first</span>';
+  if (errors.length) html += ' <button class="btn btn-ghost btn-sm" style="margin-left:10px" onclick="clearErrorLog()">Clear log</button>';
+  html += '</div>';
+  if (!errors.length) {
+    html += '<div class="empty">No errors logged. Zoho / Firestore failures will appear here automatically.</div></div>';
+    return html;
+  }
+  html += '<table><thead><tr><th>Code</th><th>Source</th><th>What happened</th><th>Endpoint</th><th>Actor</th><th>When</th></tr></thead><tbody>';
+  errors.slice().reverse().forEach(function(ev) {
+    html += '<tr>';
+    html += '<td><span class="pill pill-red" style="font-size:10px">' + esc(ev.code) + '</span></td>';
+    html += '<td><span style="display:inline-block;padding:3px 9px;border-radius:4px;font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;' + sourceClass(ev.source) + '">' + esc(ev.source) + '</span></td>';
+    html += '<td style="font-size:11.5px">' + esc(ev.message) + '</td>';
+    html += '<td style="font-size:11.5px;color:var(--muted);font-family:monospace">' + esc(ev.endpoint) + '</td>';
+    html += '<td style="font-size:11.5px;color:var(--muted)">' + esc(ev.actor) + '</td>';
+    html += '<td style="font-size:11px;color:var(--muted);white-space:nowrap" title="' + esc(ev.ts) + '">' + timeAgo(ev.ts) + '</td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+function clearErrorLog() {
+  if (!confirm('Clear all logged errors? They will not be recoverable.')) return;
+  setErrorLog([]);
+  logActivity('Admin', 'Clear error log', '');
   renderTab();
 }
 
