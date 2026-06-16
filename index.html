@@ -2426,6 +2426,7 @@ function renderActiveCustomers() {
   html += statCard('Annualized Rev',   fmt$k(deals.reduce(function(s,d){return s + effectivePricing(d)*12;}, 0)), 'Effective MRR × 12 (raw)', 'gold');
   html += '</div>';
   html += '<div class="toolbar">' + searchBox('active', 'Search deal, client, BDE…') + msDropdown('active', 'bde', 'BDE', bdes) + msDropdown('active', 'status', 'Status', ['Aureum Active Account','Active Client','Expanding']) + '</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#f6f9fc;border-radius:4px;border-left:3px solid var(--gold)"><b>HC legend:</b> a plain number is the manually-planned monthly HC for the anchor month · <b style="color:var(--navy)">·z</b> next to a number means the value came from the Zoho <code>Headcounts</code> field (used when no monthly HC has been entered yet — typical for Closed Won deals already in operation).</div>';
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
   html += '<th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th class="num">HC (current)</th><th class="num">MRR/Head</th><th class="num">Monthly $</th><th class="num">Margin %</th>';
   html += '</tr></thead><tbody>';
