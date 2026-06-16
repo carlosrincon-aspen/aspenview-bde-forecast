@@ -190,6 +190,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -306,6 +307,7 @@ var TABS = [
   { id: 'threemo',     label: '3 mo. revenue' },
   { id: 'playground',  label: 'Playground' },
   { id: 'accuracy',    label: 'Forecast Accuracy' },
+  { id: 'trend',       label: 'Forecast Trend' },
   { id: 'super',       label: 'Super-Deals' },
   { id: 'fulfillment', label: 'Fulfillment View' },
   { id: 'mrr',         label: 'MRR Forecast 2026' },
@@ -432,6 +434,8 @@ function setSuperPrograms(p) { save('super_programs', p); }
 // of an account when matching ghosts. Not used in any main forecast view.
 function getLostDeals() { return load('lost_deals', []); }
 function setLostDeals(d) { save('lost_deals', d); }
+function getTrendSnapshots()  { return load('trend_snapshots', []); }
+function setTrendSnapshots(s) { save('trend_snapshots', s); }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE (shared state across Carlos / Michael / Don)
@@ -439,7 +443,7 @@ function setLostDeals(d) { save('lost_deals', d); }
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -488,11 +492,15 @@ function fbInitDataSync() {
       fbReady = true;
       setFbPill('on', 'Sync · Live');
       autoApplySeedOnce();   // now sees latest Firestore data; setDeals triggers push if changed
+      seedDemoTrendSnapshotsIfEmpty();
+      ensureWeeklyTrendSnapshot();
       renderTab();
     } else {
       fbReady = true;
       setFbPill('on', 'Sync · Live (first push)');
       autoApplySeedOnce();   // populates ghosts before first push
+      seedDemoTrendSnapshotsIfEmpty();
+      ensureWeeklyTrendSnapshot();
       fbPushNow();
       renderTab();
     }
@@ -1297,6 +1305,7 @@ function renderTab() {
   if (currentTab === 'aureum')      return renderAureumGrid();
   if (currentTab === 'threemo')     return render3MoRevenue();
   if (currentTab === 'accuracy')    return renderForecastAccuracy();
+  if (currentTab === 'trend')       return renderForecastTrend();
   if (currentTab === 'super')       return renderSuperDeals();
   if (currentTab === 'fulfillment') return renderFulfillmentView();
   if (currentTab === 'mrr')         return renderMRRForecast();
@@ -1780,6 +1789,277 @@ function saveActuals() {
   setActuals(actuals);
   closeModal();
   renderTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: FORECAST TREND (weekly snapshots of headline totals)
+// ─────────────────────────────────────────────────────────────────────────────
+// ISO-week key: yyyy-Www. Snapshots are deduped on this key so multiple opens
+// on the same week produce only one entry; weekly cadence aligns with Monday.
+function weekKeyFromDate(d) {
+  var date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  var dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  var yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  var weekNum = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return date.getUTCFullYear() + '-W' + ('0' + weekNum).slice(-2);
+}
+function currentWeekKey() { return weekKeyFromDate(new Date()); }
+function mondayOfWeekKey(weekKey) {
+  var parts = weekKey.split('-W');
+  var year = parseInt(parts[0], 10);
+  var week = parseInt(parts[1], 10);
+  var jan4 = new Date(Date.UTC(year, 0, 4));
+  var jan4Day = jan4.getUTCDay() || 7;
+  var mondayW1 = new Date(jan4); mondayW1.setUTCDate(jan4.getUTCDate() - (jan4Day - 1));
+  var monday = new Date(mondayW1); monday.setUTCDate(mondayW1.getUTCDate() + (week - 1) * 7);
+  return monday;
+}
+function weekShortLabel(weekKey) {
+  var m = mondayOfWeekKey(weekKey);
+  return m.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// Snapshot shape: {weekKey, takenAt, takenBy, anchorMonth, dealsForecasted, totalHC, totalAdjRev, isDemo}
+function computeTrendTotalsNow() {
+  var deals  = getDeals();
+  var anchor = getAnchorMonth();
+  var months = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
+  var totHC = 0, totAdj = 0, count = 0;
+  deals.forEach(function(d) {
+    if (!d.inForecast) return;
+    count++;
+    months.forEach(function(mk) {
+      totHC  += (d.monthlyHC || {})[mk] || 0;
+      totAdj += adjustedRevenue(d, mk);
+    });
+  });
+  return { dealsForecasted: count, totalHC: totHC, totalAdjRev: totAdj, anchorMonth: anchor };
+}
+function ensureWeeklyTrendSnapshot() {
+  var snaps = getTrendSnapshots();
+  var key   = currentWeekKey();
+  if (snaps.find(function(s){ return s.weekKey === key && !s.isDemo; })) return;
+  // Replace any demo snapshot at the current week with the real one.
+  snaps = snaps.filter(function(s){ return s.weekKey !== key; });
+  var t = computeTrendTotalsNow();
+  snaps.push({
+    weekKey: key,
+    takenAt: new Date().toISOString(),
+    takenBy: (currentUser && currentUser.email) || 'auto',
+    anchorMonth: t.anchorMonth,
+    dealsForecasted: t.dealsForecasted,
+    totalHC: t.totalHC,
+    totalAdjRev: t.totalAdjRev,
+    isDemo: false
+  });
+  // Keep ordered by weekKey for deterministic rendering.
+  snaps.sort(function(a,b){ return a.weekKey < b.weekKey ? -1 : a.weekKey > b.weekKey ? 1 : 0; });
+  setTrendSnapshots(snaps);
+}
+function forceTrendSnapshot() {
+  var snaps = getTrendSnapshots();
+  snaps = snaps.filter(function(s){ return s.weekKey !== currentWeekKey() || s.isDemo; });
+  setTrendSnapshots(snaps);
+  ensureWeeklyTrendSnapshot();
+  renderTab();
+}
+function seedDemoTrendSnapshotsIfEmpty() {
+  // One-time: seed 5 historical weeks + this week of demo points so Michael's first
+  // visit shows a meaningful curve. Honestly labeled: every point carries isDemo:true.
+  if (load('demo_trend_seeded_v1', false)) return;
+  save('demo_trend_seeded_v1', true);  // local-only flag; not synced
+  var existing = getTrendSnapshots();
+  if (existing.length > 0) return;     // never overwrite real history
+  var now = computeTrendTotalsNow();
+  if (now.dealsForecasted === 0 && now.totalHC === 0) return; // no baseline yet
+  // Multipliers chosen to show a realistic upward trajectory with a mild dip — not flat.
+  var dealsScale = [0.78, 0.83, 0.91, 0.96, 0.93, 1.00];
+  var hcScale    = [0.82, 0.85, 0.89, 0.92, 0.97, 1.00];
+  var mrrScale   = [0.74, 0.80, 0.88, 0.94, 0.96, 1.00];
+  var thisMonday = mondayOfWeekKey(currentWeekKey());
+  var demos = [];
+  for (var i = 5; i >= 0; i--) {
+    var d = new Date(thisMonday); d.setUTCDate(thisMonday.getUTCDate() - i * 7);
+    var wk = weekKeyFromDate(d);
+    var idx = 5 - i;
+    demos.push({
+      weekKey: wk,
+      takenAt: d.toISOString(),
+      takenBy: 'demo-baseline',
+      anchorMonth: now.anchorMonth,
+      dealsForecasted: Math.round(now.dealsForecasted * dealsScale[idx]),
+      totalHC:         Math.round(now.totalHC         * hcScale[idx]),
+      totalAdjRev:     Math.round(now.totalAdjRev     * mrrScale[idx]),
+      isDemo: true
+    });
+  }
+  setTrendSnapshots(demos);
+}
+function clearDemoTrendData() {
+  if (!confirm('Clear all demo baseline snapshots? Real weekly snapshots will be preserved.')) return;
+  var snaps = getTrendSnapshots().filter(function(s){ return !s.isDemo; });
+  setTrendSnapshots(snaps);
+  renderTab();
+}
+
+// Toggle granularity is rendered client-side; not persisted.
+var trendGranularity = 'weekly';
+function setTrendGranularity(g) { trendGranularity = g; renderTab(); }
+
+function aggregateTrendByGranularity(snaps, granularity) {
+  // Snapshots come in week order. For 'monthly' we keep the LAST snapshot of each
+  // month; for 'quarterly' the last of each Q. 'weekly' keeps the last ~12 entries.
+  if (granularity === 'weekly') {
+    return snaps.slice(-12);
+  }
+  function bucketKey(s) {
+    var m = mondayOfWeekKey(s.weekKey);
+    var y = m.getUTCFullYear();
+    var mo = m.getUTCMonth();
+    if (granularity === 'monthly') return y + '-' + ('0' + (mo + 1)).slice(-2);
+    var q = Math.floor(mo / 3) + 1;
+    return y + '-Q' + q;
+  }
+  var buckets = {};
+  snaps.forEach(function(s) { buckets[bucketKey(s)] = s; });
+  var keys = Object.keys(buckets).sort();
+  if (granularity === 'monthly') keys = keys.slice(-6);
+  else                            keys = keys.slice(-4);
+  return keys.map(function(k){ return buckets[k]; });
+}
+function trendXAxisLabel(s, granularity) {
+  if (granularity === 'weekly') return weekShortLabel(s.weekKey);
+  var m = mondayOfWeekKey(s.weekKey);
+  if (granularity === 'monthly') return m.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  var q = Math.floor(m.getUTCMonth() / 3) + 1;
+  return 'Q' + q + ' ' + String(m.getUTCFullYear()).slice(-2);
+}
+
+function renderForecastTrend() {
+  var allSnaps = getTrendSnapshots();
+  var points   = aggregateTrendByGranularity(allSnaps, trendGranularity);
+  var hasDemo  = allSnaps.some(function(s){ return s.isDemo; });
+  var realN    = allSnaps.filter(function(s){ return !s.isDemo; }).length;
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Forecast Trend</h1><div class="sub">Weekly snapshot of the forecast — auto-taken on the first session each ISO week</div></div>';
+  html += '<div>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="forceTrendSnapshot()">+ Snapshot now</button> ';
+  if (hasDemo) html += '<button class="btn btn-ghost btn-sm" onclick="clearDemoTrendData()" title="Remove demo baseline points">Clear demo data</button>';
+  html += '</div></div>';
+
+  if (hasDemo) {
+    html += '<div class="callout callout-amber" style="margin:8px 0 18px;padding:10px 14px;background:#fff8e1;border-left:4px solid #E8B84B;border-radius:0 6px 6px 0;font-size:12.5px">';
+    html += '<b>Demo baseline shown.</b> ' + allSnaps.filter(function(s){return s.isDemo;}).length + ' synthetic points are seeded from the current Excel-of-Don totals to illustrate the trend. ';
+    html += 'Real auto-snapshots start the first time the app is opened on a new ISO week (next Monday). Use <b>Clear demo data</b> once you want to track real history only.';
+    html += '</div>';
+  }
+
+  // Granularity toggle
+  html += '<div style="display:flex;gap:6px;margin-bottom:14px">';
+  ['weekly','monthly','quarterly'].forEach(function(g) {
+    var lab = g === 'weekly' ? 'Weekly' : g === 'monthly' ? 'Monthly' : 'Quarterly';
+    var cls = trendGranularity === g ? 'btn btn-gold btn-sm' : 'btn btn-ghost btn-sm';
+    html += '<button class="' + cls + '" onclick="setTrendGranularity(\'' + g + '\')">' + lab + '</button>';
+  });
+  html += '</div>';
+
+  if (!points.length) {
+    html += '<div class="card"><div class="empty">No snapshots yet. Click <b>+ Snapshot now</b> to capture the current forecast as the first data point.</div></div>';
+    document.getElementById('mainContent').innerHTML = html;
+    return;
+  }
+
+  // KPI deltas vs first point in view
+  var first = points[0], last = points[points.length - 1];
+  function deltaPct(a, b) { if (!a) return 0; return (b - a) / a; }
+  function deltaCell(a, b, fmt) {
+    var dp = deltaPct(a, b);
+    var col = dp >= 0 ? '#2e7d32' : '#c62828';
+    var arrow = dp >= 0 ? '▲' : '▼';
+    return '<div style="font-size:11px;color:' + col + ';font-weight:700;margin-top:2px">' + arrow + ' ' + (dp >= 0 ? '+' : '') + (dp * 100).toFixed(1) + '%</div>';
+  }
+  html += '<div class="acc-bands" style="margin-bottom:18px">';
+  html += '<div class="card" style="padding:14px 16px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Deals Forecasted</div>';
+  html += '<div style="font-size:26px;font-weight:900;color:var(--navy)">' + last.dealsForecasted + '</div>';
+  html += deltaCell(first.dealsForecasted, last.dealsForecasted) + '</div>';
+  html += '<div class="card" style="padding:14px 16px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Headcount (3-mo)</div>';
+  html += '<div style="font-size:26px;font-weight:900;color:var(--navy)">' + last.totalHC.toLocaleString() + '</div>';
+  html += deltaCell(first.totalHC, last.totalHC) + '</div>';
+  html += '<div class="card" style="padding:14px 16px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Adj. Revenue (3-mo)</div>';
+  html += '<div style="font-size:26px;font-weight:900;color:var(--navy)">' + fmt$k(last.totalAdjRev) + '</div>';
+  html += deltaCell(first.totalAdjRev, last.totalAdjRev) + '</div>';
+  html += '</div>';
+
+  // Three chart cards
+  html += '<div class="card"><div class="card-header"><span class="card-title">Deals forecasted</span><span class="card-sub">Count of deals with Fcst ☑</span></div>';
+  html += '<div style="height:240px;position:relative"><canvas id="trendChartDeals"></canvas></div></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Total Headcount</span><span class="card-sub">Sum of HC across the 3-month anchor window</span></div>';
+  html += '<div style="height:240px;position:relative"><canvas id="trendChartHC"></canvas></div></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Total Adj. Revenue ($)</span><span class="card-sub">HC × MRR × Win % across the 3-month anchor window</span></div>';
+  html += '<div style="height:240px;position:relative"><canvas id="trendChartMRR"></canvas></div></div>';
+
+  // Raw history table
+  html += '<div class="card"><div class="card-header"><span class="card-title">Snapshot history</span><span class="card-sub">' + realN + ' real · ' + (allSnaps.length - realN) + ' demo</span></div>';
+  html += '<table><thead><tr><th>Week</th><th>Anchor</th><th>Taken by</th><th class="num">Deals fcst</th><th class="num">Total HC</th><th class="num">Adj. Revenue</th><th></th></tr></thead><tbody>';
+  allSnaps.slice().reverse().forEach(function(s) {
+    var badge = s.isDemo ? ' <span class="pill" style="font-size:9px;background:#fff8e1;color:#b45309">demo</span>' : '';
+    html += '<tr><td><b>' + s.weekKey + '</b> <span style="color:var(--muted);font-size:11px">(' + weekShortLabel(s.weekKey) + ')</span>' + badge + '</td>';
+    html += '<td style="color:var(--muted);font-size:11px">' + monthLabel(s.anchorMonth) + '</td>';
+    html += '<td style="color:var(--muted);font-size:11px">' + esc(s.takenBy || '—') + '</td>';
+    html += '<td class="num">' + s.dealsForecasted + '</td>';
+    html += '<td class="num">' + s.totalHC.toLocaleString() + '</td>';
+    html += '<td class="num">' + fmt$k(s.totalAdjRev) + '</td>';
+    html += '<td></td></tr>';
+  });
+  html += '</tbody></table></div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+
+  // Render the three charts (Chart.js v4)
+  setTimeout(function() { renderTrendCharts(points); }, 0);
+}
+var _trendChartInstances = {};
+function renderTrendCharts(points) {
+  if (typeof Chart === 'undefined') return;
+  Object.keys(_trendChartInstances).forEach(function(k) {
+    try { _trendChartInstances[k].destroy(); } catch(e) {}
+  });
+  _trendChartInstances = {};
+  var labels = points.map(function(s){ return trendXAxisLabel(s, trendGranularity); });
+  var navy   = '#0A1928';
+  var gold   = '#E8B84B';
+  var baseOpts = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+    interaction: { mode: 'nearest', intersect: false },
+    scales: {
+      x: { grid: { display: false }, ticks: { font: { family: 'Roboto', size: 11 }, color: '#5a6a7a' } },
+      y: { beginAtZero: true, grid: { color: '#eef2f6' }, ticks: { font: { family: 'Roboto', size: 11 }, color: '#5a6a7a' } }
+    }
+  };
+  function mkChart(canvasId, data, color, fmtFn) {
+    var ctx = document.getElementById(canvasId);
+    if (!ctx) return;
+    var opts = JSON.parse(JSON.stringify(baseOpts));
+    if (fmtFn) {
+      opts.scales.y.ticks.callback = function(v){ return fmtFn(v); };
+      opts.plugins.tooltip.callbacks = { label: function(ctx2){ return fmtFn(ctx2.parsed.y); } };
+    }
+    _trendChartInstances[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: { labels: labels, datasets: [{
+        data: data, borderColor: color, backgroundColor: color + '22',
+        borderWidth: 2.5, tension: 0.28, fill: true, pointRadius: 4, pointBackgroundColor: color,
+        pointHoverRadius: 6
+      }]},
+      options: opts
+    });
+  }
+  mkChart('trendChartDeals', points.map(function(s){ return s.dealsForecasted; }), navy);
+  mkChart('trendChartHC',    points.map(function(s){ return s.totalHC; }),         navy);
+  mkChart('trendChartMRR',   points.map(function(s){ return s.totalAdjRev; }),     gold, function(v){ return fmt$k(v); });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
