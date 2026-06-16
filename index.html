@@ -2431,13 +2431,23 @@ function renderActiveCustomers() {
   html += '</tr></thead><tbody>';
   var anchor = getAnchorMonth();
   deals.forEach(function(d) {
-    var hc = (d.monthlyHC || {})[anchor] || 0;
-    var pph = pricePerHead(d);
+    // HC fallback chain: user's planned HC for the anchor month → Zoho's Headcounts
+    // field → Excel seed totalHC → 0. Closed Won deals usually have no monthlyHC
+    // populated (they came from the seed as totals), so without the Zoho fallback
+    // they all rendered as 0.
+    var monthHC = (d.monthlyHC || {})[anchor] || 0;
+    var hc = monthHC || d.zoho_totalHC || d.totalHC || 0;
+    var pricing = effectivePricing(d);
+    // MRR/Head: real per-head when we have HC; otherwise show the deal's total MRR.
+    var pph = hc > 0 ? (pricing / hc) : pricing;
+    // Monthly $: for actively billing deals, the deal MRR is the monthly $ if HC > 0.
+    var monthly$ = hc > 0 ? pricing : 0;
+    var hcLabel  = hc + (monthHC === 0 && d.zoho_totalHC ? ' <span style="color:var(--muted);font-size:10px" title="From Zoho Headcounts (no monthly HC planned for this month)">·z</span>' : '');
     html += '<tr><td>' + statusPill(d.status) + '</td><td>' + esc(d.client) + '</td><td><b>' + esc(d.dealName) + '</b></td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
-    html += '<td class="num">' + hc + '</td>';
+    html += '<td class="num">' + hcLabel + '</td>';
     html += '<td class="num">' + fmt$k(pph) + '</td>';
-    html += '<td class="num num-bold">' + fmt$k(hc * pph) + '</td>';
+    html += '<td class="num num-bold">' + fmt$k(monthly$) + '</td>';
     html += '<td class="num">' + fmtPct(getMarginFor(d)) + '</td></tr>';
   });
   html += '</tbody></table></div></div>';
