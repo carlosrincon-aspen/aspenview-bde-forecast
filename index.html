@@ -244,6 +244,7 @@
     <div class="header-center">BDE Rolling 12-Month Sales &amp; Readiness Forecast</div>
     <div class="header-right">
       <a class="logout-btn" href="guide-en.html" target="_blank" rel="noopener" style="text-decoration:none" title="Open the User Guide in a new tab">&#128214; Guide</a>
+      <button id="adminBtn" class="logout-btn" onclick="selectTab('admin')" title="Admin Panel — team, activity, errors" style="display:none;background:rgba(232,184,75,0.18);color:var(--gold);border:1px solid rgba(232,184,75,0.4)">&#9733; Admin</button>
       <span class="zoho-pill off" id="fbPill" title="Firestore sync status">Sync · …</span>
       <span class="zoho-pill off" id="zohoPill" onclick="toggleZoho()">Zoho · Disconnected</span>
       <span class="header-user" id="headerUser"></span>
@@ -296,10 +297,13 @@ var ALLOWED_STAGES = [
 
 // Email → role mapping. Edit emails here to grant manager access.
 // Anyone else with an @aspenview.com account signs in as a BDE by default.
+// Only these four emails get manager (admin) role. Any other @aspenview.com
+// account can sign in and use the platform as a BDE — no admin access.
 var USERS = {
-  don:     { id: 'don',     name: 'Don',           email: 'don@aspenview.com',           role: 'manager', initials: 'DN' },
-  michael: { id: 'michael', name: 'Michael',       email: 'michael@aspenview.com',       role: 'manager', initials: 'MD' },
-  carlos:  { id: 'carlos',  name: 'Carlos Rincon', email: 'carlos.rincon@aspenview.com', role: 'manager', initials: 'CR' }
+  carlos:   { id: 'carlos',   name: 'Carlos Rincon',     email: 'carlos.rincon@aspenview.com',     role: 'manager', initials: 'CR' },
+  michael:  { id: 'michael',  name: 'Michael Durham',    email: 'michael.durham@aspenview.com',    role: 'manager', initials: 'MD' },
+  don:      { id: 'don',      name: 'Don Kelly',         email: 'don.kelly@aspenview.com',         role: 'manager', initials: 'DK' },
+  juliana:  { id: 'juliana',  name: 'Juliana Castaneda', email: 'juliana.castaneda@aspenview.com', role: 'manager', initials: 'JC' }
 };
 
 var TABS = [
@@ -315,8 +319,8 @@ var TABS = [
   { id: 'active',      label: 'Active Customers - Actuals' },
   { id: 'margin',      label: 'Stage Rules' },
   { id: 'cleanup',     label: 'Cleanup' },
-  { id: 'admin',       label: 'Admin Panel', adminOnly: true },
   { id: 'settings',    label: 'Settings' }
+  // 'admin' tab opens from the ★ Admin button in the top-right header (admins only).
 ];
 
 var ALL_MONTHS = ['2026-04','2026-05','2026-06','2026-07','2026-08','2026-09','2026-10','2026-11','2026-12','2027-01','2027-02','2027-03'];
@@ -649,6 +653,16 @@ function signInWithGoogle() {
   });
 }
 function loginAs(u) {
+  // Re-resolve role/name from the current USERS map every time. Sessions cached
+  // with an older role (e.g. user was BDE before being added as manager) get
+  // refreshed automatically, no sign-out needed.
+  Object.keys(USERS).forEach(function(k) {
+    if (USERS[k].email && (u.email || '').toLowerCase() === USERS[k].email.toLowerCase()) {
+      u.role = USERS[k].role;
+      u.name = USERS[k].name || u.name;
+      u.initials = USERS[k].initials || u.initials;
+    }
+  });
   currentUser = u;
   save('current_user', u);
   document.getElementById('loginScreen').style.display = 'none';
@@ -657,6 +671,8 @@ function loginAs(u) {
   logActivity('Auth', 'Sign in', u.name + ' (' + u.role + ')');
   var roleLabel = isAdmin(u) ? 'Admin' : (u.role === 'manager' ? 'Manager' : 'BDE');
   document.getElementById('headerUser').textContent    = u.name + ' · ' + roleLabel;
+  var adminBtn = document.getElementById('adminBtn');
+  if (adminBtn) adminBtn.style.display = isAdmin(u) ? '' : 'none';
   // autoApplySeedOnce is called from fbInitDataSync after Firestore fetch (or from degrade fallback)
   ensureMonthlySnapshot();
   renderTopNav();
