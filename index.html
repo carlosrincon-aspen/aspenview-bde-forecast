@@ -434,6 +434,16 @@ function getActuals()      { return load('actuals', {}); }
 function setActuals(a)     { save('actuals', a); }
 function getAnchorMonth()  { return load('anchor_month', currentMonthKey()); }
 function setAnchorMonth(m) { save('anchor_month', m); }
+// UI-initiated anchor change: log it (setAnchorMonth itself is also called from
+// Firestore onSnapshot when a remote teammate moves the anchor — we don't want
+// to log that as a local action, so we wrap it here for user clicks only).
+function changeAnchorMonth(m) {
+  var prev = getAnchorMonth();
+  if (prev === m) return;
+  setAnchorMonth(m);
+  logActivity('Forecast', 'Change anchor month', prev + ' → ' + m);
+  renderTab();
+}
 function getSuperPrograms()  { return load('super_programs', SUPER_PROGRAMS_SEED); }
 function setSuperPrograms(p) { save('super_programs', p); }
 // Closed Lost Zoho deals — kept separately for the Cleanup tab so users can see ALL deals
@@ -967,6 +977,8 @@ function toggleDealFlag(idx, field) {
   var deals = getDeals();
   if (!deals[idx]) return;
   deals[idx][field] = !deals[idx][field];
+  var label = field === 'inForecast' ? 'Fcst' : field === 'isSuperDeal' ? 'Super' : field;
+  logActivity('Forecast', 'Toggle ' + label, deals[idx].dealName + ' → ' + (deals[idx][field] ? 'ON' : 'OFF'));
   setDeals(deals);
   renderTab();
 }
@@ -1480,7 +1492,7 @@ function accCard(cls, label, b) {
 function anchorSelectHtml() {
   var cur = getAnchorMonth();
   var opts = ALL_MONTHS.map(function(m) { return '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + monthLabel(m) + '</option>'; }).join('');
-  return '<select onchange="setAnchorMonth(this.value); renderTab();">' + opts + '</select>';
+  return '<select onchange="changeAnchorMonth(this.value)">' + opts + '</select>';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1603,17 +1615,28 @@ function updateDealHC(idx, monthKey, value) {
   var deals = getDeals();
   var d = deals[idx]; if (!d) return;
   d.monthlyHC = d.monthlyHC || {};
+  var oldV = d.monthlyHC[monthKey] || 0;
   var v = parseInt(value);
   if (!v || isNaN(v) || v <= 0) delete d.monthlyHC[monthKey];
   else d.monthlyHC[monthKey] = v;
   d.totalHC = sumMonths(d.monthlyHC);
   setDeals(deals);
+  logActivity('Forecast', 'Edit HC', d.dealName + ' · ' + monthKey + ': ' + oldV + ' → ' + (d.monthlyHC[monthKey] || 0));
 }
 function updateDealField(idx, field, value) {
   var deals = getDeals();
   var d = deals[idx]; if (!d) return;
+  var oldV = d[field];
   d[field] = value === '' || isNaN(parseFloat(value)) ? '' : parseFloat(value);
   setDeals(deals);
+  var labels = { mrrAureum: 'MRR Aureum', winRateAdj: 'Win %', marginOverride: 'Margin %' };
+  var label = labels[field] || field;
+  var fmtVal = function(v){
+    if (v === '' || v === undefined || v === null) return '—';
+    if (field === 'winRateAdj' || field === 'marginOverride') return Math.round(v * 100) + '%';
+    return v;
+  };
+  logActivity('Forecast', 'Edit ' + label, d.dealName + ': ' + fmtVal(oldV) + ' → ' + fmtVal(d[field]));
 }
 function openDealModal(idx) {
   var deals = getDeals();
@@ -1664,7 +1687,10 @@ function saveDeal(idx) {
 }
 function deleteDeal(idx) {
   if (!confirm('Delete this deal?')) return;
-  var deals = getDeals(); deals.splice(idx, 1); setDeals(deals); closeModal(); renderTab();
+  var deals = getDeals();
+  var d = deals[idx]; if (!d) { closeModal(); renderTab(); return; }
+  logActivity('Forecast', 'Delete deal (modal)', d.dealName + (d.zohoId ? ' [linked to Zoho]' : ' [ghost]'));
+  deals.splice(idx, 1); setDeals(deals); closeModal(); renderTab();
 }
 // Inline "kill" a row (e.g. a stale/renamed duplicate not in Zoho)
 function killDeal(idx) {
@@ -1672,6 +1698,7 @@ function killDeal(idx) {
   var d = deals[idx]; if (!d) return;
   var note = d.zohoId ? '\n\nNote: this deal IS in Zoho — deleting here only removes it from the dashboard, not from Zoho. The next Sync will bring it back unless you remove/close it in Zoho.' : '';
   if (!confirm('Delete "' + (d.dealName || 'this deal') + '" from the dashboard?' + note)) return;
+  logActivity('Forecast', 'Kill row', d.dealName + (d.zohoId ? ' [linked to Zoho — will return on next sync]' : ' [ghost]'));
   deals.splice(idx, 1); setDeals(deals); renderTab();
 }
 // New deals are always created in Zoho (source of truth), then synced in.
@@ -2526,6 +2553,7 @@ function toggleApproved(idx) {
   deals[idx].approved = !deals[idx].approved;
   if (deals[idx].approved) deals[idx].approvedBy = (currentUser && currentUser.name) || ''; else { delete deals[idx].approvedBy; }
   setDeals(deals);
+  logActivity('Playground', deals[idx].approved ? 'Approve for push' : 'Unapprove', deals[idx].dealName);
   renderTab();
 }
 function revertPlayground(idx) {
