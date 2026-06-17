@@ -351,6 +351,36 @@ var STATUS_PILL = {
   'Closed Lost':           'pill-red'
 };
 
+// Michael's 5-phase model. Each deal is bucketed into exactly one phase based on
+// its Zoho stage. The defaultFcst flag controls whether the phase is forecasted by
+// default — SQLs and Closed Won are off; Recruiting / Pricing / Legal are on.
+// Closed Won is "captured" in cash flow (already billing) rather than forecasted.
+var PHASES = [
+  { id: 1, label: 'Phase 1 — SQLs',       short: 'SQLs',       cls: 'pill-gray',   defaultFcst: false, captured: false, note: 'Early pipeline — not forecasted by default', stages: ['SQL - Solution Discovery', 'Stage 2 (WTW)', 'Commercial Design', 'SQL'] },
+  { id: 2, label: 'Phase 2 — Recruiting', short: 'Recruiting', cls: 'pill-blue',   defaultFcst: true,  captured: false, note: 'Active recruiting / staffing',              stages: ['Recruitment (Path 2.1)', 'P.S (Path 2.2)', 'Professional Services (Path 2.2)'] },
+  { id: 3, label: 'Phase 3 — Pricing',    short: 'Pricing',    cls: 'pill-gold',   defaultFcst: true,  captured: false, note: 'Commercial pricing finalized',             stages: ['Pricing'] },
+  { id: 4, label: 'Phase 4 — Legal',      short: 'Legal',      cls: 'pill-green',  defaultFcst: true,  captured: false, note: 'Paper process / contracting',              stages: ['Paper Process / Contracting', 'Paper Process'] },
+  { id: 5, label: 'Phase 5 — Closed Won', short: 'Closed Won', cls: 'pill-aureum', defaultFcst: false, captured: true,  note: 'Already won — captured in cash flow',      stages: ['Closed Won'] }
+];
+function phaseIdForStage(stageId) {
+  for (var i = 0; i < PHASES.length; i++) {
+    if (PHASES[i].stages.indexOf(stageId) >= 0) return PHASES[i].id;
+  }
+  return null;
+}
+function phaseById(id) {
+  for (var i = 0; i < PHASES.length; i++) if (PHASES[i].id === id) return PHASES[i];
+  return null;
+}
+function phaseForDeal(d) {
+  return d && d.stage ? phaseIdForStage(d.stage) : null;
+}
+function phasePill(phaseId) {
+  var p = phaseById(phaseId);
+  if (!p) return '<span class="pill pill-gray" style="font-size:10px">— no phase —</span>';
+  return '<span class="pill ' + p.cls + '" style="font-size:10px;font-weight:700" title="' + esc(p.note) + '">' + esc(p.short) + '</span>';
+}
+
 // Stage Rules — per-stage standard Win % AND Margin % (Michael's model). As a deal
 // progresses, both can evolve. Order: manual override → Zoho target margin → stage rule.
 var DEFAULT_MARGIN_RULES = [
@@ -453,6 +483,25 @@ function setLostDeals(d) { save('lost_deals', d); }
 function getTrendSnapshots()  { return load('trend_snapshots', []); }
 function setTrendSnapshots(s) { save('trend_snapshots', s); }
 
+// Which phases Don (or anyone) wants to forecast. Defaults to phases flagged
+// defaultFcst:true in PHASES (Recruiting + Pricing + Legal). Persisted in
+// Firestore so the team sees the same filter.
+function getActivePhases() {
+  var saved = load('active_phases', null);
+  if (saved && saved.length) return saved;
+  return PHASES.filter(function(p){ return p.defaultFcst; }).map(function(p){ return p.id; });
+}
+function setActivePhases(arr) { save('active_phases', arr); }
+function togglePhaseActive(id) {
+  var cur = getActivePhases();
+  var idx = cur.indexOf(id);
+  if (idx >= 0) cur.splice(idx, 1);
+  else          cur.push(id);
+  setActivePhases(cur);
+  logActivity('Forecast', 'Toggle phase filter', 'Phase ' + id + ' → ' + (idx < 0 ? 'ON' : 'OFF'));
+  renderTab();
+}
+
 // ── Admin Panel state ──
 function getAdminExtra()   { return load('admin_extra', []); }
 function setAdminExtra(a)  { save('admin_extra', a); }
@@ -532,7 +581,7 @@ function userStatus(lastSeen) {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -1507,6 +1556,7 @@ function renderAureumGrid() {
   if (idx < 0) idx = 0;
   for (var i = 0; i < 9 && idx + i < ALL_MONTHS.length; i++) months.push(ALL_MONTHS[idx + i]);
 
+  var activePhases = getActivePhases();
   var filtered = deals.filter(function(d) {
     if (!passSearch('aureum', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
     if (!passMulti('aureum', 'status', d.status)) return false;
@@ -1515,6 +1565,10 @@ function renderAureumGrid() {
     if (f.forecastOnly && !d.inForecast) return false;
     if (f.superOnly    && !isSuperDeal(d)) return false;
     if (f.excelOnly    && !d.inExcel) return false;
+    if (f.phaseFilterOn) {
+      var pid = phaseForDeal(d);
+      if (!pid || activePhases.indexOf(pid) < 0) return false;
+    }
     return true;
   });
   // Account-level traceability: group all deals of the same client together (then by deal name)
@@ -1530,6 +1584,39 @@ function renderAureumGrid() {
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">All deals from Zoho · Check <b>Forecast</b> to include in 3 mo. revenue · Check <b>Super</b> to flag for Super-Deals</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="newDealInZoho()">+ New Deal (in Zoho)</button></div></div>';
+
+  // "Build & Invoice, not Close" reminder — Michael's framing for the whole model.
+  html += '<div style="margin:0 0 14px;padding:10px 14px;background:linear-gradient(90deg,#fff8e1 0%, #fdf6e6 100%);border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:12.5px;color:var(--navy)">';
+  html += '<b style="text-transform:uppercase;letter-spacing:.5px;font-size:11px">⚡ Build &amp; Invoice — NOT Close</b><br>';
+  html += '<span style="color:var(--muted)">HC by month is when a person actually <b>starts billing</b>, not when the deal closes. CGI may close in June but ramp 35 → 70 → 70 across the next weeks — put those in the month they bill, not the month you sign.</span>';
+  html += '</div>';
+
+  // Phase filter strip — Michael\'s 5 phases. Click to toggle each.
+  html += '<div style="margin-bottom:14px;padding:12px 14px;background:#f6f9fc;border:1px solid var(--border);border-radius:8px">';
+  html += '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">';
+  html += '<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700">Phases to forecast</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">Don picks which phases enter the forecast. Closed Won is captured in cash flow, not forecasted.</div></div>';
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">';
+  PHASES.forEach(function(p) {
+    var active = activePhases.indexOf(p.id) >= 0;
+    var count  = deals.filter(function(d){ return phaseForDeal(d) === p.id; }).length;
+    var bg, color, border;
+    if (active) {
+      if (p.cls === 'pill-gold')        { bg = '#E8B84B'; color = '#0A1928'; border = '#c79827'; }
+      else if (p.cls === 'pill-blue')   { bg = '#1d4a86'; color = 'white';   border = '#13335c'; }
+      else if (p.cls === 'pill-green')  { bg = '#2e7d32'; color = 'white';   border = '#1f5a23'; }
+      else if (p.cls === 'pill-aureum') { bg = '#00838f'; color = 'white';   border = '#00606b'; }
+      else                              { bg = '#0A1928'; color = 'white';   border = '#000';    }
+    } else { bg = 'white'; color = 'var(--muted)'; border = 'var(--border)'; }
+    html += '<button onclick="togglePhaseActive(' + p.id + ')" title="' + esc(p.note) + '" style="padding:6px 12px;background:' + bg + ';color:' + color + ';border:1px solid ' + border + ';border-radius:20px;font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px">';
+    html += (active ? '✓ ' : '') + esc(p.short);
+    html += ' <span style="opacity:.7;font-size:10px;font-weight:500">(' + count + ')</span>';
+    html += '</button>';
+  });
+  html += '</div>';
+  // Master toggle for phase filtering at all
+  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px;white-space:nowrap"><input type="checkbox"' + (f.phaseFilterOn ? ' checked' : '') + ' onchange="filterScope(\'aureum\').phaseFilterOn=this.checked; renderAureumGrid()"> <b>Filter by phase</b></label>';
+  html += '</div></div>';
 
   html += '<div class="toolbar">';
   html += searchBox('aureum', 'Search deal, client, BDE…');
@@ -1547,7 +1634,7 @@ function renderAureumGrid() {
   html += '<th title="Include this deal in the 3 mo. revenue tab">Fcst</th>';
   html += '<th title="Flag this deal as a Super-Deal / Aureum">Super</th>';
   html += '<th title="✓ = this deal is in Don\'s Excel forecast">Excel</th>';
-  html += '<th>BDE</th><th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th>Loc</th><th>1st Bill.</th>';
+  html += '<th>BDE</th><th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th title="Michael\'s 5-phase model">Phase</th><th>Loc</th><th>1st Bill.</th>';
   html += '<th class="num" title="MRR from Zoho — read-only, auto-filled by Sync">MRR Zoho</th>';
   html += '<th class="num" title="MRR Aureum — Don\'s manual override. Used when MRR Zoho is empty.">MRR Aureum</th>';
   html += '<th class="num">Win %</th><th class="num">Margin %</th>';
@@ -1567,6 +1654,7 @@ function renderAureumGrid() {
     html += '<td>' + esc(d.client) + '</td>';
     html += '<td>' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="margin-left:4px">Aureum</span>' : '') + '</td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
+    html += '<td>' + phasePill(phaseForDeal(d)) + '</td>';
     html += '<td style="color:var(--muted)">' + esc(d.location) + '</td>';
     html += '<td style="color:var(--muted)">' + esc(d.firstBillableMonth) + '</td>';
     var pricePerH = pricePerHead(d);
@@ -1737,6 +1825,8 @@ function render3MoRevenue() {
   var html = '';
   html += '<div class="page-title"><div><h1>3 mo. revenue</h1><div class="sub">Rolling 3-month window · only deals flagged <b>Forecast</b> in Aureum Demand Forecast</div></div>';
   html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+  // Build & Invoice reminder — same framing as Aureum tab.
+  html += '<div style="margin:0 0 14px;padding:8px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)"><b>⚡ Build &amp; Invoice — NOT Close.</b> HC is when a person <b>starts billing</b>, not when the deal closes.</div>';
   html += '<div class="toolbar">';
   html += searchBox('3mo', 'Search deal, client, BDE…');
   html += msDropdown('3mo', 'bde',    'BDE',    bdes);
@@ -1753,7 +1843,7 @@ function render3MoRevenue() {
 
   var tot = { proj:[0,0,0], adj:[0,0,0], mar:[0,0,0], hc:[0,0,0] };
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead>';
-  html += '<tr><th rowspan="2">BDE</th><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Deal</th><th rowspan="2">Stage</th><th rowspan="2" class="num">Win %</th><th rowspan="2" class="num">MRR / Head</th>';
+  html += '<tr><th rowspan="2">BDE</th><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Deal</th><th rowspan="2">Stage</th><th rowspan="2">Phase</th><th rowspan="2" class="num">Win %</th><th rowspan="2" class="num">MRR / Head</th>';
   months.forEach(function(m){ html += '<th colspan="4" style="text-align:center;background:#1c3250;color:white">' + monthLabel(m) + '</th>'; });
   html += '<th rowspan="2" class="num" style="background:var(--navy);color:white">Total Adj.</th></tr>';
   html += '<tr>';
@@ -1771,6 +1861,7 @@ function render3MoRevenue() {
     html += '<td>' + esc(d.client) + '</td>';
     html += '<td>' + dealNameCell(d) + '</td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
+    html += '<td>' + phasePill(phaseForDeal(d)) + '</td>';
     html += '<td class="num">' + fmtPct(wr) + '</td>';
     html += '<td class="num">' + fmt$k(pph) + '</td>';
     var dealTotalAdj = 0;
@@ -1791,7 +1882,7 @@ function render3MoRevenue() {
   });
 
   html += '<tr style="background:var(--navy);color:white;font-weight:700">';
-  html += '<td colspan="7" style="color:white">TOTALS — ' + rows.length + ' deals in forecast</td>';
+  html += '<td colspan="8" style="color:white">TOTALS — ' + rows.length + ' deals in forecast</td>';
   for (var i = 0; i < 3; i++) {
     html += '<td class="num" style="color:white">' + tot.hc[i] + '</td>';
     html += '<td class="num" style="color:white">' + fmt$k(tot.proj[i]) + '</td>';
