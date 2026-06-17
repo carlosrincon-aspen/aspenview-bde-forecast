@@ -1589,7 +1589,7 @@ function renderOverview() {
   if (anchorLocked) {
     html += '<button class="btn btn-ghost btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + ' on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString() + '">🔒 Locked · Re-lock</button>';
   } else {
-    html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Don rubber-stamps the forecast — this snapshot becomes immutable and powers the accuracy bands when actuals come in">🔒 Lock ' + monthLabel(anchor) + ' forecast</button>';
+    html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Lock this forecast — the snapshot becomes immutable and powers the accuracy bands when actuals come in">🔒 Lock ' + monthLabel(anchor) + ' forecast</button>';
   }
   html += '</div></div>';
   if (anchorLocked) {
@@ -1714,7 +1714,7 @@ function renderPipelineOverview() {
   });
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Pipeline <span style="color:var(--muted);font-weight:400">Overview</span></h1><div class="sub">Full pipeline grouped by Michael\'s 5-phase model · the C-suite snapshot for sales, finance, and investors</div></div>';
+  html += '<div class="page-title"><div><h1>Pipeline <span style="color:var(--muted);font-weight:400">Overview</span></h1><div class="sub">Full pipeline grouped by the 5-phase sales model — the C-suite snapshot for sales, finance, and investors</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="syncZohoDeals()">↻ Sync from Zoho</button></div></div>';
 
   // Coverage note: explain the difference vs the raw deal count in Aureum.
@@ -1956,7 +1956,7 @@ function renderAureumGrid() {
   html += '<div style="margin-bottom:14px;padding:12px 14px;background:#f6f9fc;border:1px solid var(--border);border-radius:8px">';
   html += '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">';
   html += '<div><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700">Phases to forecast</div>';
-  html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">Don picks which phases enter the forecast. Closed Won is captured in cash flow, not forecasted.</div></div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin-top:2px">Pick which phases enter the forecast. Closed Won is captured in cash flow, not forecasted.</div></div>';
   html += '<div style="display:flex;gap:6px;flex-wrap:wrap;flex:1">';
   PHASES.forEach(function(p) {
     var active = activePhases.indexOf(p.id) >= 0;
@@ -1986,7 +1986,7 @@ function renderAureumGrid() {
   html += msDropdown('aureum', 'status', 'Status', Object.keys(STATUS_PILL));
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.forecastOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').forecastOnly=this.checked; renderAureumGrid()"> Forecast only</label>';
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.superOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').superOnly=this.checked; renderAureumGrid()"> Super-deals only</label>';
-  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.excelOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').excelOnly=this.checked; renderAureumGrid()"> In Don\'s Excel</label>';
+  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.excelOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').excelOnly=this.checked; renderAureumGrid()"> In Excel baseline</label>';
   html += '<span class="spacer"></span>';
   html += '<span style="font-size:11px;color:var(--muted)">Showing ' + filtered.length + ' / ' + deals.length + ' deals</span>';
   html += '</div>';
@@ -1994,10 +1994,10 @@ function renderAureumGrid() {
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
   html += '<th title="Include this deal in the 3 mo. revenue tab">Fcst</th>';
   html += '<th title="Flag this deal as a Super-Deal / Aureum">Super</th>';
-  html += '<th title="✓ = this deal is in Don\'s Excel forecast">Excel</th>';
-  html += '<th>BDE</th><th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th title="Michael\'s 5-phase model">Phase</th><th>Loc</th><th>1st Bill.</th>';
+  html += '<th title="✓ = this deal exists in the Excel baseline">Excel</th>';
+  html += '<th>BDE</th><th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th title="5-phase sales model">Phase</th><th>Loc</th><th>1st Bill.</th>';
   html += '<th class="num" title="MRR from Zoho — read-only, auto-filled by Sync">MRR Zoho</th>';
-  html += '<th class="num" title="MRR Aureum — Don\'s manual override. Used when MRR Zoho is empty.">MRR Aureum</th>';
+  html += '<th class="num" title="MRR Aureum — manual override. Used when MRR Zoho is empty.">MRR Aureum</th>';
   html += '<th class="num">Win %</th><th class="num">Margin %</th>';
   months.forEach(function(m){ html += '<th class="num">' + monthLabel(m) + '</th>'; });
   html += '<th></th>';
@@ -2009,7 +2009,7 @@ function renderAureumGrid() {
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast  ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.isSuperDeal ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'isSuperDeal\')" title="Mark as Super-Deal"></td>';
-    html += '<td style="text-align:center">' + (d.inExcel ? '<span style="color:var(--success)" title="In Don\'s Excel forecast">&#10003;</span>' : '<span style="color:var(--border)" title="Not in Don\'s Excel">–</span>') + '</td>';
+    html += '<td style="text-align:center">' + (d.inExcel ? '<span style="color:var(--success)" title="In the Excel baseline">&#10003;</span>' : '<span style="color:var(--border)" title="Not in the Excel baseline">–</span>') + '</td>';
     html += bdeCell(d);
     html += '<td>' + statusPill(d.status) + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
@@ -2021,7 +2021,7 @@ function renderAureumGrid() {
     var pricePerH = pricePerHead(d);
     var zohoActive = (d.pricing && d.pricing > 0);
     html += '<td class="num" style="background:' + (zohoActive ? '#E8F5E9' : 'transparent') + ';color:var(--muted);font-variant-numeric:tabular-nums" title="' + (zohoActive ? 'Zoho value — winning the calculation' : 'Empty in Zoho — Aureum wins') + '">' + (zohoActive ? fmt$k(d.pricing) : '—') + '</td>';
-    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.mrrAureum || '') + '" onchange="updateDealField(' + dealIdx + ', \'mrrAureum\', this.value)" title="Don\'s manual MRR. Used when MRR Zoho is empty." placeholder="0"></td>';
+    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.mrrAureum || '') + '" onchange="updateDealField(' + dealIdx + ', \'mrrAureum\', this.value)" title="Manual MRR. Used when MRR Zoho is empty." placeholder="0"></td>';
     html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
     var mMiss = marginIsMissing(d);
     var mTitle = mMiss ? 'No target margin set — using stage default. Set Target_Margin_Band in Zoho or type here.'
@@ -2101,7 +2101,7 @@ function openDealModal(idx) {
   html += '<div class="form-row"><div class="form-group"><label>Location</label><input id="m_location" value="' + esc(d.location) + '"></div>';
   html += '<div class="form-group"><label>First Billable Month</label><input id="m_fbm" value="' + esc(d.firstBillableMonth) + '"></div></div>';
   html += '<div class="form-row"><div class="form-group"><label>MRR Zoho ($) — synced from Zoho.Amount</label><input type="number" id="m_pricing" value="' + (d.pricing || 0) + '" readonly style="background:#f5f5f5"></div>';
-  html += '<div class="form-group"><label>MRR Aureum ($) — Don\'s manual value</label><input type="number" id="m_mrrAureum" value="' + (d.mrrAureum || 0) + '"></div></div>';
+  html += '<div class="form-group"><label>MRR Aureum ($) — manual value</label><input type="number" id="m_mrrAureum" value="' + (d.mrrAureum || 0) + '"></div></div>';
   html += '<div class="form-row"><div class="form-group"><label>Adjusted Win Rate (0-1)</label><input type="number" min="0" max="1" step="0.05" id="m_winRate" value="' + (d.winRateAdj || 0.5) + '"></div></div>';
   html += '<div class="form-row"><div class="form-group"><label>Margin % Override (blank = use rule)</label><input type="number" min="0" max="100" step="1" id="m_margin" value="' + (d.marginOverride !== undefined && d.marginOverride !== '' ? Math.round(d.marginOverride * 100) : '') + '" placeholder="—"></div>';
   html += '<div class="form-group"><label>Activation Month</label><input id="m_activation" value="' + esc(d.activationMonth || '') + '"></div></div>';
@@ -2213,7 +2213,7 @@ function render3MoRevenue() {
   if (anchorLocked) {
     html += '<button class="btn btn-ghost btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + '">🔒 Locked · Re-lock</button>';
   } else {
-    html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Don rubber-stamps this 3-month forecast — immutable for accuracy tracking">🔒 Lock ' + monthLabel(anchor) + '</button>';
+    html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Lock this 3-month forecast — immutable for accuracy tracking">🔒 Lock ' + monthLabel(anchor) + '</button>';
   }
   html += '</div></div>';
   // Build & Invoice reminder — same framing as Aureum tab.
@@ -2340,7 +2340,7 @@ function renderMidtermForecast() {
   // BIG Build & Invoice banner — Michael was explicit this needs to be in flashing lights.
   html += '<div style="margin:0 0 16px;padding:14px 18px;background:linear-gradient(90deg,#fff8e1 0%, #fdf6e6 100%);border-left:6px solid var(--gold);border-radius:0 8px 8px 0;color:var(--navy)">';
   html += '<div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">⚡ Build &amp; Invoice — NOT Close</div>';
-  html += '<div style="font-size:12px;color:var(--muted);line-height:1.55">This is <b>when people start billing</b>, not when the deal closes. CGI may sign for 250 people in June and ramp 35 → 70 → 70 over the next weeks — put those headcounts in the month they bill, not the month you sign. Zillions 150 people from Madison Dearborn? Don knows the ramp better than the close date.</div>';
+  html += '<div style="font-size:12px;color:var(--muted);line-height:1.55">This is <b>when people start billing</b>, not when the deal closes. A 250-person engagement may be signed in June but ramp 35 → 70 → 70 over the following weeks — enter those headcounts in the month they bill, not the month the contract closes.</div>';
   html += '</div>';
 
   html += '<div class="toolbar">';
@@ -2483,7 +2483,7 @@ function renderLongtermGrowth() {
 
   // Why we don't forecast per-deal out here — Michael's rationale.
   html += '<div style="margin:0 0 16px;padding:10px 14px;background:#f6f9fc;border-left:4px solid var(--muted);border-radius:0 6px 6px 0;font-size:12px;color:var(--muted)">';
-  html += '<b style="color:var(--navy)">Why aggregate?</b> Beyond 12 months we don\'t have clue what the SQLs will materialize at — 5%? 25%? Don shouldn\'t forecast that deep by deal. Instead, pick a baseline (month 12 or the 9-month average), choose a monthly growth %, and the model projects forward. Finance gets a credible long-term number without forcing certainty we don\'t have.';
+  html += '<b style="color:var(--navy)">Why aggregate?</b> Beyond 12 months the SQL materialization rate is too uncertain (5%? 25%?) for per-deal forecasting to add value. Instead, pick a baseline (month 12 or the 9-month average), choose a monthly growth %, and the model projects forward. Finance gets a credible long-term number without forcing certainty we don\'t have.';
   html += '</div>';
 
   // Controls
@@ -2545,7 +2545,7 @@ function renderForecastAccuracy() {
   var bdes     = bdesInSnapshots();
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · ' + (hasLocked ? 'Computed from <b>' + lockedSnaps.length + ' locked snapshots</b> (Don\'s rubber stamps)' : 'Computed from auto-snapshots — lock a forecast to make accuracy track Don\'s explicit commitments') + '</div></div>';
+  html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · ' + (hasLocked ? 'Computed from <b>' + lockedSnaps.length + ' locked snapshots</b>' : 'Computed from auto-snapshots — lock a forecast to base accuracy on explicit commitments instead') + '</div></div>';
   html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
 
   html += '<div class="acc-bands">';
@@ -2556,7 +2556,7 @@ function renderForecastAccuracy() {
 
   // ── Per-BDE accuracy table ──
   if (bdes.length) {
-    html += '<div class="card"><div class="card-header"><span class="card-title">Accuracy by BDE</span><span class="card-sub">How well each person\'s forecast matched actuals — Michael\'s ask: "Don\'s 1-month-out accuracy is 90%, drops to 80% at 2-month, 50% at 3-month"</span></div>';
+    html += '<div class="card"><div class="card-header"><span class="card-title">Accuracy by BDE</span><span class="card-sub">How each forecaster\'s locked snapshots compared to the actuals that followed, broken down by horizon (M+0 / M+1 / M+2)</span></div>';
     html += '<table><thead><tr><th>BDE</th><th class="num">M+0 acc</th><th class="num">M+1 acc</th><th class="num">M+2 acc</th><th class="num">Snapshots used</th></tr></thead><tbody>';
     bdes.forEach(function(b) {
       var bb = computeAccuracyBands({ bde: b });
@@ -2854,7 +2854,7 @@ function renderForecastTrend() {
 
   if (hasDemo) {
     html += '<div class="callout callout-amber" style="margin:8px 0 18px;padding:10px 14px;background:#fff8e1;border-left:4px solid #E8B84B;border-radius:0 6px 6px 0;font-size:12.5px">';
-    html += '<b>Demo baseline shown.</b> ' + allSnaps.filter(function(s){return s.isDemo;}).length + ' synthetic points are seeded from the current Excel-of-Don totals to illustrate the trend. ';
+    html += '<b>Demo baseline shown.</b> ' + allSnaps.filter(function(s){return s.isDemo;}).length + ' synthetic points are seeded from the current Excel baseline totals to illustrate the trend. ';
     html += 'Real auto-snapshots start the first time the app is opened on a new ISO week (next Monday). Use <b>Clear demo data</b> once you want to track real history only.';
     html += '</div>';
   }
@@ -3924,7 +3924,7 @@ function renderSettings() {
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Daily Workflow</span></div>';
   html += '<ol style="font-size:12.5px;color:var(--muted);line-height:1.75;padding-left:20px">';
-  html += '<li><b>Morning (Don)</b>: open the dashboard. If Zoho is connected, click <i>Sync from Zoho</i> on the Aureum Demand Forecast tab to pull overnight changes.</li>';
+  html += '<li><b>Morning</b>: open the dashboard. If Zoho is connected, click <i>Sync from Zoho</i> on the Aureum Demand Forecast tab to pull overnight changes.</li>';
   html += '<li><b>Daily</b>: adjust monthly HC and pricing as deals move stages — every cell auto-saves.</li>';
   html += '<li><b>Weekly</b>: review the <i>3 mo. revenue</i> tab. Move the <b>Anchor month</b> forward each new month to roll the window.</li>';
   html += '<li><b>Monthly</b>: after a month closes, go to <i>Forecast Accuracy</i> → <i>Enter Actuals</i> for the closed month. The accuracy bands recompute automatically.</li>';
