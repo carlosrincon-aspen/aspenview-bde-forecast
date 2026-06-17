@@ -510,6 +510,11 @@ function getActivityLog()  { return load('activity_log', []); }
 function setActivityLog(l) { save('activity_log', l); }
 function getErrorLog()     { return load('error_log', []); }
 function setErrorLog(l)    { save('error_log', l); }
+// Historical accuracy backfill: one entry per (month, BDE) pair, capturing what
+// was forecast at each horizon and what actually billed. Used to seed the
+// accuracy bands with real history before the natural lock→actuals cycle runs.
+function getHistoricalAccuracy()  { return load('historical_accuracy', []); }
+function setHistoricalAccuracy(l) { save('historical_accuracy', l); }
 
 // True when the user is a hardcoded manager OR was granted admin via the panel.
 function isAdmin(u) {
@@ -580,7 +585,7 @@ function userStatus(lastSeen) {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases','longterm_growth_pct','longterm_base'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases','longterm_growth_pct','longterm_base','historical_accuracy'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -1497,6 +1502,22 @@ function computeAccuracyBands(opts) {
       per[h].push({ snapshot: s.snapshotMonth, target: targetMonth, fcast: fcastRev, actual: actRev, errPct: err, accPct: 1 - err });
     });
   });
+
+  // Add historical backfill entries — each is one (month, BDE) row with its
+  // own M+0/M+1/M+2 forecast pairs and actual. Each non-zero forecast
+  // contributes one accuracy data point at its horizon.
+  var hist = getHistoricalAccuracy();
+  hist.forEach(function(h) {
+    if (opts.bde && (h.bde || '').toLowerCase() !== (opts.bde || '').toLowerCase()) return;
+    ['m0','m1','m2'].forEach(function(horizon) {
+      var fcast = (h.forecasts && h.forecasts[horizon]) || 0;
+      var actual = h.actual || 0;
+      if (fcast <= 0 && actual <= 0) return;
+      var maxRev = Math.max(fcast, actual, 1);
+      var err = Math.abs(fcast - actual) / maxRev;
+      per[horizon].push({ snapshot: 'backfill ' + h.month, target: h.month, fcast: fcast, actual: actual, errPct: err, accPct: 1 - err, backfill: true });
+    });
+  });
   function bandFor(arr, defaultAcc, defaultBand) {
     if (!arr.length) return { acc: defaultAcc, band: defaultBand, n: 0, isDefault: true };
     var mean = arr.reduce(function(t, x) { return t + x.accPct; }, 0) / arr.length;
@@ -1511,12 +1532,14 @@ function computeAccuracyBands(opts) {
     source: lockedOnly ? 'locked' : 'auto'
   };
 }
-// Convenience: list of unique BDEs that appear in snapshots (used by Forecast Accuracy tab).
+// Convenience: list of unique BDEs that appear in snapshots OR historical backfill
+// (used by Forecast Accuracy tab to enumerate the per-BDE rows).
 function bdesInSnapshots() {
   var set = {};
   getSnapshots().forEach(function(s) {
     Object.values(s.perDeal || {}).forEach(function(p) { if (p.bde) set[p.bde] = 1; });
   });
+  getHistoricalAccuracy().forEach(function(h) { if (h.bde) set[h.bde] = 1; });
   return Object.keys(set).sort();
 }
 
@@ -2541,8 +2564,13 @@ function renderForecastAccuracy() {
   var bdes     = bdesInSnapshots();
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · ' + (hasLocked ? 'Computed from <b>' + lockedSnaps.length + ' locked snapshots</b>' : 'Computed from auto-snapshots — lock a forecast to base accuracy on explicit commitments instead') + '</div></div>';
-  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
+  var backfillN = getHistoricalAccuracy().length;
+  var sourceBits = [];
+  if (hasLocked) sourceBits.push('<b>' + lockedSnaps.length + ' locked snapshot' + (lockedSnaps.length === 1 ? '' : 's') + '</b>');
+  if (backfillN) sourceBits.push('<b>' + backfillN + ' backfilled month' + (backfillN === 1 ? '' : 's') + '</b>');
+  var sourceLabel = sourceBits.length ? 'Computed from ' + sourceBits.join(' + ') : 'Computed from auto-snapshots — lock a forecast or backfill historical data to base accuracy on explicit commitments instead';
+  html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · ' + sourceLabel + '</div></div>';
+  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-ghost btn-sm" onclick="openBackfillModal()" title="Enter historical forecast + actual pairs to populate the accuracy bands without waiting for the natural cycle">📥 Backfill historical data</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
 
   html += '<div class="acc-bands">';
   html += accCard('m0', 'Current Month (M0)', bands.m0);
@@ -2639,6 +2667,92 @@ function forceSnapshot() {
   snaps = snaps.filter(function(s){ return s.snapshotMonth !== currentMonthKey(); });
   setSnapshots(snaps);
   ensureMonthlySnapshot();
+  renderTab();
+}
+
+// Historical backfill — populates accuracy bands without waiting for the
+// natural lock→actuals cycle. Each entry is one (month, BDE) row with
+// what was forecast at each horizon and what actually billed.
+var _backfillDraft = null; // working set of rows while the modal is open
+function openBackfillModal() {
+  // Seed draft from saved entries; if none, give the user three blank rows
+  // (one per recent month) so they can start typing immediately.
+  var saved = getHistoricalAccuracy().slice();
+  if (saved.length === 0) {
+    var now = new Date();
+    saved = [];
+    for (var i = 3; i >= 1; i--) {
+      var d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      var mk = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+      saved.push({ month: mk, bde: '', forecasts: { m0: 0, m1: 0, m2: 0 }, actual: 0 });
+    }
+  }
+  _backfillDraft = saved.map(function(r){ return JSON.parse(JSON.stringify(r)); });
+  renderBackfillModal();
+}
+function renderBackfillModal() {
+  var bdes = uniqueBdes(getDeals()); // also allow free typing if a BDE is not in the list
+  var html = '';
+  html += '<h3 style="margin-bottom:4px">Backfill historical accuracy</h3>';
+  html += '<div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;line-height:1.55">One row per (month, BDE) pair. For each row, enter what was forecast at each horizon and what actually billed. The <b>M+0 Forecast</b> is what was predicted <i>at the start of that month</i>; M+1 is what was predicted one month before; M+2 is what was predicted two months before. Blank a horizon to skip it.</div>';
+  html += '<div style="max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:6px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0;background:var(--navy);color:white"><tr>';
+  html += '<th style="text-align:left;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Month</th>';
+  html += '<th style="text-align:left;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">BDE</th>';
+  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">M+0 Forecast $</th>';
+  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">M+1 Forecast $</th>';
+  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">M+2 Forecast $</th>';
+  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Actual $</th>';
+  html += '<th></th></tr></thead><tbody>';
+  _backfillDraft.forEach(function(r, i) {
+    var bg = i % 2 === 0 ? 'white' : '#f9fbfd';
+    var bdeOpts = '<option value=""></option>' + bdes.map(function(b){ return '<option value="' + esc(b) + '"' + (b === r.bde ? ' selected' : '') + '>' + esc(b) + '</option>'; }).join('');
+    if (r.bde && bdes.indexOf(r.bde) < 0) bdeOpts = '<option value="' + esc(r.bde) + '" selected>' + esc(r.bde) + '</option>' + bdeOpts;
+    var inp = function(val) { return '<input type="number" min="0" value="' + (val || '') + '" style="width:96px;padding:4px 6px;text-align:right;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:12px" placeholder="0" '; };
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid var(--border)">';
+    html += '<td style="padding:6px 10px"><input type="text" value="' + esc(r.month) + '" style="width:88px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:12px" placeholder="2026-03" onchange="_backfillDraft[' + i + '].month=this.value"></td>';
+    html += '<td style="padding:6px 10px"><select style="padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;font-size:12px;background:white" onchange="_backfillDraft[' + i + '].bde=this.value">' + bdeOpts + '</select></td>';
+    html += '<td style="padding:6px 10px;text-align:right">' + inp(r.forecasts && r.forecasts.m0) + 'onchange="_backfillDraft[' + i + '].forecasts.m0=parseFloat(this.value)||0"></td>';
+    html += '<td style="padding:6px 10px;text-align:right">' + inp(r.forecasts && r.forecasts.m1) + 'onchange="_backfillDraft[' + i + '].forecasts.m1=parseFloat(this.value)||0"></td>';
+    html += '<td style="padding:6px 10px;text-align:right">' + inp(r.forecasts && r.forecasts.m2) + 'onchange="_backfillDraft[' + i + '].forecasts.m2=parseFloat(this.value)||0"></td>';
+    html += '<td style="padding:6px 10px;text-align:right">' + inp(r.actual) + 'onchange="_backfillDraft[' + i + '].actual=parseFloat(this.value)||0"></td>';
+    html += '<td style="padding:6px 10px;text-align:center"><button class="btn btn-ghost btn-sm" onclick="removeBackfillRow(' + i + ')" title="Remove this row">✕</button></td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  html += '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="addBackfillRow()">+ Add row</button></div>';
+  html += '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="saveBackfill()">Save backfill</button></div>';
+  openModal(html);
+}
+function addBackfillRow() {
+  var now = new Date();
+  var mk = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+  _backfillDraft.push({ month: mk, bde: '', forecasts: { m0: 0, m1: 0, m2: 0 }, actual: 0 });
+  renderBackfillModal();
+}
+function removeBackfillRow(idx) {
+  _backfillDraft.splice(idx, 1);
+  renderBackfillModal();
+}
+function saveBackfill() {
+  // Filter out rows with no month or all-zero values.
+  var cleaned = _backfillDraft.filter(function(r) {
+    if (!r.month || !/^\d{4}-\d{2}$/.test(r.month)) return false;
+    var fc = r.forecasts || {};
+    var hasFc = (fc.m0 || 0) > 0 || (fc.m1 || 0) > 0 || (fc.m2 || 0) > 0;
+    return hasFc || (r.actual || 0) > 0;
+  }).map(function(r) {
+    return {
+      month:     r.month,
+      bde:       r.bde || '',
+      forecasts: { m0: r.forecasts.m0 || 0, m1: r.forecasts.m1 || 0, m2: r.forecasts.m2 || 0 },
+      actual:    r.actual || 0,
+      enteredBy: (currentUser && currentUser.email) || 'anon',
+      enteredAt: new Date().toISOString()
+    };
+  });
+  setHistoricalAccuracy(cleaned);
+  logActivity('Forecast', 'Backfill accuracy', cleaned.length + ' row' + (cleaned.length === 1 ? '' : 's') + ' saved');
+  closeModal();
   renderTab();
 }
 function openActualsModal(mk) {
