@@ -1400,38 +1400,99 @@ function marginDollarsAdj(deal, monthKey)  { return adjustedRevenue(deal, monthK
 // ─────────────────────────────────────────────────────────────────────────────
 // SNAPSHOTS (for forecast accuracy)
 // ─────────────────────────────────────────────────────────────────────────────
-function ensureMonthlySnapshot() {
-  var snaps = getSnapshots();
-  var key = currentMonthKey();
-  if (snaps.find(function(s){ return s.snapshotMonth === key; })) return;
-  var deals = getDeals();
-  var snap = { snapshotMonth: key, takenAt: new Date().toISOString(), perDeal: {} };
+function buildPerDealSnapshot(deals, key) {
+  var perDeal = {};
   deals.forEach(function(d) {
-    snap.perDeal[d.dealName] = {
+    perDeal[d.dealName] = {
+      bde:     d.bde || '',
       hc:      { m0: (d.monthlyHC||{})[key] || 0, m1: (d.monthlyHC||{})[monthKeyAfter(key,1)] || 0, m2: (d.monthlyHC||{})[monthKeyAfter(key,2)] || 0 },
       rev:     { m0: projectedRevenue(d, key), m1: projectedRevenue(d, monthKeyAfter(key,1)), m2: projectedRevenue(d, monthKeyAfter(key,2)) },
       adjRev:  { m0: adjustedRevenue(d, key),  m1: adjustedRevenue(d, monthKeyAfter(key,1)),  m2: adjustedRevenue(d, monthKeyAfter(key,2)) },
       margin$: { m0: marginDollarsAdj(d, key), m1: marginDollarsAdj(d, monthKeyAfter(key,1)), m2: marginDollarsAdj(d, monthKeyAfter(key,2)) }
     };
   });
-  snaps.push(snap);
+  return perDeal;
+}
+function ensureMonthlySnapshot() {
+  var snaps = getSnapshots();
+  var key = currentMonthKey();
+  if (snaps.find(function(s){ return s.snapshotMonth === key; })) return;
+  var deals = getDeals();
+  snaps.push({ snapshotMonth: key, takenAt: new Date().toISOString(), locked: false, perDeal: buildPerDealSnapshot(deals, key) });
   setSnapshots(snaps);
   logActivity('Forecast', 'Monthly snapshot', key + ' · ' + deals.length + ' deals');
 }
+// Don's "rubber stamp": creates or upgrades the snapshot for the given month to
+// LOCKED. Locked snapshots are the only ones that count toward accuracy by default —
+// they represent what the BDE explicitly committed to, vs. auto-snapshots which are
+// just samples. Re-locking the same month overwrites the previous lock with the
+// current numbers and stamps the new locker.
+function lockForecast(monthKey) {
+  monthKey = monthKey || getAnchorMonth() || currentMonthKey();
+  var snaps = getSnapshots();
+  var deals = getDeals();
+  var existing = snaps.find(function(s){ return s.snapshotMonth === monthKey; });
+  var lockedBy = (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'anon';
+  if (existing) {
+    if (existing.locked && !confirm(monthLabel(monthKey) + ' is already locked by ' + (existing.lockedBy || '—') + ' on ' + new Date(existing.lockedAt || existing.takenAt).toLocaleString() + '.\n\nRe-lock with the current numbers? This overwrites the previous lock.')) return;
+    existing.takenAt = new Date().toISOString();
+    existing.perDeal = buildPerDealSnapshot(deals, monthKey);
+    existing.locked  = true;
+    existing.lockedBy = lockedBy;
+    existing.lockedAt = new Date().toISOString();
+  } else {
+    snaps.push({
+      snapshotMonth: monthKey,
+      takenAt:       new Date().toISOString(),
+      locked:        true,
+      lockedBy:      lockedBy,
+      lockedAt:      new Date().toISOString(),
+      perDeal:       buildPerDealSnapshot(deals, monthKey)
+    });
+  }
+  setSnapshots(snaps);
+  logActivity('Forecast', 'Lock month forecast', monthKey + ' · stamped by ' + lockedBy);
+  alert('🔒 Forecast for ' + monthLabel(monthKey) + ' locked.\n\nThis snapshot is now the source of truth for measuring accuracy when M+0 / M+1 / M+2 actuals come in.');
+  renderTab();
+}
+
 // Compute accuracy bands: for each historical snapshot, compare its predictions for
 // target month X (where X is one of the snapshot's M0/M1/M2 horizons) against the
 // recorded actuals for X. Aggregate (mean ± std-dev) across all snapshots per horizon.
-function computeAccuracyBands() {
-  var snaps   = getSnapshots();
+// opts: { bde: 'name' | null, lockedOnly: true | false }
+//   lockedOnly defaults to true if any locked snapshot exists, else false.
+function computeAccuracyBands(opts) {
+  opts = opts || {};
+  var allSnaps = getSnapshots();
+  var hasLocked = allSnaps.some(function(s){ return s.locked; });
+  var lockedOnly = (typeof opts.lockedOnly === 'boolean') ? opts.lockedOnly : hasLocked;
+  var snaps   = lockedOnly ? allSnaps.filter(function(s){ return s.locked; }) : allSnaps;
   var actuals = getActuals();
   var per     = { m0: [], m1: [], m2: [] };
+
+  function dealsMatchingBde(s) {
+    if (!opts.bde) return Object.values(s.perDeal);
+    var target = (opts.bde || '').toLowerCase();
+    return Object.values(s.perDeal).filter(function(p){ return (p.bde || '').toLowerCase() === target; });
+  }
   snaps.forEach(function(s) {
+    var subset = dealsMatchingBde(s);
     ['m0','m1','m2'].forEach(function(h, i) {
       var targetMonth = monthKeyAfter(s.snapshotMonth, i);
       var act = actuals[targetMonth];
       if (!act) return;
-      var fcastRev = Object.values(s.perDeal).reduce(function(t, p) { return t + (p.adjRev[h] || 0); }, 0);
-      var actRev   = act.adjRev || 0;
+      var fcastRev = subset.reduce(function(t, p) { return t + (p.adjRev[h] || 0); }, 0);
+      // When filtering by BDE, the per-BDE actual is not currently captured;
+      // we use the aggregate actual scaled by this BDE's share of forecast as a
+      // proxy. If no BDE filter, this is just the raw aggregate comparison.
+      var actRev;
+      if (opts.bde) {
+        var totalFcast = Object.values(s.perDeal).reduce(function(t, p) { return t + (p.adjRev[h] || 0); }, 0);
+        var share = totalFcast > 0 ? (fcastRev / totalFcast) : 0;
+        actRev = (act.adjRev || 0) * share;
+      } else {
+        actRev = act.adjRev || 0;
+      }
       if (fcastRev <= 0 && actRev <= 0) return;
       var maxRev = Math.max(fcastRev, actRev, 1);
       var err = Math.abs(fcastRev - actRev) / maxRev;
@@ -1448,8 +1509,17 @@ function computeAccuracyBands() {
     m0: bandFor(per.m0, 0.80, 0.05),
     m1: bandFor(per.m1, 0.75, 0.10),
     m2: bandFor(per.m2, 0.30, 0.20),
-    history: per
+    history: per,
+    source: lockedOnly ? 'locked' : 'auto'
   };
+}
+// Convenience: list of unique BDEs that appear in snapshots (used by Forecast Accuracy tab).
+function bdesInSnapshots() {
+  var set = {};
+  getSnapshots().forEach(function(s) {
+    Object.values(s.perDeal || {}).forEach(function(p) { if (p.bde) set[p.bde] = 1; });
+  });
+  return Object.keys(set).sort();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1505,9 +1575,22 @@ function renderOverview() {
   var aureumDeals   = deals.filter(isSuperDeal).length;
   var bands         = computeAccuracyBands();
 
+  // Lock state for the current anchor month.
+  var anchorSnap = getSnapshots().find(function(s){ return s.snapshotMonth === anchor; });
+  var anchorLocked = !!(anchorSnap && anchorSnap.locked);
+
   var html = '';
   html += '<div class="page-title"><div><h1>Overview</h1><div class="sub">Anchor month: <b>' + monthLabel(anchor) + '</b> &middot; Rolling 3-month window</div></div>';
-  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + ' ';
+  if (anchorLocked) {
+    html += '<button class="btn btn-ghost btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + ' on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString() + '">🔒 Locked · Re-lock</button>';
+  } else {
+    html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Don rubber-stamps the forecast — this snapshot becomes immutable and powers the accuracy bands when actuals come in">🔒 Lock ' + monthLabel(anchor) + ' forecast</button>';
+  }
+  html += '</div></div>';
+  if (anchorLocked) {
+    html += '<div style="margin:0 0 14px;padding:8px 14px;background:#e8f5e9;border-left:4px solid var(--success);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)"><b>🔒 ' + monthLabel(anchor) + ' forecast is locked.</b> Stamped by <b>' + esc(anchorSnap.lockedBy || '—') + '</b> on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString() + '. Accuracy will be measured against this snapshot when actuals land.</div>';
+  }
 
   html += '<div class="stat-grid">';
   html += statCard('Total Deals',     totalDeals,                   pipelineDeals + ' in pipeline · ' + aureumDeals + ' super-deals', 'gold');
@@ -2074,6 +2157,25 @@ function newDealInZoho() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: 3 mo. revenue (rolling)
 // ─────────────────────────────────────────────────────────────────────────────
+// Module-level: whether the 3 mo. revenue table applies the accuracy haircut.
+var adjustedByAccuracy = false;
+function toggleAdjustedByAccuracy() { adjustedByAccuracy = !adjustedByAccuracy; renderTab(); }
+
+// Cache: per-BDE accuracy bands { bde_lower: {m0,m1,m2} } + aggregate fallback.
+// Recomputed on each render (cheap; snapshots are small).
+function accuracyLookup() {
+  var bdes = bdesInSnapshots();
+  var lookup = { __aggregate__: computeAccuracyBands() };
+  bdes.forEach(function(b) { lookup[b.toLowerCase()] = computeAccuracyBands({ bde: b }); });
+  return lookup;
+}
+function accuracyForDeal(d, horizon, lookup) {
+  // horizon: 'm0' | 'm1' | 'm2'. Falls back to aggregate when no per-BDE history yet.
+  var key = (d.bde || '').toLowerCase();
+  var b = lookup[key] || lookup.__aggregate__;
+  return b[horizon] && !b[horizon].isDefault ? b[horizon].acc : lookup.__aggregate__[horizon].acc;
+}
+
 function render3MoRevenue() {
   var deals  = getDeals();
   var anchor = getAnchorMonth();
@@ -2096,9 +2198,20 @@ function render3MoRevenue() {
   });
   var bdes = uniqueBdes(deals);
 
+  var anchorSnap = getSnapshots().find(function(s){ return s.snapshotMonth === anchor; });
+  var anchorLocked = !!(anchorSnap && anchorSnap.locked);
+  var accLookup = accuracyLookup();
+
   var html = '';
   html += '<div class="page-title"><div><h1>3 mo. revenue</h1><div class="sub">Rolling 3-month window · only deals flagged <b>Forecast</b> in Aureum Demand Forecast</div></div>';
-  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center">';
+  html += '<label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + ' ';
+  if (anchorLocked) {
+    html += '<button class="btn btn-ghost btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + '">🔒 Locked · Re-lock</button>';
+  } else {
+    html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Don rubber-stamps this 3-month forecast — immutable for accuracy tracking">🔒 Lock ' + monthLabel(anchor) + '</button>';
+  }
+  html += '</div></div>';
   // Build & Invoice reminder — same framing as Aureum tab.
   html += '<div style="margin:0 0 14px;padding:8px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)"><b>⚡ Build &amp; Invoice — NOT Close.</b> HC is when a person <b>starts billing</b>, not when the deal closes.</div>';
   html += '<div class="toolbar">';
@@ -2106,8 +2219,13 @@ function render3MoRevenue() {
   html += msDropdown('3mo', 'bde',    'BDE',    bdes);
   html += msDropdown('3mo', 'stage',  'Stage',  ALLOWED_STAGES);
   html += msDropdown('3mo', 'status', 'Status', Object.keys(STATUS_PILL));
+  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (adjustedByAccuracy ? ' checked' : '') + ' onchange="toggleAdjustedByAccuracy()"> <b>Apply BDE accuracy haircut</b></label>';
   html += '<span class="spacer"></span><span style="font-size:11px;color:var(--muted)">Showing ' + rows.length + ' forecast deals</span>';
   html += '</div>';
+  if (adjustedByAccuracy) {
+    var src = accLookup.__aggregate__.source === 'locked' ? 'locked snapshots' : 'auto-snapshots';
+    html += '<div style="margin:0 0 14px;padding:8px 14px;background:#fdf6e6;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)"><b>📉 Accuracy haircut ON.</b> Each cell is multiplied by that BDE\'s accuracy at that horizon. Falls back to the aggregate band when a BDE has no history yet. Source: ' + src + '.</div>';
+  }
 
   if (!rows.length) {
     html += '<div class="card empty">No deals flagged for forecast yet. Go to <b>Aureum Demand Forecast</b> and check the <b>Fcst</b> box on the deals you want to include in the rolling 3-month view.</div>';
@@ -2139,10 +2257,16 @@ function render3MoRevenue() {
     html += '<td class="num">' + fmtPct(wr) + '</td>';
     html += '<td class="num">' + fmt$k(pph) + '</td>';
     var dealTotalAdj = 0;
+    var horizons = ['m0','m1','m2'];
     months.forEach(function(m, i) {
       var hc   = (d.monthlyHC || {})[m] || 0;
       var proj = hc * pph;
       var adj  = proj * wr;
+      if (adjustedByAccuracy) {
+        var hc_acc = accuracyForDeal(d, horizons[i], accLookup);
+        adj = adj * hc_acc;
+        proj = proj * hc_acc;
+      }
       var mar  = adj * getMarginFor(d);
       tot.hc[i] += hc; tot.proj[i] += proj; tot.adj[i] += adj; tot.mar[i] += mar;
       dealTotalAdj += adj;
@@ -2182,13 +2306,16 @@ function render3MoRevenue() {
 // TAB: FORECAST ACCURACY
 // ─────────────────────────────────────────────────────────────────────────────
 function renderForecastAccuracy() {
-  var snaps   = getSnapshots();
-  var actuals = getActuals();
-  var bands   = computeAccuracyBands();
+  var snaps    = getSnapshots();
+  var actuals  = getActuals();
+  var bands    = computeAccuracyBands();
+  var lockedSnaps = snaps.filter(function(s){ return s.locked; });
+  var hasLocked = lockedSnaps.length > 0;
+  var bdes     = bdesInSnapshots();
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · Snapshots auto-taken on the first session each month</div></div>';
-  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
+  html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · ' + (hasLocked ? 'Computed from <b>' + lockedSnaps.length + ' locked snapshots</b> (Don\'s rubber stamps)' : 'Computed from auto-snapshots — lock a forecast to make accuracy track Don\'s explicit commitments') + '</div></div>';
+  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
 
   html += '<div class="acc-bands">';
   html += accCard('m0', 'Current Month (M0)', bands.m0);
@@ -2196,16 +2323,38 @@ function renderForecastAccuracy() {
   html += accCard('m2', '+2 Months (M+2)',    bands.m2);
   html += '</div>';
 
-  html += '<div class="card"><div class="card-header"><span class="card-title">Historical Snapshots</span><span class="card-sub">' + snaps.length + ' snapshots</span></div>';
+  // ── Per-BDE accuracy table ──
+  if (bdes.length) {
+    html += '<div class="card"><div class="card-header"><span class="card-title">Accuracy by BDE</span><span class="card-sub">How well each person\'s forecast matched actuals — Michael\'s ask: "Don\'s 1-month-out accuracy is 90%, drops to 80% at 2-month, 50% at 3-month"</span></div>';
+    html += '<table><thead><tr><th>BDE</th><th class="num">M+0 acc</th><th class="num">M+1 acc</th><th class="num">M+2 acc</th><th class="num">Snapshots used</th></tr></thead><tbody>';
+    bdes.forEach(function(b) {
+      var bb = computeAccuracyBands({ bde: b });
+      html += '<tr><td><b>' + esc(b) + '</b></td>';
+      ['m0','m1','m2'].forEach(function(h) {
+        var band = bb[h];
+        var label = band.isDefault ? '<span style="color:var(--muted)">— default —</span>' : fmtPct(band.acc) + ' <span style="color:var(--muted);font-size:10px">± ' + fmtPct(band.band) + '</span>';
+        html += '<td class="num">' + label + '</td>';
+      });
+      var n = Math.max(bb.m0.n || 0, bb.m1.n || 0, bb.m2.n || 0);
+      html += '<td class="num" style="color:var(--muted);font-size:11px">' + n + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  html += '<div class="card"><div class="card-header"><span class="card-title">Historical Snapshots</span><span class="card-sub">' + snaps.length + ' total · ' + lockedSnaps.length + ' locked</span></div>';
   if (!snaps.length) {
-    html += '<div class="empty">No snapshots yet. One will be auto-taken on your first session each month, or click "Force Snapshot Now" above.</div>';
+    html += '<div class="empty">No snapshots yet. One will be auto-taken on your first session each month, or click "Lock current forecast" above to capture an immutable snapshot now.</div>';
   } else {
-    html += '<table><thead><tr><th>Snapshot Month</th><th>Taken At</th><th>Deals</th><th class="num">M0 Forecast Adj.</th><th class="num">M+1 Forecast Adj.</th><th class="num">M+2 Forecast Adj.</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>Snapshot Month</th><th>Status</th><th>Taken At</th><th>Deals</th><th class="num">M0 Forecast Adj.</th><th class="num">M+1 Forecast Adj.</th><th class="num">M+2 Forecast Adj.</th></tr></thead><tbody>';
     snaps.slice().reverse().forEach(function(s) {
       var sum = ['m0','m1','m2'].map(function(h) {
         return Object.values(s.perDeal).reduce(function(t,p){ return t + (p.adjRev[h] || 0); }, 0);
       });
+      var statusBadge = s.locked
+        ? '<span class="pill pill-green" style="font-size:10px" title="Locked by ' + esc(s.lockedBy || '—') + ' on ' + new Date(s.lockedAt || s.takenAt).toLocaleString() + '">🔒 LOCKED</span>'
+        : '<span class="pill pill-gray" style="font-size:10px">auto</span>';
       html += '<tr><td><b>' + monthLabel(s.snapshotMonth) + '</b></td>';
+      html += '<td>' + statusBadge + (s.locked && s.lockedBy ? ' <span style="color:var(--muted);font-size:10.5px">· ' + esc(s.lockedBy) + '</span>' : '') + '</td>';
       html += '<td style="color:var(--muted);font-size:11px">' + new Date(s.takenAt).toLocaleString() + '</td>';
       html += '<td>' + Object.keys(s.perDeal).length + '</td>';
       html += '<td class="num">' + fmt$k(sum[0]) + '</td>';
