@@ -1596,15 +1596,22 @@ function pipelineKpiCard(label, value, sub, hue) {
 
 function renderPipelineOverview() {
   var allDeals = getDeals();
-  // For the investor view we exclude Closed Lost (irrelevant) but include the rest.
-  var deals = allDeals.filter(function(d){ return d.stage !== 'Closed Lost'; });
+  // Exclude Closed Lost (not relevant to forecast or cash-flow).
+  var afterLostFilter = allDeals.filter(function(d){ return d.stage !== 'Closed Lost'; });
+  var lostCount = allDeals.length - afterLostFilter.length;
+  // Only deals whose stage maps to one of Michael's 5 phases count toward the rollup.
+  var unmappedCount = 0;
+  var deals = afterLostFilter.filter(function(d) {
+    var pid = phaseForDeal(d);
+    if (!pid) { unmappedCount++; return false; }
+    return true;
+  });
 
   // Per-phase aggregates
   var perPhase = {};
   PHASES.forEach(function(p){ perPhase[p.id] = { deals:[], hc:0, mrr:0, arr:0 }; });
   deals.forEach(function(d){
     var pid = phaseForDeal(d);
-    if (!pid || !perPhase[pid]) return;
     perPhase[pid].deals.push(d);
     perPhase[pid].hc  += dealHcForRollup(d);
     perPhase[pid].mrr += dealMRR(d);
@@ -1620,8 +1627,19 @@ function renderPipelineOverview() {
   });
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Pipeline <span style="color:var(--muted);font-weight:400">Overview</span></h1><div class="sub">The investor view — pipeline grouped by Michael\'s 5 phases. Excludes Closed Lost.</div></div>';
+  html += '<div class="page-title"><div><h1>Pipeline <span style="color:var(--muted);font-weight:400">Overview</span></h1><div class="sub">Full pipeline grouped by Michael\'s 5-phase model · the C-suite snapshot for sales, finance, and investors</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="syncZohoDeals()">↻ Sync from Zoho</button></div></div>';
+
+  // Coverage note: explain the difference vs the raw deal count in Aureum.
+  if (lostCount > 0 || unmappedCount > 0) {
+    var parts = [];
+    if (lostCount > 0)     parts.push('<b>' + lostCount + '</b> Closed Lost');
+    if (unmappedCount > 0) parts.push('<b>' + unmappedCount + '</b> with a stage not yet mapped to a phase');
+    html += '<div style="margin:-4px 0 16px;padding:8px 12px;font-size:11.5px;color:var(--muted);background:#f6f9fc;border-left:3px solid var(--border);border-radius:0 4px 4px 0">';
+    html += '<b style="color:var(--navy)">Showing ' + totalDeals + ' of ' + allDeals.length + ' deals.</b> Excluded: ' + parts.join(' · ') + '.';
+    html += ' <span style="font-style:italic">Closed Lost deals don\'t contribute to forecast or cash-flow. Unmapped stages are usually legacy ghost deals — check the <b>Cleanup</b> tab to resolve them.</span>';
+    html += '</div>';
+  }
 
   // ─── KPI strip ───
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px">';
