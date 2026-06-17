@@ -314,15 +314,11 @@ var TABS = [
   { id: 'midterm',     label: '12-Month Plan' },
   { id: 'longterm',    label: 'Long-term Growth' },
   { id: 'playground',  label: 'Playground' },
-  { id: 'accuracy',    label: 'Forecast Accuracy' },
-  { id: 'trend',       label: 'Forecast Trend' },
+  { id: 'accuracy',    label: 'Forecast Accuracy' },   // absorbs Forecast Trend as a section
   { id: 'super',       label: 'Super-Deals' },
-  { id: 'fulfillment', label: 'Fulfillment View' },
-  { id: 'mrr',         label: 'MRR Forecast 2026' },
   { id: 'active',      label: 'Active Customers - Actuals' },
-  { id: 'margin',      label: 'Stage Rules' },
   { id: 'cleanup',     label: 'Cleanup' },
-  { id: 'settings',    label: 'Settings' }
+  { id: 'settings',    label: 'Settings' }              // absorbs Stage Rules as a section
   // 'admin' tab opens from the ★ Admin button in the top-right header (admins only).
 ];
 
@@ -1543,16 +1539,16 @@ function renderTab() {
   if (currentTab === 'midterm')     return renderMidtermForecast();
   if (currentTab === 'longterm')    return renderLongtermGrowth();
   if (currentTab === 'accuracy')    return renderForecastAccuracy();
-  if (currentTab === 'trend')       return renderForecastTrend();
   if (currentTab === 'super')       return renderSuperDeals();
-  if (currentTab === 'fulfillment') return renderFulfillmentView();
-  if (currentTab === 'mrr')         return renderMRRForecast();
   if (currentTab === 'active')      return renderActiveCustomers();
-  if (currentTab === 'margin')      return renderMarginRules();
   if (currentTab === 'playground')  return renderPlayground();
   if (currentTab === 'cleanup')     return renderCleanup();
   if (currentTab === 'admin')       return renderAdminPanel();
   if (currentTab === 'settings')    return renderSettings();
+  // Removed tabs (trend/fulfillment/mrr/margin) fall through here — redirect to overview.
+  currentTab = 'overview';
+  renderTopNav();
+  return renderOverview();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2626,7 +2622,17 @@ function renderForecastAccuracy() {
   html += '<br><br><b>Not a performance metric.</b> The goal is to give Finance a credible range for cash-flow planning, not to grade the forecaster.';
   html += '</div></div>';
 
+  // Embedded Forecast Trend section — week-over-week movement of headline totals.
+  var trend = trendSectionHtml({ asSection: true });
+  html += trend.html;
+
   document.getElementById('mainContent').innerHTML = html;
+
+  // Schedule chart rendering after DOM is mounted (canvases need to exist).
+  if (trend.points && trend.points.length) {
+    _currentTrendPoints = trend.points;
+    setTimeout(function() { renderTrendCharts(trend.points); }, 0);
+  }
 }
 function forceSnapshot() {
   var snaps = getSnapshots();
@@ -2837,6 +2843,76 @@ function trendXAxisLabel(s, granularity) {
   if (granularity === 'monthly') return m.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
   var q = Math.floor(m.getUTCMonth() / 3) + 1;
   return 'Q' + q + ' ' + String(m.getUTCFullYear()).slice(-2);
+}
+
+// Trend section HTML — extracted so Forecast Accuracy can embed it as a sub-section.
+// Returns { html: string, points: array } so the caller can schedule chart rendering.
+function trendSectionHtml(opts) {
+  opts = opts || {};
+  var allSnaps = getTrendSnapshots();
+  var points   = aggregateTrendByGranularity(allSnaps, trendGranularity);
+  var hasDemo  = allSnaps.some(function(s){ return s.isDemo; });
+  var realN    = allSnaps.filter(function(s){ return !s.isDemo; }).length;
+
+  var html = '';
+  // Section header (when embedded — caller decides whether to show their own page title)
+  if (opts.asSection) {
+    html += '<div style="margin:24px 0 12px;display:flex;align-items:center;justify-content:space-between"><b style="color:var(--navy);font-size:13px;text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:8px"><span style="display:inline-block;width:18px;height:2px;background:var(--gold)"></span>Forecast Trend — week-over-week</b>';
+    html += '<div><button class="btn btn-ghost btn-sm" onclick="forceTrendSnapshot()">+ Snapshot now</button>';
+    if (hasDemo) html += ' <button class="btn btn-ghost btn-sm" onclick="clearDemoTrendData()" title="Remove demo baseline points">Clear demo data</button>';
+    html += '</div></div>';
+  }
+
+  if (hasDemo) {
+    html += '<div style="margin:8px 0 14px;padding:10px 14px;background:#fff8e1;border-left:4px solid #E8B84B;border-radius:0 6px 6px 0;font-size:12px">';
+    html += '<b>Demo baseline shown.</b> ' + allSnaps.filter(function(s){return s.isDemo;}).length + ' synthetic points are seeded from the current Excel baseline to illustrate the trend. Real auto-snapshots start the first time the app is opened on a new ISO week.';
+    html += '</div>';
+  }
+
+  // Granularity toggle
+  html += '<div style="display:flex;gap:6px;margin-bottom:14px">';
+  ['weekly','monthly','quarterly'].forEach(function(g) {
+    var lab = g === 'weekly' ? 'Weekly' : g === 'monthly' ? 'Monthly' : 'Quarterly';
+    var cls = trendGranularity === g ? 'btn btn-gold btn-sm' : 'btn btn-ghost btn-sm';
+    html += '<button class="' + cls + '" onclick="setTrendGranularity(\'' + g + '\')">' + lab + '</button>';
+  });
+  html += '</div>';
+
+  if (!points.length) {
+    html += '<div class="card"><div class="empty">No snapshots yet. Click <b>+ Snapshot now</b> to capture the current forecast.</div></div>';
+    return { html: html, points: [] };
+  }
+
+  // KPI deltas vs first point in view
+  var first = points[0], last = points[points.length - 1];
+  function deltaPct(a, b) { if (!a) return 0; return (b - a) / a; }
+  function deltaCell(a, b) {
+    var dp = deltaPct(a, b);
+    var col = dp >= 0 ? '#2e7d32' : '#c62828';
+    var arrow = dp >= 0 ? '▲' : '▼';
+    return '<div style="font-size:11px;color:' + col + ';font-weight:700;margin-top:2px">' + arrow + ' ' + (dp >= 0 ? '+' : '') + (dp * 100).toFixed(1) + '%</div>';
+  }
+  html += '<div class="acc-bands" style="margin-bottom:14px">';
+  html += '<div class="card" style="padding:12px 14px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Deals Forecasted</div>';
+  html += '<div style="font-size:24px;font-weight:900;color:var(--navy)">' + last.dealsForecasted + '</div>';
+  html += deltaCell(first.dealsForecasted, last.dealsForecasted) + '</div>';
+  html += '<div class="card" style="padding:12px 14px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total HC (3-mo)</div>';
+  html += '<div style="font-size:24px;font-weight:900;color:var(--navy)">' + last.totalHC.toLocaleString() + '</div>';
+  html += deltaCell(first.totalHC, last.totalHC) + '</div>';
+  html += '<div class="card" style="padding:12px 14px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Adj. Revenue (3-mo)</div>';
+  html += '<div style="font-size:24px;font-weight:900;color:var(--navy)">' + fmt$k(last.totalAdjRev) + '</div>';
+  html += deltaCell(first.totalAdjRev, last.totalAdjRev) + '</div>';
+  html += '</div>';
+
+  // Three chart cards
+  var clickHint = ' · <b style="color:var(--gold)">Click any point</b> to see the deals behind it';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Deals forecasted</span><span class="card-sub">Count of deals with Fcst ☑' + clickHint + '</span></div>';
+  html += '<div style="height:220px;position:relative"><canvas id="trendChartDeals"></canvas></div></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Total Headcount</span><span class="card-sub">Sum of HC across the 3-month anchor window' + clickHint + '</span></div>';
+  html += '<div style="height:220px;position:relative"><canvas id="trendChartHC"></canvas></div></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Total Adj. Revenue ($)</span><span class="card-sub">HC × MRR × Win % across the 3-month anchor window' + clickHint + '</span></div>';
+  html += '<div style="height:220px;position:relative"><canvas id="trendChartMRR"></canvas></div></div>';
+  return { html: html, points: points };
 }
 
 function renderForecastTrend() {
@@ -3318,12 +3394,14 @@ function renderActiveCustomers() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: MARGIN RULES
 // ─────────────────────────────────────────────────────────────────────────────
-function renderMarginRules() {
+// Stage Rules HTML — extracted so Settings can embed it as a section.
+function stageRulesSectionHtml() {
   var rules = getMarginRules();
   var html = '';
-  html += '<div class="page-title"><div><h1>Stage Rules — Win % &amp; Margin %</h1><div class="sub">Standard win rate and margin per stage. As a deal progresses, both can evolve. Per-deal overrides &amp; Zoho target margin take precedence.</div></div>';
-  html += '<div><button class="btn btn-ghost btn-sm" onclick="resetMarginRules()">Reset to Defaults</button> <button class="btn btn-gold btn-sm" onclick="openMarginRuleModal(null)">+ Add Rule</button></div></div>';
-  html += '<div class="card"><table><thead><tr><th>Stage / Deal Type</th><th class="num">Win %</th><th class="num">Margin %</th><th>Note</th><th></th></tr></thead><tbody>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Stage Rules — Win % &amp; Margin %</span><span class="card-sub">Standard win rate and margin per stage · per-deal overrides &amp; Zoho target margin take precedence</span>';
+  html += ' <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="resetMarginRules()">Reset to Defaults</button> <button class="btn btn-gold btn-sm" onclick="openMarginRuleModal(null)">+ Add Rule</button>';
+  html += '</div>';
+  html += '<table><thead><tr><th>Stage / Deal Type</th><th class="num">Win %</th><th class="num">Margin %</th><th>Note</th><th></th></tr></thead><tbody>';
   rules.forEach(function(r, i) {
     html += '<tr><td><b>' + esc(r.dealType) + '</b></td>';
     html += '<td class="num"><input type="number" min="0" max="100" step="1" value="' + (r.winRate !== undefined ? Math.round(r.winRate * 100) : '') + '" onchange="updateMarginRule(' + i + ', \'winRate\', this.value/100)" style="width:64px;padding:3px 7px;text-align:right;border:1px solid var(--border);border-radius:4px;font-family:inherit" placeholder="—"></td>';
@@ -3331,18 +3409,17 @@ function renderMarginRules() {
     html += '<td style="color:var(--muted);font-size:11.5px">' + esc(r.note || '') + '</td>';
     html += '<td><button class="btn btn-ghost btn-sm" onclick="openMarginRuleModal(' + i + ')">&#9998;</button></td></tr>';
   });
-  html += '</tbody></table></div>';
-  html += '<div class="card"><div class="card-header"><span class="card-title">How Win % and Margin % are resolved per deal</span></div>';
-  html += '<div style="font-size:12.5px;color:var(--muted);line-height:1.7"><b>Win %:</b> per-deal value (from Zoho probability or typed by hand) → this stage rule.<br><b>Margin %:</b></div>';
-  html += '<ol style="font-size:12.5px;color:var(--muted);line-height:1.7;padding-left:20px">';
-  html += '<li><b>Per-deal override</b> — the Margin % typed on a deal wins.</li>';
-  html += '<li><b>Zoho target margin</b> — the commercial-design target margin from Zoho <span style="color:var(--amber)">(wiring pending the Zoho field API name)</span>.</li>';
-  html += '<li><b>Super-Deal rule</b> — if flagged Super.</li>';
-  html += '<li><b>Stage rule</b> — the standard margin for the deal\'s stage.</li>';
-  html += '<li><b>Default</b> — fallback.</li>';
-  html += '</ol>';
-  html += '<div style="font-size:12.5px;color:var(--muted);margin-top:8px">Deals in Commercial Design or later that lack a real target margin show an <span style="color:var(--amber)">amber Margin %</span> in the grid — a cue to set the target in Zoho.</div></div>';
-  document.getElementById('mainContent').innerHTML = html;
+  html += '</tbody></table>';
+  html += '<div style="padding:10px 14px;font-size:11.5px;color:var(--muted);line-height:1.6;background:#f6f9fc;border-top:1px solid var(--border)"><b>Resolution order — Win %:</b> per-deal value (Zoho probability or typed) → this stage rule. <b>Margin %:</b> per-deal override → Zoho target margin → Super-Deal rule → stage rule → default. Deals in Commercial Design or later without a target margin show an <span style="color:var(--amber)">amber Margin %</span> cell as a cue to set it in Zoho.</div>';
+  html += '</div>';
+  return html;
+}
+function renderMarginRules() {
+  // Legacy entry point (the standalone tab was retired — Stage Rules is now a
+  // section inside Settings). Redirect to Settings for any deep link.
+  currentTab = 'settings';
+  renderTopNav();
+  renderSettings();
 }
 function updateMarginRule(idx, field, val) {
   var rules = getMarginRules();
@@ -3895,7 +3972,10 @@ function clearErrorLog() {
 function renderSettings() {
   var lastSync = load('last_zoho_sync', null);
   var html = '';
-  html += '<div class="page-title"><div><h1>Settings</h1><div class="sub">Integration, data management, and export</div></div></div>';
+  html += '<div class="page-title"><div><h1>Settings</h1><div class="sub">Stage rules, integration, data management, and export</div></div></div>';
+
+  // Stage Rules section (formerly a standalone tab — now lives here).
+  html += stageRulesSectionHtml();
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Zoho CRM Integration</span></div>';
   html += '<div style="font-size:12.5px;color:var(--muted);line-height:1.6">';
