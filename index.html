@@ -280,7 +280,7 @@ var ZOHO_DC         = 'com'; // Zoho data center: 'com' (US), 'eu', 'in', 'au', 
 var ZOHO_MRR_FIELD    = 'MRR';                // monthly recurring revenue per deal
 var ZOHO_MARGIN_FIELD = 'Target_Margin_Band'; // commercial-design target margin
 var ZOHO_HC_FIELD     = 'Headcounts';         // total headcount on the deal (single number in Zoho)
-var ZOHO_BASE_FIELDS  = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Amount,Probability,Description';
+var ZOHO_BASE_FIELDS  = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Created_Time,Amount,Probability,Description';
 
 // Exact Zoho Deal Stage API Names that should appear in the dashboard.
 // Edit this list if your Zoho stage names change.
@@ -308,6 +308,7 @@ var USERS = {
 
 var TABS = [
   { id: 'overview',    label: 'Overview' },
+  { id: 'pipeline',    label: 'Pipeline' },
   { id: 'aureum',      label: 'Aureum Demand Forecast' },
   { id: 'threemo',     label: '3 mo. revenue' },
   { id: 'playground',  label: 'Playground' },
@@ -936,6 +937,8 @@ function syncZohoDeals() {
         location:              p.location || (seed && seed.location) || 'LATAM',
         firstBillableMonth:    r.Closing_Date || p.firstBillableMonth || (seed && seed.firstBillableMonth) || '',
         activationMonth:       r.Closing_Date || p.activationMonth || (seed && seed.activationMonth) || '',
+        closingDate:           r.Closing_Date || p.closingDate || '',
+        createdAt:             r.Created_Time || p.createdAt || '',
         // MRR Zoho: ALWAYS what Zoho says (Amount field). 0 if not set in CRM.
         pricing:               zohoAmount,
         // MRR Aureum (Don's manual): preserved across syncs. Sync never touches it.
@@ -1462,6 +1465,7 @@ function renderTopNav() {
 function selectTab(id) { currentTab = id; renderTopNav(); renderTab(); window.scrollTo(0, 0); }
 function renderTab() {
   if (currentTab === 'overview')    return renderOverview();
+  if (currentTab === 'pipeline')    return renderPipelineOverview();
   if (currentTab === 'aureum')      return renderAureumGrid();
   if (currentTab === 'threemo')     return render3MoRevenue();
   if (currentTab === 'accuracy')    return renderForecastAccuracy();
@@ -1542,6 +1546,258 @@ function anchorSelectHtml() {
   var cur = getAnchorMonth();
   var opts = ALL_MONTHS.map(function(m) { return '<option value="' + m + '"' + (m === cur ? ' selected' : '') + '>' + monthLabel(m) + '</option>'; }).join('');
   return '<select onchange="changeAnchorMonth(this.value)">' + opts + '</select>';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: PIPELINE OVERVIEW — investor-grade dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+// Modeled on the dashboard Eric (CEO) and Michael use to present to investors.
+// Aggregates the full pipeline by Michael's 5 phases plus segments by deal size
+// and deal age (time since Created_Time in Zoho).
+var pipelineExpanded = {};       // collapsed/expanded state per phase
+var pipelineSelectedPhase = null; // null = all phases shown; else focused phase id
+function togglePipelinePhase(id) { pipelineExpanded[id] = !pipelineExpanded[id]; renderTab(); }
+function focusPipelinePhase(id) { pipelineSelectedPhase = (pipelineSelectedPhase === id ? null : id); renderTab(); }
+
+function dealHcForRollup(d) {
+  // For pipeline aggregates, prefer the Zoho-side total HC (deal-level number),
+  // fall back to monthlyHC sum, then to seed totalHC.
+  return d.zoho_totalHC || sumMonths(d.monthlyHC) || d.totalHC || 0;
+}
+function dealMRR(d) { return effectivePricing(d) || 0; }
+function dealARR(d) { return dealMRR(d) * 12; }
+
+function dealAgeBucket(d) {
+  if (!d.createdAt) return null;
+  var ms = Date.now() - new Date(d.createdAt).getTime();
+  if (isNaN(ms) || ms < 0) return null;
+  var months = ms / (1000 * 60 * 60 * 24 * 30.44);
+  if (months < 3)  return 'healthy';
+  if (months < 6)  return 'active';
+  if (months < 12) return 'slow';
+  return 'critical';
+}
+function dealSizeBucket(hc) {
+  if (hc >= 100) return 'super';
+  if (hc >= 50)  return 'large';
+  if (hc >= 11)  return 'mid';
+  return 'small';
+}
+
+function pipelineKpiCard(label, value, sub, hue) {
+  // Big investor-style KPI card. hue = 'navy' | 'gold' | 'blue' | 'teal' | 'green'.
+  var bg = hue === 'gold' ? 'linear-gradient(135deg,#0A1928,#1c3250)' : 'linear-gradient(135deg,#0A1928,#1c3250)';
+  return '<div style="flex:1;min-width:180px;padding:18px 22px;border-radius:10px;background:' + bg + ';color:white;box-shadow:0 2px 8px rgba(10,25,40,.18)">'
+       + '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;opacity:.78;font-weight:700">' + esc(label) + '</div>'
+       + '<div style="font-size:30px;font-weight:900;margin-top:6px;line-height:1.1">' + esc(value) + '</div>'
+       + '<div style="font-size:11px;opacity:.65;margin-top:4px">' + esc(sub) + '</div>'
+       + '</div>';
+}
+
+function renderPipelineOverview() {
+  var allDeals = getDeals();
+  // For the investor view we exclude Closed Lost (irrelevant) but include the rest.
+  var deals = allDeals.filter(function(d){ return d.stage !== 'Closed Lost'; });
+
+  // Per-phase aggregates
+  var perPhase = {};
+  PHASES.forEach(function(p){ perPhase[p.id] = { deals:[], hc:0, mrr:0, arr:0 }; });
+  deals.forEach(function(d){
+    var pid = phaseForDeal(d);
+    if (!pid || !perPhase[pid]) return;
+    perPhase[pid].deals.push(d);
+    perPhase[pid].hc  += dealHcForRollup(d);
+    perPhase[pid].mrr += dealMRR(d);
+    perPhase[pid].arr += dealARR(d);
+  });
+
+  var totalDeals = 0, totalHC = 0, totalMRR = 0, totalARR = 0;
+  Object.keys(perPhase).forEach(function(k){
+    totalDeals += perPhase[k].deals.length;
+    totalHC    += perPhase[k].hc;
+    totalMRR   += perPhase[k].mrr;
+    totalARR   += perPhase[k].arr;
+  });
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Pipeline <span style="color:var(--muted);font-weight:400">Overview</span></h1><div class="sub">The investor view — pipeline grouped by Michael\'s 5 phases. Excludes Closed Lost.</div></div>';
+  html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="syncZohoDeals()">↻ Sync from Zoho</button></div></div>';
+
+  // ─── KPI strip ───
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px">';
+  html += pipelineKpiCard('Total Deals',          totalDeals.toLocaleString(),    'Across all 5 phases',     'navy');
+  html += pipelineKpiCard('Total Headcount',      totalHC.toLocaleString(),       'Active resources',         'blue');
+  html += pipelineKpiCard('Total Pipeline MRR',   fmt$k(totalMRR),                'Monthly recurring',        'gold');
+  html += pipelineKpiCard('Total Pipeline ARR',   fmt$k(totalARR),                'Annual recurring',         'teal');
+  html += '</div>';
+
+  // ─── Phase Breakdown table ───
+  html += '<div class="card" style="padding:0;overflow:hidden;margin-bottom:22px">';
+  html += '<div style="padding:10px 16px;border-bottom:1px solid var(--border);background:#f6f9fc"><b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Phase Breakdown</b></div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#3a6fb2;color:white">';
+  html += '<th style="text-align:left;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Phase</th>';
+  html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Deals</th>';
+  html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">HC</th>';
+  html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">MRR</th>';
+  html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">ARR</th>';
+  html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">% of Total MRR</th>';
+  html += '</tr></thead><tbody>';
+  // Render in REVERSE phase order so Closed Won is at the top (like the investor screenshot).
+  var phaseColors = { 1:'#3a6fb2', 2:'#9b59b6', 3:'#e8b84b', 4:'#2e9676', 5:'#c0392b' };
+  var phasesReversed = PHASES.slice().reverse();
+  phasesReversed.forEach(function(p, idx) {
+    var stat = perPhase[p.id];
+    var pct = totalMRR > 0 ? (stat.mrr / totalMRR) : 0;
+    var focused = (pipelineSelectedPhase === p.id);
+    var bg = focused ? '#fff8e1' : (idx % 2 === 0 ? 'white' : '#f9fbfd');
+    var dot = phaseColors[p.id] || '#5a6a7a';
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid var(--border);cursor:pointer" onclick="focusPipelinePhase(' + p.id + ')" title="Click to focus the breakdown on this phase">';
+    html += '<td style="padding:12px 14px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + dot + ';vertical-align:middle;margin-right:9px"></span>';
+    html += '<span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin-right:10px">Phase ' + p.id + '</span>';
+    html += '<b style="color:var(--navy)">' + esc(p.short === 'SQLs' ? 'SQL' : p.short === 'Closed Won' ? 'Closed Won' : p.short === 'Recruiting' ? 'Recruitment' : p.short === 'Legal' ? 'Legal Contracting' : p.short) + '</b>';
+    html += '</td>';
+    html += '<td style="text-align:right;padding:12px 14px;font-weight:600">' + stat.deals.length + '</td>';
+    html += '<td style="text-align:right;padding:12px 14px">' + stat.hc.toLocaleString() + '</td>';
+    html += '<td style="text-align:right;padding:12px 14px;font-weight:700">' + fmt$k(stat.mrr) + '</td>';
+    html += '<td style="text-align:right;padding:12px 14px;font-weight:700;color:var(--navy)">' + fmt$k(stat.arr) + '</td>';
+    html += '<td style="text-align:right;padding:12px 14px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + dot + ';margin-right:8px"></span><b>' + (pct * 100).toFixed(1) + '%</b></td>';
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+
+  // ─── Deal Breakdown per phase (focused phase only if any selected) ───
+  var phasesToShow = pipelineSelectedPhase ? [phaseById(pipelineSelectedPhase)] : phasesReversed;
+  html += '<div style="margin-bottom:22px"><b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:8px"><span style="display:inline-block;width:18px;height:2px;background:#3a6fb2"></span>Deal Breakdown' + (pipelineSelectedPhase ? ' — ' + esc(phaseById(pipelineSelectedPhase).short) + ' <button class="btn btn-ghost btn-sm" onclick="focusPipelinePhase(null)" style="margin-left:10px">✕ Show all phases</button>' : '') + '</b></div>';
+
+  phasesToShow.forEach(function(p) {
+    if (!p) return;
+    var stat = perPhase[p.id];
+    var expanded = pipelineSelectedPhase ? true : !!pipelineExpanded[p.id];
+    var dot = phaseColors[p.id] || '#5a6a7a';
+    html += '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">';
+    html += '<div style="padding:11px 16px;background:#f6f9fc;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;cursor:pointer" onclick="togglePipelinePhase(' + p.id + ')">';
+    html += '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + dot + '"></span>';
+    html += '<span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700">Phase ' + p.id + '</span>';
+    html += '<b style="color:var(--navy);font-size:14px">' + esc(p.short) + '</b>';
+    html += '<span style="color:var(--muted);font-size:11.5px">' + stat.deals.length + ' deals · ' + stat.hc.toLocaleString() + ' HC · ' + fmt$k(stat.mrr) + ' MRR · ' + fmt$k(stat.arr) + ' ARR</span>';
+    html += '<span style="margin-left:auto;font-size:11px;color:var(--muted)">' + (expanded ? '▾' : '▸') + '</span>';
+    html += '</div>';
+
+    if (expanded) {
+      // Size bands inside this phase: Super (100+), Large (50-99), Mid (11-49), Small (1-10)
+      var sizeGroups = { super: [], large: [], mid: [], small: [] };
+      stat.deals.forEach(function(d) { sizeGroups[dealSizeBucket(dealHcForRollup(d))].push(d); });
+      Object.keys(sizeGroups).forEach(function(k) {
+        sizeGroups[k].sort(function(a,b){ return dealMRR(b) - dealMRR(a); });
+      });
+
+      if (!stat.deals.length) {
+        html += '<div class="empty" style="padding:18px">No deals in this phase.</div>';
+      } else {
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:#3a6fb2;color:white">';
+        html += '<th style="text-align:left;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Deal Name</th>';
+        html += '<th style="text-align:left;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Closing Date</th>';
+        html += '<th style="text-align:right;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">HC</th>';
+        html += '<th style="text-align:right;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">$/HC</th>';
+        html += '<th style="text-align:right;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Total MRR</th>';
+        html += '<th style="text-align:right;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Total ARR</th>';
+        html += '</tr></thead><tbody>';
+
+        var groupLabels = { super: { label: 'SUPER DEAL', range: '+100 HC',  bg:'#0A1928', color:'white' },
+                            large: { label: 'LARGE',      range: '50–99 HC', bg:'#e8b84b', color:'#0A1928' },
+                            mid:   { label: 'MID',        range: '11–49 HC', bg:'#3a6fb2', color:'white' },
+                            small: { label: 'SMALL',      range: '1–10 HC',  bg:'#2e9676', color:'white' } };
+        var rowNum = 0;
+        ['super','large','mid','small'].forEach(function(k) {
+          var arr = sizeGroups[k];
+          if (!arr.length) return;
+          var g = groupLabels[k];
+          var groupHC  = arr.reduce(function(s,d){return s+dealHcForRollup(d);},0);
+          var groupMRR = arr.reduce(function(s,d){return s+dealMRR(d);},0);
+          var groupARR = arr.reduce(function(s,d){return s+dealARR(d);},0);
+          html += '<tr style="background:' + g.bg + ';color:' + g.color + '">';
+          html += '<td colspan="2" style="padding:8px 12px"><span style="padding:3px 9px;background:rgba(255,255,255,.18);border-radius:14px;font-size:10px;font-weight:700;letter-spacing:.4px;margin-right:8px">' + g.label + '</span>' + arr.length + ' DEAL' + (arr.length > 1 ? 'S' : '') + ' · ' + g.range + '</td>';
+          html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + groupHC.toLocaleString() + '</td>';
+          html += '<td style="text-align:right;padding:8px 12px">' + (groupHC > 0 ? fmt$k(groupMRR/groupHC) : '—') + '</td>';
+          html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + fmt$k(groupMRR) + '</td>';
+          html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + fmt$k(groupARR) + '</td>';
+          html += '</tr>';
+          arr.forEach(function(d) {
+            rowNum++;
+            var hc = dealHcForRollup(d);
+            var mrr = dealMRR(d);
+            var perHead = hc > 0 ? mrr / hc : 0;
+            var bg = rowNum % 2 === 0 ? '#f9fbfd' : 'white';
+            var dealCell = esc(d.dealName);
+            if (d.zohoId) {
+              var url = 'https://crm.zoho.' + ZOHO_DC + '/crm/tab/Potentials/' + encodeURIComponent(d.zohoId);
+              dealCell = '<a href="' + url + '" target="_blank" rel="noopener" style="color:var(--navy);text-decoration:none;border-bottom:1px dashed var(--gold)">' + esc(d.dealName) + '</a>';
+            }
+            html += '<tr style="background:' + bg + ';border-bottom:1px solid var(--border)">';
+            html += '<td style="padding:8px 12px"><span style="color:var(--muted);font-size:11px;margin-right:8px">' + rowNum + '.</span>' + dealCell + '</td>';
+            html += '<td style="padding:8px 12px;color:var(--muted);font-size:11.5px">' + (d.closingDate ? formatClosingDate(d.closingDate) : '—') + '</td>';
+            html += '<td style="text-align:right;padding:8px 12px"><span style="display:inline-block;min-width:32px;padding:2px 8px;background:#e8eef5;border-radius:12px;font-weight:600">' + (hc || '—') + '</span></td>';
+            html += '<td style="text-align:right;padding:8px 12px">' + (perHead > 0 ? fmt$k(perHead) : '—') + '</td>';
+            html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + fmt$k(mrr) + '</td>';
+            html += '<td style="text-align:right;padding:8px 12px;font-weight:700;color:var(--navy)">' + fmt$k(mrr * 12) + '</td>';
+            html += '</tr>';
+          });
+        });
+
+        // Summary row
+        html += '<tr style="background:#3a6fb2;color:white;font-weight:700">';
+        html += '<td colspan="2" style="padding:10px 12px;text-transform:uppercase;letter-spacing:.4px;font-size:11px">Summary</td>';
+        html += '<td style="text-align:right;padding:10px 12px">' + stat.hc.toLocaleString() + '</td>';
+        html += '<td style="text-align:right;padding:10px 12px">' + (stat.hc > 0 ? fmt$k(stat.mrr/stat.hc) : '—') + '</td>';
+        html += '<td style="text-align:right;padding:10px 12px">' + fmt$k(stat.mrr) + '</td>';
+        html += '<td style="text-align:right;padding:10px 12px">' + fmt$k(stat.arr) + '</td>';
+        html += '</tr>';
+        html += '</tbody></table>';
+      }
+    }
+    html += '</div>';
+  });
+
+  // ─── Deal Age Segmentation ───
+  var ageBuckets = { healthy:[], active:[], slow:[], critical:[] };
+  var ageless = 0;
+  deals.forEach(function(d) {
+    var b = dealAgeBucket(d);
+    if (!b) { ageless++; return; }
+    ageBuckets[b].push(d);
+  });
+  function ageCard(key, label, sub, dot, bg) {
+    var arr = ageBuckets[key];
+    var hc  = arr.reduce(function(s,d){return s+dealHcForRollup(d);},0);
+    var mrr = arr.reduce(function(s,d){return s+dealMRR(d);},0);
+    return '<div style="flex:1;min-width:170px;padding:14px 16px;background:' + bg + ';border-radius:10px;border:1px solid rgba(0,0,0,.05)">'
+         + '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;color:' + dot + '">● ' + esc(label) + '</div>'
+         + '<div style="font-size:10.5px;color:var(--muted);margin-top:1px">' + esc(sub) + '</div>'
+         + '<div style="font-size:24px;font-weight:900;margin-top:8px;color:var(--navy)">' + arr.length + ' <span style="font-size:12px;color:var(--muted);font-weight:400">deals</span></div>'
+         + '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + hc.toLocaleString() + ' HC · ' + fmt$k(mrr) + ' MRR · ' + fmt$k(mrr*12) + ' ARR</div>'
+         + '</div>';
+  }
+  html += '<div style="margin:6px 0 10px"><b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:8px"><span style="display:inline-block;width:18px;height:2px;background:#3a6fb2"></span>Deal Age Segmentation — Likelihood to Close by Creation Date</b></div>';
+  html += '<div style="display:flex;gap:12px;flex-wrap:wrap">';
+  html += ageCard('healthy',  'HEALTHY',         '<3 months',      '#2e9676', '#eaf6ef');
+  html += ageCard('active',   'ACTIVE PIPELINE', '3–6 months',     '#5a6a7a', '#f1f4f8');
+  html += ageCard('slow',     'SLOW-MOVING',     '6–12 months',    '#e8b84b', '#fdf6e6');
+  html += ageCard('critical', 'CRITICAL',        '>1 year',        '#c0392b', '#fdecea');
+  html += '</div>';
+  if (ageless > 0) {
+    html += '<div style="margin-top:10px;font-size:11px;color:var(--muted);font-style:italic">' + ageless + ' deal' + (ageless === 1 ? '' : 's') + ' have no Created_Time from Zoho yet — they will join an age bucket after the next ↻ Sync from Zoho.</div>';
+  }
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+function formatClosingDate(s) {
+  if (!s) return '';
+  // Accept 'YYYY-MM-DD' or full ISO. Display 'MMM dd, YYYY'.
+  var m = String(s).match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return esc(s);
+  var d = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+  return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
