@@ -311,6 +311,8 @@ var TABS = [
   { id: 'pipeline',    label: 'Pipeline' },
   { id: 'aureum',      label: 'Aureum Demand Forecast' },
   { id: 'threemo',     label: '3 mo. revenue' },
+  { id: 'midterm',     label: '12-Month Plan' },
+  { id: 'longterm',    label: 'Long-term Growth' },
   { id: 'playground',  label: 'Playground' },
   { id: 'accuracy',    label: 'Forecast Accuracy' },
   { id: 'trend',       label: 'Forecast Trend' },
@@ -582,7 +584,7 @@ function userStatus(lastSeen) {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases','longterm_growth_pct','longterm_base'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -1538,6 +1540,8 @@ function renderTab() {
   if (currentTab === 'pipeline')    return renderPipelineOverview();
   if (currentTab === 'aureum')      return renderAureumGrid();
   if (currentTab === 'threemo')     return render3MoRevenue();
+  if (currentTab === 'midterm')     return renderMidtermForecast();
+  if (currentTab === 'longterm')    return renderLongtermGrowth();
   if (currentTab === 'accuracy')    return renderForecastAccuracy();
   if (currentTab === 'trend')       return renderForecastTrend();
   if (currentTab === 'super')       return renderSuperDeals();
@@ -2298,6 +2302,233 @@ function render3MoRevenue() {
   html += '</div>';
 
   html += '<div class="legend"><span style="font-style:italic">Move the anchor month forward each month to roll the window. Only deals with the <b>Forecast</b> checkbox in Aureum Demand Forecast appear here. Click a deal name to open it in Zoho.</span></div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: 12-MONTH PLAN (months 4-12 from the anchor)
+// ─────────────────────────────────────────────────────────────────────────────
+// Michael's vision: after the 3-month deep dive (handled in '3 mo. revenue'),
+// months 4-12 are a lighter view — per deal HC ramp by month with computed MRR.
+// The intent is "when do they start billing," not "when do they close" —
+// hence the Build & Invoice banner is loud here.
+function renderMidtermForecast() {
+  var deals  = getDeals();
+  var anchor = getAnchorMonth();
+  // Build a 9-month window starting at anchor + 3 (months 4 through 12 of the plan).
+  var months = []; for (var i = 3; i < 12; i++) months.push(monthKeyAfter(anchor, i));
+
+  var rows = deals.filter(function(d) {
+    if (!d.inForecast) return false;
+    if (!passSearch('midterm', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
+    if (!passMulti('midterm', 'bde',   d.bde))   return false;
+    if (!passMulti('midterm', 'stage', d.stage)) return false;
+    return true;
+  });
+  rows.sort(function(a, b) {
+    var ca = (a.client || '').toLowerCase(), cb = (b.client || '').toLowerCase();
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    return (a.dealName || '').toLowerCase() < (b.dealName || '').toLowerCase() ? -1 : 1;
+  });
+  var bdes = uniqueBdes(deals);
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>12-Month Plan <span style="color:var(--muted);font-weight:400">— months 4-12</span></h1><div class="sub">Mid-term forecast · per-deal HC ramp · MRR auto-calculated · anchor + 3 through anchor + 11</div></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+
+  // BIG Build & Invoice banner — Michael was explicit this needs to be in flashing lights.
+  html += '<div style="margin:0 0 16px;padding:14px 18px;background:linear-gradient(90deg,#fff8e1 0%, #fdf6e6 100%);border-left:6px solid var(--gold);border-radius:0 8px 8px 0;color:var(--navy)">';
+  html += '<div style="font-size:13px;font-weight:900;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">⚡ Build &amp; Invoice — NOT Close</div>';
+  html += '<div style="font-size:12px;color:var(--muted);line-height:1.55">This is <b>when people start billing</b>, not when the deal closes. CGI may sign for 250 people in June and ramp 35 → 70 → 70 over the next weeks — put those headcounts in the month they bill, not the month you sign. Zillions 150 people from Madison Dearborn? Don knows the ramp better than the close date.</div>';
+  html += '</div>';
+
+  html += '<div class="toolbar">';
+  html += searchBox('midterm', 'Search deal, client, BDE…');
+  html += msDropdown('midterm', 'bde',   'BDE',   bdes);
+  html += msDropdown('midterm', 'stage', 'Stage', ALLOWED_STAGES);
+  html += '<span class="spacer"></span><span style="font-size:11px;color:var(--muted)">' + rows.length + ' forecast deals · ' + months.length + ' months</span>';
+  html += '</div>';
+
+  if (!rows.length) {
+    html += '<div class="card empty">No forecast deals yet. Go to <b>Aureum Demand Forecast</b> and check the <b>Fcst</b> box on the deals you want to plan out.</div>';
+    document.getElementById('mainContent').innerHTML = html;
+    return;
+  }
+
+  var totals = months.map(function(){ return { hc: 0, mrr: 0 }; });
+  var allDealsIdx = deals;
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
+  html += '<th>BDE</th><th>Client</th><th>Deal</th><th>Stage</th><th>Phase</th><th class="num">MRR / Head</th>';
+  months.forEach(function(m){ html += '<th class="num">' + monthLabel(m) + '</th>'; });
+  html += '<th class="num" style="background:var(--navy);color:white">12-mo MRR Total</th>';
+  html += '</tr></thead><tbody>';
+
+  rows.forEach(function(d) {
+    var dealIdx = allDealsIdx.indexOf(d);
+    var pph = pricePerHead(d);
+    var sup = isSuperDeal(d);
+    var dealMrrTotal = 0;
+    html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
+    html += bdeCell(d);
+    html += '<td>' + esc(d.client) + '</td>';
+    html += '<td>' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="margin-left:4px">Aureum</span>' : '') + '</td>';
+    html += '<td>' + stagePill(d.stage) + '</td>';
+    html += '<td>' + phasePill(phaseForDeal(d)) + '</td>';
+    html += '<td class="num">' + fmt$k(pph) + '</td>';
+    months.forEach(function(m, i) {
+      var hc  = (d.monthlyHC || {})[m] || 0;
+      var mrr = hc * pph;
+      totals[i].hc  += hc;
+      totals[i].mrr += mrr;
+      dealMrrTotal  += mrr;
+      var cls = '';
+      if (hc > 0) {
+        if (sup)                            cls = 'super';
+        else if (pph >= 10000)              cls = 'gt10k';
+        else if (pph > 0 && pph < 10000)    cls = 'lt10k';
+      }
+      html += '<td class="cell-hc ' + cls + '"><input type="number" min="0" value="' + (hc || '') + '" onchange="updateDealHC(' + dealIdx + ', \'' + m + '\', this.value)" placeholder="0" title="' + (mrr ? fmt$k(mrr) + ' MRR' : 'Enter HC for ' + monthLabel(m)) + '"></td>';
+    });
+    html += '<td class="num num-bold" style="color:var(--navy)">' + fmt$k(dealMrrTotal) + '</td>';
+    html += '</tr>';
+  });
+
+  // Totals row
+  html += '<tr style="background:var(--navy);color:white;font-weight:700">';
+  html += '<td colspan="5" style="color:white">TOTALS — ' + rows.length + ' deals · months 4-12</td>';
+  html += '<td></td>';
+  var grandTotal = 0;
+  months.forEach(function(m, i) {
+    html += '<td class="num" style="color:white" title="HC ' + totals[i].hc + ' · MRR ' + fmt$k(totals[i].mrr) + '">' + fmt$k(totals[i].mrr) + '</td>';
+    grandTotal += totals[i].mrr;
+  });
+  html += '<td class="num" style="color:var(--gold)">' + fmt$k(grandTotal) + '</td>';
+  html += '</tr></tbody></table></div></div>';
+
+  // Summary cards
+  var avgMonthly = grandTotal / months.length;
+  html += '<div class="stat-grid">';
+  html += statCard('9-Month MRR Total', fmt$k(grandTotal),  'Sum of months 4-12');
+  html += statCard('Avg Monthly MRR',   fmt$k(avgMonthly),  'Across the 9-month window', 'gold');
+  html += statCard('Peak Month',        peakMonthLabel(months, totals), 'Highest forecasted month', 'good');
+  html += '</div>';
+
+  document.getElementById('mainContent').innerHTML = html;
+}
+function peakMonthLabel(months, totals) {
+  var bestI = 0, best = -1;
+  totals.forEach(function(t, i) { if (t.mrr > best) { best = t.mrr; bestI = i; } });
+  return monthLabel(months[bestI]) + ' (' + fmt$k(best) + ')';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: LONG-TERM GROWTH (months 13-24)
+// ─────────────────────────────────────────────────────────────────────────────
+// Michael's vision: months 13-24 are not per-deal — Eric/Finance want an
+// aggregate growth forecast. Take month 12 MRR as the baseline and grow it
+// month-over-month by a fixed %, chosen from a dropdown.
+var longtermGrowthPct = null; // null = use saved default
+function getLongtermGrowthPct() {
+  if (longtermGrowthPct !== null) return longtermGrowthPct;
+  return load('longterm_growth_pct', 0.03);  // 3% default
+}
+function setLongtermGrowthPct(v) {
+  longtermGrowthPct = v;
+  save('longterm_growth_pct', v);
+  logActivity('Forecast', 'Long-term growth %', (v * 100).toFixed(1) + '%/mo');
+  renderTab();
+}
+function renderLongtermGrowth() {
+  var deals  = getDeals();
+  var anchor = getAnchorMonth();
+  // Baseline: month 12 MRR from the 12-Month Plan (anchor + 11).
+  var baselineMonth = monthKeyAfter(anchor, 11);
+  var baselineMRR = 0;
+  deals.forEach(function(d) {
+    if (!d.inForecast) return;
+    var hc = (d.monthlyHC || {})[baselineMonth] || 0;
+    baselineMRR += hc * pricePerHead(d);
+  });
+  // Alt baseline: average across months 4-12 (some teams prefer the average so
+  // the projection isn't sensitive to one peak month).
+  var avgMonths = []; for (var i = 3; i < 12; i++) avgMonths.push(monthKeyAfter(anchor, i));
+  var avgMRR = 0;
+  avgMonths.forEach(function(m) {
+    deals.forEach(function(d) {
+      if (!d.inForecast) return;
+      avgMRR += ((d.monthlyHC || {})[m] || 0) * pricePerHead(d);
+    });
+  });
+  avgMRR = avgMonths.length > 0 ? avgMRR / avgMonths.length : 0;
+
+  var growth = getLongtermGrowthPct();
+  var baseChoice = load('longterm_base', 'm12');  // 'm12' or 'avg'
+  var startMRR = baseChoice === 'avg' ? avgMRR : baselineMRR;
+
+  // Project 12 months forward from anchor + 12.
+  var rows = [];
+  var mrr = startMRR;
+  for (var i = 12; i < 24; i++) {
+    mrr = mrr * (1 + growth);
+    rows.push({ monthKey: monthKeyAfter(anchor, i), mrr: mrr });
+  }
+  var totalARR = rows.reduce(function(s, r){ return s + r.mrr; }, 0);
+  var endMrr   = rows.length ? rows[rows.length - 1].mrr : 0;
+  var multiple = startMRR > 0 ? endMrr / startMRR : 0;
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Long-term Growth <span style="color:var(--muted);font-weight:400">— months 13-24</span></h1><div class="sub">Aggregate growth model · no per-deal forecast at this horizon — pick a baseline + monthly growth % and project</div></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + '</div></div>';
+
+  // Why we don't forecast per-deal out here — Michael's rationale.
+  html += '<div style="margin:0 0 16px;padding:10px 14px;background:#f6f9fc;border-left:4px solid var(--muted);border-radius:0 6px 6px 0;font-size:12px;color:var(--muted)">';
+  html += '<b style="color:var(--navy)">Why aggregate?</b> Beyond 12 months we don\'t have clue what the SQLs will materialize at — 5%? 25%? Don shouldn\'t forecast that deep by deal. Instead, pick a baseline (month 12 or the 9-month average), choose a monthly growth %, and the model projects forward. Finance gets a credible long-term number without forcing certainty we don\'t have.';
+  html += '</div>';
+
+  // Controls
+  html += '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:18px;padding:14px 18px;background:#f6f9fc;border:1px solid var(--border);border-radius:8px;align-items:center">';
+  // Baseline picker
+  html += '<div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:5px">Baseline</div>';
+  html += '<select onchange="save(\'longterm_base\', this.value); renderTab();" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12.5px;background:white">';
+  html += '<option value="m12"' + (baseChoice === 'm12' ? ' selected' : '') + '>Month 12 MRR (' + fmt$k(baselineMRR) + ')</option>';
+  html += '<option value="avg"' + (baseChoice === 'avg' ? ' selected' : '') + '>Average of months 4-12 (' + fmt$k(avgMRR) + ')</option>';
+  html += '</select></div>';
+
+  // Growth dropdown
+  html += '<div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:5px">Monthly growth</div>';
+  html += '<select onchange="setLongtermGrowthPct(parseFloat(this.value))" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12.5px;background:white;font-weight:700">';
+  [0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.07, 0.10].forEach(function(g) {
+    var sel = Math.abs(g - growth) < 0.0001 ? ' selected' : '';
+    html += '<option value="' + g + '"' + sel + '>' + (g * 100).toFixed(g < 0.01 ? 1 : 0) + '% / month</option>';
+  });
+  html += '</select></div>';
+
+  // KPI numbers (computed)
+  html += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-left:auto">';
+  html += '<div style="padding:8px 14px;background:white;border-radius:6px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Start MRR</div><div style="font-size:18px;font-weight:900;color:var(--navy)">' + fmt$k(startMRR) + '</div></div>';
+  html += '<div style="padding:8px 14px;background:white;border-radius:6px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">End MRR (month 24)</div><div style="font-size:18px;font-weight:900;color:var(--navy)">' + fmt$k(endMrr) + '</div></div>';
+  html += '<div style="padding:8px 14px;background:#fdf6e6;border-radius:6px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.4px">12-mo ARR (13-24)</div><div style="font-size:18px;font-weight:900;color:var(--navy)">' + fmt$k(totalARR) + '</div></div>';
+  html += '<div style="padding:8px 14px;background:white;border-radius:6px;border:1px solid var(--border)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Multiple vs start</div><div style="font-size:18px;font-weight:900;color:' + (multiple >= 1 ? 'var(--success)' : 'var(--danger)') + '">' + (multiple > 0 ? multiple.toFixed(2) + '×' : '—') + '</div></div>';
+  html += '</div>';
+  html += '</div>';
+
+  // Projection table
+  html += '<div class="card" style="padding:0;overflow:hidden"><div style="padding:10px 16px;border-bottom:1px solid var(--border);background:#f6f9fc"><b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Month-by-Month Projection</b></div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:var(--navy);color:white"><th style="text-align:left;padding:10px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px">Month</th><th style="text-align:right;padding:10px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px">Projected MRR</th><th style="text-align:right;padding:10px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px">Projected ARR</th><th style="text-align:right;padding:10px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px">Δ vs Prev</th></tr></thead><tbody>';
+  var prev = startMRR;
+  rows.forEach(function(r, i) {
+    var bg = i % 2 === 0 ? 'white' : '#f9fbfd';
+    var delta = r.mrr - prev;
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid var(--border)">';
+    html += '<td style="padding:9px 14px"><b>' + monthLabel(r.monthKey) + '</b> <span style="color:var(--muted);font-size:11px">· month ' + (i + 13) + '</span></td>';
+    html += '<td style="text-align:right;padding:9px 14px;font-weight:700">' + fmt$k(r.mrr) + '</td>';
+    html += '<td style="text-align:right;padding:9px 14px;color:var(--navy)">' + fmt$k(r.mrr * 12) + '</td>';
+    html += '<td style="text-align:right;padding:9px 14px;color:' + (delta >= 0 ? 'var(--success)' : 'var(--danger)') + '">+' + fmt$k(delta) + '</td>';
+    html += '</tr>';
+    prev = r.mrr;
+  });
+  html += '</tbody></table></div>';
 
   document.getElementById('mainContent').innerHTML = html;
 }
