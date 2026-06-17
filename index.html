@@ -357,11 +357,11 @@ var STATUS_PILL = {
 // default — SQLs and Closed Won are off; Recruiting / Pricing / Legal are on.
 // Closed Won is "captured" in cash flow (already billing) rather than forecasted.
 var PHASES = [
-  { id: 1, label: 'Phase 1 — SQLs',       short: 'SQLs',       cls: 'pill-gray',   defaultFcst: false, captured: false, note: 'Early pipeline — not forecasted by default', stages: ['SQL - Solution Discovery', 'Stage 2 (WTW)', 'Commercial Design', 'SQL'] },
-  { id: 2, label: 'Phase 2 — Recruiting', short: 'Recruiting', cls: 'pill-blue',   defaultFcst: true,  captured: false, note: 'Active recruiting / staffing',              stages: ['Recruitment (Path 2.1)', 'P.S (Path 2.2)', 'Professional Services (Path 2.2)'] },
-  { id: 3, label: 'Phase 3 — Pricing',    short: 'Pricing',    cls: 'pill-gold',   defaultFcst: true,  captured: false, note: 'Commercial pricing finalized',             stages: ['Pricing'] },
-  { id: 4, label: 'Phase 4 — Legal',      short: 'Legal',      cls: 'pill-green',  defaultFcst: true,  captured: false, note: 'Paper process / contracting',              stages: ['Paper Process / Contracting', 'Paper Process'] },
-  { id: 5, label: 'Phase 5 — Closed Won', short: 'Closed Won', cls: 'pill-aureum', defaultFcst: false, captured: true,  note: 'Already won — captured in cash flow',      stages: ['Closed Won'] }
+  { id: 1, label: 'Phase 1 — SQL',               short: 'SQL',               cls: 'pill-gray',   defaultFcst: false, captured: false, note: 'Early pipeline (SQL - Solution Discovery + Stage 2 WTW) — not forecasted by default', stages: ['SQL - Solution Discovery', 'Stage 2 (WTW)', 'SQL'] },
+  { id: 2, label: 'Phase 2 — Recruitment',       short: 'Recruitment',       cls: 'pill-blue',   defaultFcst: true,  captured: false, note: 'Recruitment Path 2.1 + P.S Path 2.2 + Commercial Design',                            stages: ['Recruitment (Path 2.1)', 'P.S (Path 2.2)', 'Professional Services (Path 2.2)', 'Commercial Design'] },
+  { id: 3, label: 'Phase 3 — Pricing',           short: 'Pricing',           cls: 'pill-gold',   defaultFcst: true,  captured: false, note: 'Commercial pricing finalized',                                                       stages: ['Pricing'] },
+  { id: 4, label: 'Phase 4 — Legal Contracting', short: 'Legal Contracting', cls: 'pill-green',  defaultFcst: true,  captured: false, note: 'Paper process / contracting',                                                        stages: ['Paper Process / Contracting', 'Paper Process'] },
+  { id: 5, label: 'Phase 5 — Closed Won',        short: 'Closed Won',        cls: 'pill-aureum', defaultFcst: false, captured: true,  note: 'Already won — captured in cash flow',                                               stages: ['Closed Won'] }
 ];
 function phaseIdForStage(stageId) {
   for (var i = 0; i < PHASES.length; i++) {
@@ -1672,7 +1672,7 @@ function renderPipelineOverview() {
     html += '<tr style="background:' + bg + ';border-bottom:1px solid var(--border);cursor:pointer" onclick="focusPipelinePhase(' + p.id + ')" title="Click to focus the breakdown on this phase">';
     html += '<td style="padding:12px 14px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + dot + ';vertical-align:middle;margin-right:9px"></span>';
     html += '<span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin-right:10px">Phase ' + p.id + '</span>';
-    html += '<b style="color:var(--navy)">' + esc(p.short === 'SQLs' ? 'SQL' : p.short === 'Closed Won' ? 'Closed Won' : p.short === 'Recruiting' ? 'Recruitment' : p.short === 'Legal' ? 'Legal Contracting' : p.short) + '</b>';
+    html += '<b style="color:var(--navy)">' + esc(p.short) + '</b>';
     html += '</td>';
     html += '<td style="text-align:right;padding:12px 14px;font-weight:600">' + stat.deals.length + '</td>';
     html += '<td style="text-align:right;padding:12px 14px">' + stat.hc.toLocaleString() + '</td>';
