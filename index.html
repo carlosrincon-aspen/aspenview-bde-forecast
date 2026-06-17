@@ -3025,13 +3025,14 @@ function trendSectionHtml(opts) {
   html += deltaCell(first.totalAdjRev, last.totalAdjRev) + '</div>';
   html += '</div>';
 
-  // Three chart cards
+  // Three chart cards — each shows Forecast (solid) vs Actual (dashed green).
   var clickHint = ' · <b style="color:var(--gold)">Click any point</b> to see the deals behind it';
-  html += '<div class="card"><div class="card-header"><span class="card-title">Deals forecasted</span><span class="card-sub">Count of deals with Fcst ☑' + clickHint + '</span></div>';
+  var actualHint = '<span style="font-size:10.5px;color:var(--muted);margin-left:6px">· solid = forecast · <span style="color:#2e7d32">dashed = actual</span> (filled from Actuals + backfill)</span>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Deals forecasted vs Closed Won</span><span class="card-sub">Forecast: count of deals with Fcst ☑ · Actual: count of currently Closed Won deals with closing date in the window' + actualHint + clickHint + '</span></div>';
   html += '<div style="height:220px;position:relative"><canvas id="trendChartDeals"></canvas></div></div>';
-  html += '<div class="card"><div class="card-header"><span class="card-title">Total Headcount</span><span class="card-sub">Sum of HC across the 3-month anchor window' + clickHint + '</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Total Headcount</span><span class="card-sub">Forecast: sum of HC across the 3-month anchor window · Actual: sum of HC reported in Actuals' + actualHint + clickHint + '</span></div>';
   html += '<div style="height:220px;position:relative"><canvas id="trendChartHC"></canvas></div></div>';
-  html += '<div class="card"><div class="card-header"><span class="card-title">Total Adj. Revenue ($)</span><span class="card-sub">HC × MRR × Win % across the 3-month anchor window' + clickHint + '</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Total Adj. Revenue ($)</span><span class="card-sub">Forecast: HC × MRR × Win % across the window · Actual: real billed revenue from Actuals + historical backfill' + actualHint + clickHint + '</span></div>';
   html += '<div style="height:220px;position:relative"><canvas id="trendChartMRR"></canvas></div></div>';
   return { html: html, points: points };
 }
@@ -3127,18 +3128,71 @@ function renderForecastTrend() {
 }
 var _trendChartInstances = {};
 var _currentTrendPoints  = [];  // referenced by chart onClick to open the drill-down
+// Build "Actual" series per snapshot point: for each snapshot, sum actuals across
+// its 3-month anchor window. Months without actuals leave that point as null
+// (Chart.js renders gaps). Sources: getActuals() (Enter Actuals) + historical
+// accuracy backfill (per-month actual rollup across BDE rows).
+function computeActualSeries(points) {
+  var actuals = getActuals();
+  var hist    = getHistoricalAccuracy();
+  var deals   = getDeals();
+  // Pre-index historical_accuracy by month → summed actual across BDE rows.
+  var histByMonth = {};
+  hist.forEach(function(h) {
+    if (!h.month || !h.actual) return;
+    histByMonth[h.month] = (histByMonth[h.month] || 0) + h.actual;
+  });
+  // Pre-index closed-won deals by closing month for the deals "actual" series.
+  var cwByMonth = {};
+  deals.forEach(function(d) {
+    if (d.stage !== 'Closed Won' || !d.closingDate) return;
+    var m = (d.closingDate.match(/^\d{4}-\d{2}/) || [])[0];
+    if (!m) return;
+    cwByMonth[m] = (cwByMonth[m] || 0) + 1;
+  });
+  return {
+    deals: points.map(function(s) {
+      var window = [s.anchorMonth, monthKeyAfter(s.anchorMonth, 1), monthKeyAfter(s.anchorMonth, 2)];
+      var total = 0, found = 0;
+      window.forEach(function(m) { if (cwByMonth[m] !== undefined) { total += cwByMonth[m]; found++; } });
+      return found === 0 ? null : total;
+    }),
+    hc: points.map(function(s) {
+      var window = [s.anchorMonth, monthKeyAfter(s.anchorMonth, 1), monthKeyAfter(s.anchorMonth, 2)];
+      var total = 0, found = 0;
+      window.forEach(function(m) { var a = actuals[m]; if (a && a.hc != null && a.hc !== '') { total += a.hc; found++; } });
+      return found === 0 ? null : total;
+    }),
+    adjRev: points.map(function(s) {
+      var window = [s.anchorMonth, monthKeyAfter(s.anchorMonth, 1), monthKeyAfter(s.anchorMonth, 2)];
+      var total = 0, found = 0;
+      window.forEach(function(m) {
+        var a = actuals[m];
+        if (a && a.adjRev != null && a.adjRev > 0) { total += a.adjRev; found++; }
+        else if (histByMonth[m] > 0)               { total += histByMonth[m]; found++; }
+      });
+      return found === 0 ? null : total;
+    })
+  };
+}
+
 function renderTrendCharts(points) {
   if (typeof Chart === 'undefined') return;
   Object.keys(_trendChartInstances).forEach(function(k) {
     try { _trendChartInstances[k].destroy(); } catch(e) {}
   });
   _trendChartInstances = {};
-  var labels = points.map(function(s){ return trendXAxisLabel(s, trendGranularity); });
-  var navy   = '#0A1928';
-  var gold   = '#E8B84B';
+  var labels  = points.map(function(s){ return trendXAxisLabel(s, trendGranularity); });
+  var actuals = computeActualSeries(points);
+  var navy    = '#0A1928';
+  var gold    = '#E8B84B';
+  var green   = '#2e7d32';
   var baseOpts = {
     responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+    plugins: {
+      legend:  { display: true, position: 'top', align: 'end', labels: { font: { family: 'Roboto', size: 11 }, boxWidth: 14, boxHeight: 2, padding: 14 } },
+      tooltip: { mode: 'index', intersect: false }
+    },
     interaction: { mode: 'nearest', intersect: false },
     onClick: function(evt, els) {
       if (!els || !els.length) return;
@@ -3150,30 +3204,55 @@ function renderTrendCharts(points) {
       y: { beginAtZero: true, grid: { color: '#eef2f6' }, ticks: { font: { family: 'Roboto', size: 11 }, color: '#5a6a7a' } }
     }
   };
-  function mkChart(canvasId, data, color, fmtFn) {
+  function mkChart(canvasId, forecastData, actualData, color, fmtFn) {
     var ctx = document.getElementById(canvasId);
     if (!ctx) return;
     var opts = JSON.parse(JSON.stringify(baseOpts));
-    // Reattach handlers — JSON.parse strips functions
     opts.onClick = baseOpts.onClick;
     opts.onHover = baseOpts.onHover;
     if (fmtFn) {
       opts.scales.y.ticks.callback = function(v){ return fmtFn(v); };
-      opts.plugins.tooltip.callbacks = { label: function(ctx2){ return fmtFn(ctx2.parsed.y); } };
+      opts.plugins.tooltip.callbacks = { label: function(ctx2){ return ctx2.dataset.label + ': ' + (ctx2.parsed.y == null ? '—' : fmtFn(ctx2.parsed.y)); } };
+    } else {
+      opts.plugins.tooltip.callbacks = { label: function(ctx2){ return ctx2.dataset.label + ': ' + (ctx2.parsed.y == null ? '—' : ctx2.parsed.y); } };
+    }
+    var datasets = [{
+      label: 'Forecast',
+      data: forecastData,
+      borderColor: color,
+      backgroundColor: color + '22',
+      borderWidth: 2.5, tension: 0.28, fill: true,
+      pointRadius: 4, pointBackgroundColor: color, pointHoverRadius: 6,
+      order: 2
+    }];
+    // Add Actual dataset only if at least one non-null value exists (avoid an empty
+    // legend entry for charts where actuals haven't been entered yet).
+    if (actualData.some(function(v) { return v != null; })) {
+      datasets.push({
+        label: 'Actual',
+        data: actualData,
+        borderColor: green,
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderDash: [6, 5],
+        tension: 0.2,
+        fill: false,
+        pointRadius: 4,
+        pointBackgroundColor: green,
+        pointHoverRadius: 6,
+        spanGaps: false,
+        order: 1
+      });
     }
     _trendChartInstances[canvasId] = new Chart(ctx, {
       type: 'line',
-      data: { labels: labels, datasets: [{
-        data: data, borderColor: color, backgroundColor: color + '22',
-        borderWidth: 2.5, tension: 0.28, fill: true, pointRadius: 4, pointBackgroundColor: color,
-        pointHoverRadius: 6
-      }]},
+      data: { labels: labels, datasets: datasets },
       options: opts
     });
   }
-  mkChart('trendChartDeals', points.map(function(s){ return s.dealsForecasted; }), navy);
-  mkChart('trendChartHC',    points.map(function(s){ return s.totalHC; }),         navy);
-  mkChart('trendChartMRR',   points.map(function(s){ return s.totalAdjRev; }),     gold, function(v){ return fmt$k(v); });
+  mkChart('trendChartDeals', points.map(function(s){ return s.dealsForecasted; }), actuals.deals,  navy);
+  mkChart('trendChartHC',    points.map(function(s){ return s.totalHC; }),         actuals.hc,     navy);
+  mkChart('trendChartMRR',   points.map(function(s){ return s.totalAdjRev; }),     actuals.adjRev, gold, function(v){ return fmt$k(v); });
 }
 
 function openTrendDealsModal(pointIndex) {
