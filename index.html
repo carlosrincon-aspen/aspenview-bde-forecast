@@ -2694,13 +2694,20 @@ function renderBackfillModal() {
   var bdes = uniqueBdes(getDeals()); // also allow free typing if a BDE is not in the list
   var html = '';
   html += '<h3 style="margin-bottom:4px">Backfill historical accuracy</h3>';
-  html += '<div style="font-size:11.5px;color:var(--muted);margin-bottom:14px;line-height:1.55">One row per (month, BDE) pair. For each row, enter what was forecast at each horizon and what actually billed. The <b>M+0 Forecast</b> is what was predicted <i>at the start of that month</i>; M+1 is what was predicted one month before; M+2 is what was predicted two months before. Blank a horizon to skip it.</div>';
-  html += '<div style="max-height:55vh;overflow:auto;border:1px solid var(--border);border-radius:6px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0;background:var(--navy);color:white"><tr>';
+  html += '<div style="font-size:11.5px;color:var(--muted);margin-bottom:10px;line-height:1.55">One row per (month, BDE) pair. The three forecast columns ask the same question — <b>what did you predict this month would bill</b> — at three different points in time. Blank a column you don\'t remember.</div>';
+  html += '<div style="font-size:11.5px;color:var(--navy);margin-bottom:14px;line-height:1.6;background:#f6f9fc;border-left:3px solid var(--gold);padding:8px 12px;border-radius:0 4px 4px 0">';
+  html += '<b>Example — for the <code>2026-03</code> row:</b><br>';
+  html += '· <b>Forecast at start of Mar</b> = your prediction for March, made in early March (M+0 — closest visibility)<br>';
+  html += '· <b>Forecast at start of Feb</b> = your prediction for March, made one month earlier in early February (M+1)<br>';
+  html += '· <b>Forecast at start of Jan</b> = your prediction for March, made two months earlier in early January (M+2)<br>';
+  html += '· <b>Actual</b> = what March really billed.';
+  html += '</div>';
+  html += '<div style="max-height:50vh;overflow:auto;border:1px solid var(--border);border-radius:6px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0;background:var(--navy);color:white"><tr>';
   html += '<th style="text-align:left;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Month</th>';
   html += '<th style="text-align:left;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">BDE</th>';
-  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">M+0 Forecast $</th>';
-  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">M+1 Forecast $</th>';
-  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">M+2 Forecast $</th>';
+  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px" title="Forecast made AT the start of this row\'s month (M+0)">Forecast<br>same month $</th>';
+  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px" title="Forecast made 1 month BEFORE this row\'s month (M+1)">Forecast<br>1 mo earlier $</th>';
+  html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px" title="Forecast made 2 months BEFORE this row\'s month (M+2)">Forecast<br>2 mo earlier $</th>';
   html += '<th style="text-align:right;padding:8px 10px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Actual $</th>';
   html += '<th></th></tr></thead><tbody>';
   _backfillDraft.forEach(function(r, i) {
