@@ -60,6 +60,12 @@
   .topnav-btn { padding: 7px 14px; border-radius: 5px; border: none; cursor: pointer; font-size: 11.5px; font-weight: 700; font-family: inherit; transition: all 0.15s; white-space: nowrap; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.7); }
   .topnav-btn:hover { background: rgba(255,255,255,0.16); color: white; }
   .topnav-btn.active { background: var(--gold); color: var(--navy); }
+  /* Onboarding tour spotlight — pulsates the highlighted tab so the eye finds it. */
+  .topnav-btn.tour-spotlight { position: relative; z-index: 10000; box-shadow: 0 0 0 3px var(--gold), 0 0 24px 6px rgba(232,184,75,0.55); animation: tour-pulse 1.6s ease-in-out infinite; }
+  @keyframes tour-pulse {
+    0%, 100% { box-shadow: 0 0 0 3px var(--gold), 0 0 24px 6px rgba(232,184,75,0.45); }
+    50%       { box-shadow: 0 0 0 3px var(--gold), 0 0 36px 12px rgba(232,184,75,0.85); }
+  }
 
   .main { flex: 1; overflow-y: auto; padding: 18px 22px; }
   .page-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid var(--border); }
@@ -244,6 +250,7 @@
     <div class="header-center">BDE Rolling 12-Month Sales &amp; Readiness Forecast</div>
     <div class="header-right">
       <a class="logout-btn" href="guide-en.html" target="_blank" rel="noopener" style="text-decoration:none" title="Open the User Guide in a new tab">&#128214; Guide</a>
+      <button class="logout-btn" onclick="startOnboarding()" title="Launch the guided tour — walks you through every module">&#127891; Take Tour</button>
       <button id="adminBtn" class="logout-btn" onclick="selectTab('admin')" title="Admin Panel — team, activity, errors" style="display:none;background:rgba(232,184,75,0.18);color:var(--gold);border:1px solid rgba(232,184,75,0.4)">&#9733; Admin</button>
       <span class="zoho-pill off" id="fbPill" title="Firestore sync status">Sync · …</span>
       <span class="zoho-pill off" id="zohoPill" onclick="toggleZoho()">Zoho · Disconnected</span>
@@ -600,17 +607,21 @@ var _onboardingStep = 0;
 
 function ensureOnboardingOverlay() {
   if (document.getElementById('onboardingOverlay')) return;
+  // Dim overlay covers everything BELOW the topnav. The topnav itself stays fully
+  // visible so the user can see the highlighted tab pulsate. The explanation card
+  // is positioned absolutely below the topnav, anchored under the highlighted tab.
   var div = document.createElement('div');
   div.id = 'onboardingOverlay';
-  div.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,40,0.78);z-index:9998;display:none;align-items:center;justify-content:center;font-family:Roboto,Arial,sans-serif;padding:20px';
+  div.style.cssText = 'position:fixed;left:0;right:0;bottom:0;background:rgba(10,25,40,0.55);z-index:9998;display:none;font-family:Roboto,Arial,sans-serif';
   div.innerHTML =
-    '<div style="background:white;padding:24px 28px;border-radius:12px;max-width:560px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,0.35);position:relative">' +
-      '<div style="height:4px;background:#E8B84B;border-radius:2px;margin-bottom:18px;position:relative">' +
-        '<div id="onboardingProgress" style="height:100%;background:#0A1928;border-radius:2px;width:0;transition:width .25s ease"></div>' +
+    '<div id="onboardingCard" style="position:absolute;background:white;padding:20px 24px;border-radius:12px;width:520px;max-width:calc(100vw - 32px);box-shadow:0 24px 60px rgba(0,0,0,0.35)">' +
+      '<div id="onboardingArrow" style="position:absolute;top:-10px;left:50%;width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-bottom:12px solid white;transform:translateX(-50%);transition:left .25s ease"></div>' +
+      '<div style="height:4px;background:#f0e4c4;border-radius:2px;margin-bottom:14px;position:relative;overflow:hidden">' +
+        '<div id="onboardingProgress" style="height:100%;background:linear-gradient(90deg,#E8B84B,#0A1928);border-radius:2px;width:0;transition:width .3s ease"></div>' +
       '</div>' +
       '<div id="onboardingStepNum" style="font-size:11px;color:#5a6a7a;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px"></div>' +
-      '<h3 id="onboardingTitle" style="margin:0 0 12px;font-size:22px;color:#0A1928;font-weight:900;line-height:1.2"></h3>' +
-      '<p id="onboardingBody" style="font-size:13.5px;line-height:1.65;color:#282828;margin:0 0 22px"></p>' +
+      '<h3 id="onboardingTitle" style="margin:0 0 10px;font-size:20px;color:#0A1928;font-weight:900;line-height:1.2"></h3>' +
+      '<p id="onboardingBody" style="font-size:13px;line-height:1.6;color:#282828;margin:0 0 18px"></p>' +
       '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
         '<button class="btn btn-ghost btn-sm" onclick="skipOnboarding()" style="font-size:11px">Skip tour</button>' +
         '<div style="flex:1"></div>' +
@@ -619,11 +630,49 @@ function ensureOnboardingOverlay() {
       '</div>' +
     '</div>';
   document.body.appendChild(div);
+  window.addEventListener('resize', function() {
+    if (div.style.display === 'block') positionOnboardingOverlay();
+  });
+}
+function clearTourSpotlight() {
+  document.querySelectorAll('.topnav-btn.tour-spotlight').forEach(function(b){ b.classList.remove('tour-spotlight'); });
+}
+function positionOnboardingOverlay() {
+  var overlay = document.getElementById('onboardingOverlay');
+  var topnav  = document.getElementById('topnav');
+  var card    = document.getElementById('onboardingCard');
+  var arrow   = document.getElementById('onboardingArrow');
+  if (!overlay || !topnav || !card) return;
+  // Anchor the overlay below the topnav so the topnav (with the highlighted tab)
+  // remains fully visible and clickable... well, visible.
+  var topnavRect = topnav.getBoundingClientRect();
+  overlay.style.top = topnavRect.bottom + 'px';
+
+  // Center the card horizontally on the highlighted tab, clamped to viewport.
+  var activeBtn = document.querySelector('.topnav-btn.tour-spotlight') || document.querySelector('.topnav-btn.active');
+  var cardW = card.offsetWidth || 520;
+  var margin = 16;
+  var btnCenter = window.innerWidth / 2;
+  if (activeBtn) {
+    var r = activeBtn.getBoundingClientRect();
+    btnCenter = r.left + (r.width / 2);
+  }
+  var leftRaw = btnCenter - (cardW / 2);
+  var left = Math.max(margin, Math.min(window.innerWidth - cardW - margin, leftRaw));
+  card.style.left = left + 'px';
+  card.style.top  = '20px';
+
+  // Arrow points up at the highlighted tab from inside the card.
+  if (arrow) {
+    var arrowLeft = btnCenter - left;
+    arrowLeft = Math.max(18, Math.min(cardW - 18, arrowLeft));
+    arrow.style.left = arrowLeft + 'px';
+  }
 }
 function startOnboarding() {
   ensureOnboardingOverlay();
   _onboardingStep = 0;
-  document.getElementById('onboardingOverlay').style.display = 'flex';
+  document.getElementById('onboardingOverlay').style.display = 'block';
   renderOnboardingStep();
   logActivity('Onboarding', 'Start tour', '');
 }
@@ -634,6 +683,11 @@ function renderOnboardingStep() {
   currentTab = step.tab;
   renderTopNav();
   renderTab();
+  // Spotlight the just-rendered tab button so the eye finds it.
+  clearTourSpotlight();
+  var activeBtn = document.querySelector('.topnav-btn.active');
+  if (activeBtn) activeBtn.classList.add('tour-spotlight');
+
   var total = ONBOARDING_STEPS.length;
   document.getElementById('onboardingStepNum').textContent = 'Step ' + (_onboardingStep + 1) + ' of ' + total;
   document.getElementById('onboardingTitle').textContent = step.title;
@@ -643,6 +697,8 @@ function renderOnboardingStep() {
   var nextBtn = document.getElementById('onboardingNextBtn');
   prevBtn.style.visibility = _onboardingStep === 0 ? 'hidden' : 'visible';
   nextBtn.textContent = _onboardingStep === total - 1 ? '✓ Finish' : 'Next →';
+
+  positionOnboardingOverlay();
 }
 function nextOnboarding() {
   _onboardingStep++;
@@ -654,11 +710,11 @@ function prevOnboarding() {
 }
 function skipOnboarding() { endOnboarding(false); }
 function endOnboarding(completed) {
-  // Local-only flag — each browser/user shows the tour at most once. Storing the
-  // ISO timestamp on completion and 'skipped' otherwise keeps the audit trail.
+  // Local-only flag — each browser/user shows the tour at most once on auto-start.
   save('onboarding_completed_v1', completed ? new Date().toISOString() : 'skipped');
   var ov = document.getElementById('onboardingOverlay');
   if (ov) ov.style.display = 'none';
+  clearTourSpotlight();
   logActivity('Onboarding', completed ? 'Complete tour' : 'Skip tour', '');
 }
 function maybeStartOnboarding() {
