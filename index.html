@@ -580,6 +580,95 @@ function userStatus(lastSeen) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ONBOARDING TOUR — walks new users through every tab
+// ─────────────────────────────────────────────────────────────────────────────
+var ONBOARDING_STEPS = [
+  { tab: 'overview',   title: 'Overview',                body: 'Your starting point each session. The four KPI cards summarize the next 3 months — deal count, forecasted headcount, adjusted revenue, and margin. Below the cards you see the rolling 3-month window broken out by month, plus the reliability bands that show how accurate the forecast has been at each horizon (M+0, M+1, M+2).' },
+  { tab: 'pipeline',   title: 'Pipeline',                body: 'The investor-grade view. All deals (excluding Closed Lost) grouped by the 5-phase model: SQL → Recruitment → Pricing → Legal Contracting → Closed Won. Click any phase row to focus the breakdown on that phase. Bottom: Deal Age cards (Healthy / Active Pipeline / Slow-moving / Critical) flag what is healthy versus what is stuck.' },
+  { tab: 'aureum',     title: 'Aureum Demand Forecast',  body: 'Your master worksheet — one row per Zoho deal, grouped by client. Editable cells: monthly headcount, MRR Aureum (manual override), Win %, Margin %. Use the phase filter at the top to focus on the phases you actually want to forecast. Click "+ New Deal" to create one in Zoho (the source of truth).' },
+  { tab: 'threemo',    title: '3 mo. revenue',           body: 'Deep-dive on the next 3 months. Only deals you flagged as Forecast appear here. When the numbers are right, click "🔒 Lock {month}" — that snapshot becomes immutable and is what the accuracy bands compare against when actuals roll in. The "Apply BDE accuracy haircut" checkbox discounts every cell by that BDE\'s historical accuracy.' },
+  { tab: 'midterm',    title: '12-Month Plan',           body: 'Months 4 through 12 — per-deal headcount ramp month by month. The platform computes revenue automatically (HC × MRR/head). Reminder banner at the top: this is "Build & Invoice, NOT Close" — HC by month is when a person STARTS BILLING, not when the deal closes. A 250-person engagement can ramp 35 → 70 → 70 over weeks.' },
+  { tab: 'longterm',   title: 'Long-term Growth',        body: 'Months 13 through 24. No per-deal forecasting at this horizon — pick a monthly growth rate (0.5%, 1%, 2%, 5%, 7%, 10%) and a baseline, and the model projects forward. Output: a credible 24-month outlook for Finance without forcing certainty that does not exist.' },
+  { tab: 'playground', title: 'Playground',              body: 'Your sandbox before touching Zoho. Edit numbers freely in Aureum and come here to see the diff against what Zoho currently has — side by side. Approve the deals whose changes are ready, then click "↗ Push approved to Zoho" to send them all in one click. Requires WRITE scope on the OAuth client.' },
+  { tab: 'accuracy',   title: 'Forecast Accuracy',       body: 'Your forecast track record. Lock a 3-month forecast → wait for the month to close → enter the actuals → the bands populate. Per-BDE table breaks accuracy down by person at M+0 / M+1 / M+2. Use "📥 Backfill historical data" to seed past months and skip the wait. Below: trend charts comparing forecast vs actual over time.' },
+  { tab: 'super',      title: 'Super-Deals',             body: 'Qualitative assessment of programs with 100+ headcount. Each program is rated across 9 dimensions: deal confidence, start readiness, readiness gap, speed sensitivity, ramp duration, first phase timing, phase risk concentration, program horizon, deployment map. Edit Peak HC / Phase 1 / Activation / Notes with the pencil icon.' },
+  { tab: 'active',     title: 'Active Customers — Actuals', body: 'Customers already producing revenue today: Active, Expanding, Aureum, and Closed Won deals. Shows current headcount, MRR per head, and monthly billing. Different from Pipeline — these are the deals already alive, not the ones in pursuit.' },
+  { tab: 'cleanup',    title: 'Cleanup',                 body: 'Data hygiene. Deals from the original Excel that did not auto-match to a Zoho record show up here with the best Zoho candidates from the same account. Choose Merge to link or Kill to delete the ghost row. Goal: empty this tab so every deal in the platform is linked to Zoho.' },
+  { tab: 'settings',   title: 'Settings',                body: 'Configuration. Stage Rules (defaults for Win % and Margin % by stage), Zoho integration status, field mapping reference, JSON export/import for backup. The "↻ Replay tour" button is here — click it any time you want to walk through the modules again.' }
+];
+var _onboardingStep = 0;
+
+function ensureOnboardingOverlay() {
+  if (document.getElementById('onboardingOverlay')) return;
+  var div = document.createElement('div');
+  div.id = 'onboardingOverlay';
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,40,0.78);z-index:9998;display:none;align-items:center;justify-content:center;font-family:Roboto,Arial,sans-serif;padding:20px';
+  div.innerHTML =
+    '<div style="background:white;padding:24px 28px;border-radius:12px;max-width:560px;width:100%;box-shadow:0 24px 60px rgba(0,0,0,0.35);position:relative">' +
+      '<div style="height:4px;background:#E8B84B;border-radius:2px;margin-bottom:18px;position:relative">' +
+        '<div id="onboardingProgress" style="height:100%;background:#0A1928;border-radius:2px;width:0;transition:width .25s ease"></div>' +
+      '</div>' +
+      '<div id="onboardingStepNum" style="font-size:11px;color:#5a6a7a;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px"></div>' +
+      '<h3 id="onboardingTitle" style="margin:0 0 12px;font-size:22px;color:#0A1928;font-weight:900;line-height:1.2"></h3>' +
+      '<p id="onboardingBody" style="font-size:13.5px;line-height:1.65;color:#282828;margin:0 0 22px"></p>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<button class="btn btn-ghost btn-sm" onclick="skipOnboarding()" style="font-size:11px">Skip tour</button>' +
+        '<div style="flex:1"></div>' +
+        '<button class="btn btn-ghost btn-sm" id="onboardingPrevBtn" onclick="prevOnboarding()">← Previous</button>' +
+        '<button class="btn btn-gold btn-sm" id="onboardingNextBtn" onclick="nextOnboarding()">Next →</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(div);
+}
+function startOnboarding() {
+  ensureOnboardingOverlay();
+  _onboardingStep = 0;
+  document.getElementById('onboardingOverlay').style.display = 'flex';
+  renderOnboardingStep();
+  logActivity('Onboarding', 'Start tour', '');
+}
+function renderOnboardingStep() {
+  var step = ONBOARDING_STEPS[_onboardingStep];
+  if (!step) return endOnboarding(true);
+  // Switch the underlying tab so the user sees the real screen behind the card.
+  currentTab = step.tab;
+  renderTopNav();
+  renderTab();
+  var total = ONBOARDING_STEPS.length;
+  document.getElementById('onboardingStepNum').textContent = 'Step ' + (_onboardingStep + 1) + ' of ' + total;
+  document.getElementById('onboardingTitle').textContent = step.title;
+  document.getElementById('onboardingBody').innerHTML = step.body;
+  document.getElementById('onboardingProgress').style.width = (((_onboardingStep + 1) / total) * 100) + '%';
+  var prevBtn = document.getElementById('onboardingPrevBtn');
+  var nextBtn = document.getElementById('onboardingNextBtn');
+  prevBtn.style.visibility = _onboardingStep === 0 ? 'hidden' : 'visible';
+  nextBtn.textContent = _onboardingStep === total - 1 ? '✓ Finish' : 'Next →';
+}
+function nextOnboarding() {
+  _onboardingStep++;
+  if (_onboardingStep >= ONBOARDING_STEPS.length) return endOnboarding(true);
+  renderOnboardingStep();
+}
+function prevOnboarding() {
+  if (_onboardingStep > 0) { _onboardingStep--; renderOnboardingStep(); }
+}
+function skipOnboarding() { endOnboarding(false); }
+function endOnboarding(completed) {
+  // Local-only flag — each browser/user shows the tour at most once. Storing the
+  // ISO timestamp on completion and 'skipped' otherwise keeps the audit trail.
+  save('onboarding_completed_v1', completed ? new Date().toISOString() : 'skipped');
+  var ov = document.getElementById('onboardingOverlay');
+  if (ov) ov.style.display = 'none';
+  logActivity('Onboarding', completed ? 'Complete tour' : 'Skip tour', '');
+}
+function maybeStartOnboarding() {
+  if (!load('onboarding_completed_v1', null)) {
+    // Small delay so the first paint of the app is visible behind the overlay.
+    setTimeout(startOnboarding, 600);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FIRESTORE (shared state across Carlos / Michael / Don)
 // ─────────────────────────────────────────────────────────────────────────────
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
@@ -741,6 +830,9 @@ function loginAs(u) {
   renderTopNav();
   renderTab();
   refreshZohoPill();
+  // First-time visitors get the guided tour. Local-only flag (not synced) so each
+  // browser shows it at most once per user.
+  maybeStartOnboarding();
 }
 function logout() {
   currentUser = null;
@@ -4171,8 +4263,17 @@ function clearErrorLog() {
 // ─────────────────────────────────────────────────────────────────────────────
 function renderSettings() {
   var lastSync = load('last_zoho_sync', null);
+  var tourFlag = load('onboarding_completed_v1', null);
   var html = '';
   html += '<div class="page-title"><div><h1>Settings</h1><div class="sub">Stage rules, integration, data management, and export</div></div></div>';
+
+  // Guided tour replay card.
+  html += '<div class="card" style="background:linear-gradient(135deg,#fff8e1 0%, #fdf6e6 100%);border-left:4px solid var(--gold)">';
+  html += '<div class="card-header"><span class="card-title">Guided tour</span><span class="card-sub">A 12-step walk-through of every module — useful for new team members or as a refresher</span></div>';
+  html += '<div style="display:flex;align-items:center;gap:12px;padding:4px 4px 10px">';
+  html += '<div style="flex:1;font-size:12px;color:var(--muted)">' + (tourFlag ? (tourFlag === 'skipped' ? 'You skipped the tour on first sign-in.' : 'Last completed ' + new Date(tourFlag).toLocaleString()) : 'Not taken yet.') + '</div>';
+  html += '<button class="btn btn-gold btn-sm" onclick="startOnboarding()">↻ Replay tour</button>';
+  html += '</div></div>';
 
   // Stage Rules section (formerly a standalone tab — now lives here).
   html += stageRulesSectionHtml();
