@@ -159,81 +159,103 @@
     <p><code>SQL - Solution Discovery · Stage 2 (WTW) · Commercial Design · Recruitment (Path 2.1) · P.S (Path 2.2) · Pricing · Paper Process / Contracting · Closed Won</code></p>
     <div class="callout gold"><span class="ct">Your work is safe on re-sync</span>Monthly headcount, MRR Aureum, win-rate edits, and the Forecast/Super flags stay attached to each deal. Only the Zoho fields (stage, amount, owner) get refreshed.</div>
 
-    <h2><span class="num">4</span>The tabs, one by one</h2>
+    <h2><span class="num">4</span>The 5-phase forecasting model</h2>
+    <div class="h2-rule"></div>
+    <p>Every Zoho deal is bucketed into exactly one of five phases. Phases drive what enters the forecast and what is captured separately in cash-flow.</p>
+    <table class="zebra">
+      <tr><th>Phase</th><th>Zoho stages that map here</th><th>Forecasted by default?</th></tr>
+      <tr><td><strong>Phase 1 — SQL</strong></td><td>SQL - Solution Discovery · Stage 2 (WTW)</td><td>No — early pipeline, too uncertain to forecast</td></tr>
+      <tr><td><strong>Phase 2 — Recruitment</strong></td><td>Recruitment (Path 2.1) · P.S (Path 2.2) · Commercial Design</td><td>Yes</td></tr>
+      <tr><td><strong>Phase 3 — Pricing</strong></td><td>Pricing</td><td>Yes</td></tr>
+      <tr><td><strong>Phase 4 — Legal Contracting</strong></td><td>Paper Process / Contracting</td><td>Yes</td></tr>
+      <tr><td><strong>Phase 5 — Closed Won</strong></td><td>Closed Won</td><td>No — already won, captured in cash flow directly</td></tr>
+    </table>
+    <p>The phase filter strip at the top of <strong>Aureum Demand Forecast</strong> lets you toggle which phases enter the forecast on the fly. Defaults are tuned to Michael's preferences: Recruitment + Pricing + Legal Contracting ON, SQL and Closed Won OFF.</p>
+
+    <h2><span class="num">5</span>Build &amp; Invoice — not Close</h2>
+    <div class="h2-rule"></div>
+    <div class="callout gold"><span class="ct">⚡ Headcount is when people START BILLING — not when the deal closes.</span>A 250-person engagement may close in June but ramp 35 → 70 → 70 over the following weeks. Enter those headcounts in the month they bill, not the month the contract closes. This framing applies to every tab where you type headcount by month.</div>
+
+    <h2><span class="num">6</span>The tabs, one by one</h2>
     <div class="h2-rule"></div>
 
-    <h3>4.1 — Overview</h3>
-    <p>Your executive snapshot: KPI cards (deals, 3-month headcount, adjusted revenue, margin $), the <strong>Anchor month</strong> picker, the rolling 3-month window table, and the <strong>Forecast Reliability</strong> bands (M0 / M+1 / M+2).</p>
+    <h3>6.1 — Overview</h3>
+    <p>Your executive snapshot. KPI cards (deals, 3-month headcount, adjusted revenue, margin $), the <strong>Anchor month</strong> picker, a <strong>🔒 Lock {month} forecast</strong> button, the rolling 3-month window table, and the <strong>Forecast Reliability</strong> bands (M+0 / M+1 / M+2).</p>
 
-    <h3>4.2 — Aureum Demand Forecast (the master list)</h3>
-    <p>Where everything starts. Every Zoho deal in the allowed stages is one row, <strong>grouped by account</strong> so all deals of a client sit together. The header row is <strong>sticky</strong>: it stays visible as you scroll, so you never lose which month a column is.</p>
+    <h3>6.2 — Pipeline</h3>
+    <p>The C-suite snapshot — the same kind of view investors see. Four KPI cards (Total Deals, Total Headcount, Total Pipeline MRR, Total Pipeline ARR) and a phase-by-phase breakdown table with deal count, HC, MRR, ARR, and % of total MRR. Click any phase row to focus the deal breakdown below on that single phase. The bottom cards segment deals by age: Healthy (&lt;3 mo) / Active Pipeline (3-6 mo) / Slow-moving (6-12 mo) / Critical (&gt;1 yr).</p>
+
+    <h3>6.3 — Aureum Demand Forecast (the master list)</h3>
+    <p>Where everything starts. Every Zoho deal in the allowed stages is one row, <strong>grouped by account</strong>. The header row is <strong>sticky</strong> as you scroll. The phase filter strip at the top lets you scope the table to specific phases.</p>
     <table class="zebra">
       <tr><th>Column</th><th>Source</th><th>Editable</th></tr>
       <tr><td><strong>Fcst</strong> (checkbox)</td><td>Manual</td><td>✅ Check to include in the 3 mo. revenue tab</td></tr>
       <tr><td><strong>Super</strong> (checkbox)</td><td>Manual</td><td>✅ Check to flag as a Super-Deal</td></tr>
-      <tr><td><strong>In Excel</strong> (✓)</td><td>Auto</td><td>Read-only · ✓ if the deal existed in the original Excel workbook · filter the column to compare against Don's baseline.</td></tr>
-      <tr><td><strong>BDE</strong></td><td>Zoho owner (or inherited)</td><td>Read-only · <code>≈</code> inferred from account · <code>⚠ none</code> no owner</td></tr>
-      <tr><td>Status / Client / Deal / Stage / Loc</td><td>Zoho</td><td>Read-only · click the deal name ↗ to open it in Zoho</td></tr>
-      <tr><td><strong>Win %</strong></td><td>Zoho / Stage Rules / manual</td><td>✅ Win probability used in the forecast. Moved to the LEFT of the month columns for quick scanning.</td></tr>
-      <tr><td><strong>Margin %</strong></td><td>Zoho <code>Target_Margin_Band</code> / Stage Rules / manual</td><td>✅ Override margin for this deal. Green tint = pulled from Zoho. <span class="pill pill-amber">⚠ missing margin</span> appears on Commercial-Design-and-later deals with no margin set.</td></tr>
-      <tr><td>Monthly columns</td><td>Manual</td><td>✅ Type the billable headcount per month</td></tr>
-      <tr><td><strong>MRR Zoho ($)</strong></td><td>Zoho <code>MRR</code> field</td><td>Read-only · green = has value & is being used. Falls back to Amount only if MRR is missing.</td></tr>
+      <tr><td><strong>In Excel</strong> (✓)</td><td>Auto</td><td>Read-only · ✓ if the deal existed in the original Excel baseline.</td></tr>
+      <tr><td><strong>BDE</strong></td><td>Zoho owner</td><td>Read-only · <code>≈</code> inferred from account · <code>⚠ none</code> no owner</td></tr>
+      <tr><td>Status / Client / Deal / Stage / <strong>Phase</strong> / Loc</td><td>Zoho</td><td>Read-only · Phase is computed from Stage · click the deal name ↗ to open in Zoho</td></tr>
+      <tr><td><strong>Win %</strong></td><td>Zoho / Stage Rules / manual</td><td>✅ Win probability used in the forecast</td></tr>
+      <tr><td><strong>Margin %</strong></td><td>Zoho <code>Target_Margin_Band</code> / Stage Rules / manual</td><td>✅ Green tint = pulled from Zoho · <span class="pill pill-amber">⚠ missing margin</span> on Commercial-Design-and-later deals with no margin</td></tr>
+      <tr><td>Monthly columns</td><td>Manual</td><td>✅ Headcount per month — when people start billing</td></tr>
+      <tr><td><strong>MRR Zoho ($)</strong></td><td>Zoho <code>MRR</code> field</td><td>Read-only · falls back to Amount only if MRR is missing</td></tr>
       <tr><td><strong>MRR Aureum ($)</strong></td><td>Manual</td><td>✅ Used only when MRR Zoho is empty</td></tr>
-      <tr><td><strong>✕</strong> (delete)</td><td>—</td><td>Removes a not-in-Zoho ghost row inline. Zoho-linked rows must be deleted in Zoho.</td></tr>
+      <tr><td><strong>✕</strong> (delete)</td><td>—</td><td>Removes a not-in-Zoho ghost row inline</td></tr>
     </table>
-    <p><strong>Search &amp; filters:</strong> the search box filters by deal, client, or BDE. The <strong>BDE / Stage / Status / In&nbsp;Excel</strong> dropdowns are multi-select — pick two BDEs at once, etc. A badge shows the count; "✕ Clear" resets a filter.</p>
-    <p><strong>+ New Deal</strong> opens Zoho's new-deal form in a new tab. New deals are always created in Zoho — never locally — so the CRM stays the system of record.</p>
+    <p><strong>+ New Deal</strong> opens Zoho's new-deal form in a new tab. New deals are always created in Zoho — never locally.</p>
 
-    <h3>4.3 — 3 mo. revenue (the rolling forecast)</h3>
-    <p>Shows <strong>only the deals you checked "Fcst"</strong>. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %). Win % and Margin % sit on the LEFT for fast scanning. Totals roll up at the bottom and in three summary cards.</p>
-    <div class="callout"><span class="ct">This is the number the company sees</span>It only contains deals you deliberately flagged — nothing leaks in by accident.</div>
+    <h3>6.4 — 3 mo. revenue (rolling 1-3 month forecast with Lock)</h3>
+    <p>Deep-dive on the next 3 months. Only deals flagged <strong>Fcst</strong> appear here. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %).</p>
+    <p><strong>🔒 Lock {month} forecast</strong> — once the numbers are right, click to snapshot them as an immutable commitment. The locked snapshot is what the accuracy bands compare against when actuals roll in.</p>
+    <p><strong>Apply BDE accuracy haircut</strong> — checkbox that multiplies each cell by that BDE's historical accuracy at that horizon. Falls back to the aggregate band when a BDE has no history yet.</p>
 
-    <h3>4.4 — Playground (Zoho vs Manual, with approve &amp; push)</h3>
-    <p>The scenario sandbox. Side-by-side, per deal, you see what Zoho says today and what you've drafted manually for <strong>Headcount</strong>, <strong>MRR</strong>, <strong>Win %</strong> and <strong>Margin %</strong>. Every difference is highlighted with a Zoho → Playground arrow.</p>
+    <h3>6.5 — 12-Month Plan (months 4-12)</h3>
+    <p>The mid-term view. Per-deal headcount ramp by month for months 4 through 12 (so 9 months ahead). Revenue is computed from HC × MRR/head automatically. The Build &amp; Invoice reminder is reinforced here because it's the most common point of confusion.</p>
+
+    <h3>6.6 — Long-term Growth (months 13-24)</h3>
+    <p>No per-deal forecasting at this horizon. Pick a baseline (the last mid-term month, or the 9-month average) and a monthly growth rate (0.5%, 1%, 2%, 3%, 5%, 7%, 10%). The model projects 12 months of revenue forward. Used by Finance and the CEO for long-term planning where per-deal certainty doesn't exist.</p>
+
+    <h3>6.7 — Playground (Zoho vs Manual, with approve &amp; push)</h3>
+    <p>The scenario sandbox. Side-by-side, per deal: what Zoho says today vs what you've drafted in Aureum for <strong>Headcount</strong>, <strong>MRR</strong>, <strong>Win %</strong> and <strong>Margin %</strong>. Each diff is highlighted with a Zoho → Playground arrow.</p>
     <ol>
-      <li><strong>Draft</strong> changes on the Aureum tab as usual — they show up here as diffs.</li>
+      <li><strong>Draft</strong> changes in Aureum — they show up here automatically.</li>
       <li><strong>Approve</strong> the deals whose drafts are ready (per-row checkbox). Approval is shared with the team.</li>
-      <li>Click <strong>↗ Push approved to Zoho</strong>. The platform sends a PATCH to Zoho for each approved deal — updating <code>Headcounts</code>, <code>MRR</code>, <code>Probability</code>, and <code>Target_Margin_Band</code> — then clears the approved flag and stamps <em>pushedAt</em>.</li>
+      <li>Click <strong>↗ Push approved to Zoho</strong>. The platform sends a PATCH to Zoho per approved deal — updating <code>Headcounts</code>, <code>MRR</code>, <code>Probability</code>, and <code>Target_Margin_Band</code>.</li>
     </ol>
-    <div class="callout gold"><span class="ct">Zoho is the system of record</span>Pushed values become the new Zoho truth on the next Sync. If your OAuth client doesn't have the <code>Deals.WRITE</code> scope yet, the push action explains exactly what your Zoho admin needs to enable.</div>
+    <div class="callout gold"><span class="ct">Zoho is the system of record</span>If your OAuth client doesn't have <code>Deals.WRITE</code> yet, the push action explains what your Zoho admin needs to enable.</div>
 
-    <h3>4.5 — Forecast Accuracy</h3>
-    <p>Measures how reliable the forecast has been — <strong>not</strong> a way to grade anyone. The platform snapshots the forecast monthly; when a month closes you <strong>Enter Actuals</strong>, and the bands recompute as <strong>mean ± standard deviation</strong> per horizon. Defaults until history builds: M0 = 80% ±5, M+1 = 75% ±10, M+2 = 30% ±20.</p>
+    <h3>6.8 — Forecast Accuracy (with embedded Trend section)</h3>
+    <p>Reliability bands by horizon. Lock a forecast → wait for the month to close → <strong>Enter Actuals</strong> → bands populate as <strong>mean ± standard deviation</strong> per horizon. Defaults until history builds: M+0 = 80% ±5, M+1 = 75% ±10, M+2 = 30% ±20.</p>
+    <p><strong>Accuracy by BDE</strong> table breaks the bands down per person at each horizon — Michael's ask: "Don is 90% accurate one month out, 80% at two months, 50% at three."</p>
+    <p><strong>📥 Backfill historical data</strong> — opens a form where you enter past months by hand to seed the accuracy bands without waiting 3+ months. One row per (month, BDE), with what was forecast at start of that month / 1 month earlier / 2 months earlier, plus the actual.</p>
+    <p>At the bottom: an embedded <strong>Forecast Trend</strong> section with toggle Weekly / Monthly / Quarterly and three line charts showing Deals forecasted, Total Headcount, and Adj. Revenue over time. Solid line = forecast; dashed green line = actual (filled from Actuals + backfill). Where the lines diverge tells you where the forecast was optimistic or sandbagged.</p>
 
-    <h3>4.6 — Super-Deals</h3>
-    <p>The Aureum-tier program assessment. Each program is a row with editable, color-coded dropdowns: <strong>Deal Confidence, Start Readiness, Readiness Gap, Speed Sensitivity, Ramp Duration, First Phase Timing, Phase Risk Concentration, Program Horizon, Deployment Map.</strong> Edit Peak HC / Phase 1 / Activation / Notes with ✎. A deal-level rollup below sums every deal flagged "Super".</p>
+    <h3>6.9 — Super-Deals</h3>
+    <p>Qualitative assessment of programs with 100+ HC. Each program is a row with editable, color-coded dropdowns: <strong>Deal Confidence, Start Readiness, Readiness Gap, Speed Sensitivity, Ramp Duration, First Phase Timing, Phase Risk Concentration, Program Horizon, Deployment Map.</strong> Edit Peak HC / Phase 1 / Activation / Notes with the ✎ icon.</p>
 
-    <h3>4.7 — Fulfillment View</h3>
-    <p>Headcount by deal-type (Active Roles + Super-Deal Roles) for delivery/recruiting prioritization. Filter by BDE and search.</p>
+    <h3>6.10 — Active Customers — Actuals</h3>
+    <p>Customers currently producing revenue (Active / Expanding / Aureum) <strong>plus Closed Won</strong>. Current HC, MRR/head, monthly $. HC falls back to the Zoho <code>Headcounts</code> field when no monthly HC is planned — marked with a small <strong>·z</strong> beside the number.</p>
 
-    <h3>4.8 — MRR Forecast 2026</h3>
-    <p>Adjusted revenue by client across all 12 months. Read it by quarter by grouping the relevant month columns (Jan–Mar = Q1, etc.). Search by client.</p>
-
-    <h3>4.9 — Active Customers — Actuals</h3>
-    <p>Customers currently producing revenue (Active / Expanding / Aureum) <strong>plus Closed Won</strong>: current headcount, MRR per head, monthly $. Filter by BDE and status.</p>
-
-    <h3>4.10 — Stage Rules</h3>
-    <p>The defaults that fill in Win % and Margin % when a deal doesn't have its own. Edit the table per stage; both columns are editable. The cascade is:</p>
-    <ol>
-      <li><strong>Per-deal override</strong> (Win % / Margin % typed on the deal) →</li>
-      <li><strong>Zoho</strong> (<code>Probability</code> for Win, <code>Target_Margin_Band</code> for Margin) →</li>
-      <li><strong>Super-Deal rule</strong> (if the deal is flagged Super) →</li>
-      <li><strong>Stage rule</strong> (matches the deal's current Zoho stage) →</li>
-      <li><strong>Default</strong> fallback.</li>
-    </ol>
-
-    <h3>4.11 — Cleanup</h3>
-    <p>Reconcile deals that came from the original Excel but couldn't be matched to a Zoho record. For each unmatched deal, the platform shows the best Zoho candidate from the <strong>same account</strong> (active deals first, then Closed Lost in red) with a Match %.</p>
+    <h3>6.11 — Cleanup</h3>
+    <p>Reconcile deals from the original Excel that didn't auto-match to a Zoho record. For each unmatched deal, the platform shows the best Zoho candidate from the <strong>same account</strong> (active deals first, then Closed Lost in red) with a Match %.</p>
     <ul>
       <li><strong>Merge</strong> — point the row at the chosen Zoho deal; the row becomes synced going forward.</li>
       <li><strong>Kill</strong> — delete the ghost row if it doesn't correspond to anything in Zoho.</li>
     </ul>
-    <p>The goal is to eventually empty this tab — once every deal is linked to Zoho, Don's Excel can be retired.</p>
+    <p>The goal: empty this tab so every deal is linked to Zoho.</p>
 
-    <h3>4.12 — Settings</h3>
-    <p>Zoho integration &amp; field mapping (<code>MRR</code>, <code>Headcounts</code>, <code>Target_Margin_Band</code>, <code>Account_Status</code>), data <strong>Export / Import (JSON)</strong> for backup, reset, and the daily-workflow reminder.</p>
+    <h3>6.12 — Settings (Stage Rules + Integrations)</h3>
+    <p><strong>Stage Rules</strong> live here now (formerly a standalone tab). The defaults that fill in Win % and Margin % when a deal doesn't have its own. Cascade order: per-deal override → Zoho (<code>Probability</code> + <code>Target_Margin_Band</code>) → Super-Deal rule → Stage rule → default.</p>
+    <p>Plus: Zoho integration status + field mapping (<code>MRR</code>, <code>Headcounts</code>, <code>Target_Margin_Band</code>, <code>Account_Status</code>), Export / Import JSON for backup, and the <strong>↻ Replay tour</strong> button.</p>
 
-    <h2><span class="num">5</span>How the forecast actually moves</h2>
+    <h3>★ Admin Panel (header button, admins only)</h3>
+    <p>The gold "★ Admin" button next to <em>Guide</em> in the top-right opens the Admin Panel — visible only to managers and emails that have been granted admin via the panel. Inside:</p>
+    <ul>
+      <li><strong>Team</strong> — every user who has signed in, with last-active, status, and per-row Grant / Revoke admin buttons. Add admins by typing their email and clicking <em>+ Add admin</em>.</li>
+      <li><strong>Activity</strong> — live stream of all platform events: Zoho syncs, Pushes to Zoho, snapshots, sign-ins, deal edits, admin changes.</li>
+      <li><strong>Errors</strong> — auto-captured Zoho REST failures with code, endpoint, message, and actor.</li>
+    </ul>
+
+    <h2><span class="num">7</span>How the forecast actually moves</h2>
     <div class="h2-rule"></div>
     <div class="flow">ZOHO  ──(Sync)──►  Aureum Demand Forecast  ◄──(Push approved)──┐
                    │                                              │
@@ -241,15 +263,20 @@
    you check:  <b>Forecast</b> ☑   <b>Super</b> ☑                  │
                    │                                              │
                    ▼                                              │
-   Forecast ☑ deals ──►  <b>3 mo. revenue</b>  (HC × MRR/head × Win% × Margin%)
-   Super ☑ deals    ──►  <b>Super-Deals</b> rollup                │
-   diffs vs Zoho   ──►  <b>Playground</b> ──(approve)─────────────┘
+   Forecast ☑ deals ──►  <b>3 mo. revenue</b>  (HC × MRR/head × Win% × Margin%) ──►  🔒 Lock
+                                                                       │
+                                                                       ▼
+                                                       <b>Forecast Accuracy</b> bands (per BDE)
+   deals 4-12 mo  ──►  <b>12-Month Plan</b>                          ▲
+   growth %       ──►  <b>Long-term Growth</b> (13-24 mo)            │
+   Super ☑ deals  ──►  <b>Super-Deals</b> rollup                     │ Enter Actuals
+   diffs vs Zoho  ──►  <b>Playground</b> ──(approve)─────────────────┘
                    │
                    ▼
-   <b>Overview</b> KPIs + <b>Forecast Accuracy</b> bands + <b>MRR Forecast</b></div>
-    <p><strong>The levers you pull:</strong> Monthly HC drives projected revenue · MRR (Zoho wins if set, else Aureum) is the price per deal · Win % discounts by probability · Margin % produces the cash-flow number · Anchor month slides the window · the Forecast/Super checkboxes decide what shows up where.</p>
+   <b>Overview</b> + <b>Pipeline</b> (5-phase investor view)</div>
+    <p><strong>The levers you pull:</strong> Monthly HC drives projected revenue · MRR (Zoho wins if set, else Aureum) is the price per deal · Win % discounts by probability · Margin % produces the cash-flow number · Anchor month slides the window · the Phase filter + Forecast/Super checkboxes decide what shows up where · 🔒 Lock commits a forecast as the immutable accuracy baseline.</p>
 
-    <h2><span class="num">6</span>Recommended rhythm</h2>
+    <h2><span class="num">8</span>Recommended rhythm</h2>
     <div class="h2-rule"></div>
     <table class="zebra">
       <tr><th>When</th><th>Do this</th><th>Where</th></tr>
@@ -257,12 +284,19 @@
       <tr><td>Daily</td><td>Update monthly HC, MRR Aureum, win %; check <strong>Fcst</strong> / <strong>Super</strong></td><td>Aureum Demand Forecast</td></tr>
       <tr><td>Weekly</td><td>Review the rolling 3-month numbers; review the Playground and <strong>push approved changes to Zoho</strong></td><td>3 mo. revenue · Playground</td></tr>
       <tr><td>Weekly</td><td>Clear the Cleanup tab — merge or kill any not-in-Zoho ghosts</td><td>Cleanup</td></tr>
+      <tr><td>Monthly (start)</td><td>Click <strong>🔒 Lock {month} forecast</strong> to commit the next 3 months</td><td>Overview · 3 mo. revenue</td></tr>
       <tr><td>Monthly (1st)</td><td>Move the <strong>Anchor month</strong> forward by one</td><td>Anchor picker (any tab)</td></tr>
-      <tr><td>Monthly (close)</td><td><strong>Enter Actuals</strong> so the bands learn</td><td>Forecast Accuracy</td></tr>
-      <tr><td>Quarterly</td><td>Review <strong>Stage Rules</strong> &amp; Super-Deal assessments with Finance</td><td>Stage Rules / Super-Deals</td></tr>
+      <tr><td>Monthly (close)</td><td><strong>Enter Actuals</strong> so the bands learn from real outcomes</td><td>Forecast Accuracy</td></tr>
+      <tr><td>Quarterly</td><td>Review <strong>Stage Rules</strong> in Settings &amp; Super-Deal qualitative assessments with Finance</td><td>Settings · Super-Deals</td></tr>
+      <tr><td>Quarterly</td><td>Update the <strong>Long-term Growth</strong> rate as the outlook shifts</td><td>Long-term Growth</td></tr>
     </table>
 
-    <h2><span class="num">7</span>Tips &amp; troubleshooting</h2>
+    <h2><span class="num">9</span>Guided tour for new users</h2>
+    <div class="h2-rule"></div>
+    <p>The first time anyone signs in, a 12-step walk-through pops up explaining each module in plain language. Buttons: <em>Skip tour</em>, <em>← Previous</em>, <em>Next →</em>. A progress bar at the top of the card shows how far along you are.</p>
+    <p>To replay the tour at any time — useful for new hires or as a refresher — go to <strong>Settings</strong> and click <em>↻ Replay tour</em>. The tour switches the underlying tab as you progress so you see each module on the actual screen behind the explanation card.</p>
+
+    <h2><span class="num">10</span>Tips &amp; troubleshooting</h2>
     <div class="h2-rule"></div>
     <table class="zebra">
       <tr><th>Symptom</th><th>Fix</th></tr>
@@ -276,7 +310,7 @@
       <tr><td>Changes not showing elsewhere</td><td>Confirm both screens show <strong>Sync · Live</strong>; hard-refresh (Ctrl+Shift+R).</td></tr>
     </table>
 
-    <h2><span class="num">8</span>Backup</h2>
+    <h2><span class="num">11</span>Backup</h2>
     <div class="h2-rule"></div>
     <p>Firestore keeps the shared copy, but export a backup periodically: <strong>Settings → ⬇ Export all data (JSON)</strong>. To restore: <strong>Settings → ⬆ Import data (JSON)</strong>.</p>
 
