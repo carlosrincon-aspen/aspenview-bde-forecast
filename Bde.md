@@ -225,6 +225,20 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-06-19 (PM) — Michael review change-set (pre-Don final, Monday)
+Implemented Michael's post-demo feedback, to the letter, for the Monday final review with Don:
+- **Single input model**: `Aureum Demand Forecast` is now the only input and rolls a full 12 months from the anchor (new `rollingMonths()` helper). `3 mo. revenue` and `12-Month Plan` are read-only OUTPUTS of it (removed the duplicate HC inputs from 12-Month Plan).
+- **Aureum grouped headers**: two-row header — **Deal Summary** (MRR Zoho, MRR Aureum, Win %, Margin %, **+ Total HC**) and **Headcount Build — Headcount by Month**. Months 1–3 tinted "precise"; gold divider at month 3→4. Fixed a pre-existing off-by-one in the TOTALS row colspan.
+- **Super-Deal is automatic** at **100+ total headcount** (was a manual 50-HC checkbox) — the Super column is now a read-only indicator. `SUPER_DEAL_HC_THRESHOLD = 100`, `isSuperDeal()` derives from `dealHcForRollup()`.
+- **Phase filter** moved to the left of the phase pills and made prominent.
+- **Months 4–12 assumptions** (admin-only, team-synced): standard margin **30%** default, accuracy **15%** default — editable in **Settings → Forecast Assumptions**. Dollars for 4–12 = HC × $/head (`pricePerHead`, i.e. MRR ÷ HC).
+- **Overview**: added **Deal Count Reconciliation** (total / in Zoho / not-in-Zoho ghosts → Cleanup) and a **Rolling Months 4–12** block with its own accuracy % and standard margin.
+- **Forecast Coverage by Phase** report on the Pipeline tab: pipeline vs forecasted deals/HC/MRR + coverage % per phase (Recruitment / Pricing / Legal).
+- **Reliability bands governance**: bands stay computed from locked snapshots + actuals, but only managers can pin an override (acc & ±) per horizon (`accuracy_overrides`). BDEs cannot move them.
+- **Long-term Growth → renamed "Rolling Months 13–24"**; growth % & baseline are now manager-only controls.
+- **MRR clarity**: MRR Aureum cell highlights when it differs from Zoho MRR (the 21k-vs-40k case → reconcile in Playground). Fixed stale "Zoho.Amount" copy (MRR field is primary, Amount is fallback) in the sync comment, deal modal, and Settings field-map.
+- Decisions locked with Carlos: $/HC = MRR ÷ Headcounts (division) until a literal Zoho field is found; margin 30% / accuracy 15% defaults, both editable; reconciliation = Zoho + ghosts.
+
 ### 2026-06-19 — Onboarding tour + guide refresh + Project Context doc
 - Added `🎓 Take Tour` button in the header next to `📖 Guide` to launch the tour any time.
 - Redesigned the tour overlay so the topnav stays visible. The active tab pulses with a gold spotlight; the explanation card is positioned below the topnav with a white triangle arrow pointing up at the highlighted tab. Arrow shifts horizontally with each step.
