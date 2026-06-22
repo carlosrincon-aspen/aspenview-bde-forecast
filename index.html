@@ -2336,7 +2336,7 @@ function renderAureumGrid() {
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
     // Frozen Client + Deal.
     html += '<td class="freeze-1" style="color:var(--muted)">' + esc(d.client) + '</td>';
-    html += '<td class="freeze-2">' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '') + '</td>';
+    html += '<td class="freeze-2">' + dealNameCell(d) + '</td>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
     html += '<td style="text-align:center" title="' + (sup ? 'Super-Deal — 100+ total headcount (automatic)' : 'Not a Super-Deal (under 100 total headcount)') + '">' + (sup ? '<span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '<span style="color:var(--border)">–</span>') + '</td>';
     html += bdeCell(d);
@@ -2602,6 +2602,7 @@ function render3MoRevenue() {
   // Only deals flagged "Forecast" in Aureum, then search + multi-select filters
   var rows = deals.filter(function(d) {
     if (!d.inForecast) return false;
+    if (phaseForDeal(d) === 5) return false;   // Closed Won is captured in cash flow, not forecasted
     if (!passSearch('3mo', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
     if (!passMulti('3mo', 'bde',    d.bde))    return false;
     if (!passMulti('3mo', 'stage',  d.stage))  return false;
@@ -2734,6 +2735,7 @@ function renderMidtermForecast() {
 
   var rows = deals.filter(function(d) {
     if (!d.inForecast) return false;
+    if (phaseForDeal(d) === 5) return false;   // Closed Won is captured in cash flow, not forecasted
     if (!passSearch('midterm', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
     if (!passMulti('midterm', 'bde',   d.bde))   return false;
     if (!passMulti('midterm', 'stage', d.stage)) return false;
