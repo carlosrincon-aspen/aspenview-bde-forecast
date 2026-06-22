@@ -3819,10 +3819,17 @@ function reconcileSuperPrograms() {
     if (!groups[key]) groups[key] = { client: d.client || d.dealName, hc:0, phase1:0, acts:[], topHC:-1, zohoId:'', dealName:'' };
     var hc = dealHcForRollup(d);
     groups[key].hc += hc;
-    // Representative deal for the Zoho link = the largest deal in this client.
-    if (hc > groups[key].topHC) { groups[key].topHC = hc; groups[key].zohoId = d.zohoId || ''; groups[key].dealName = d.dealName || ''; }
     var mk = Object.keys(d.monthlyHC || {}).sort();
-    if (mk.length) { groups[key].phase1 += (d.monthlyHC[mk[0]] || 0); groups[key].acts.push(mk[0]); }
+    var firstWave = mk.length ? (d.monthlyHC[mk[0]] || 0) : 0;
+    // Representative deal for the client = its largest deal. The Zoho link AND Phase 1 both point
+    // at this deal, so Phase 1 = the first wave (first build month) of the deal you open on click.
+    if (hc > groups[key].topHC) {
+      groups[key].topHC = hc;
+      groups[key].zohoId = d.zohoId || '';
+      groups[key].dealName = d.dealName || '';
+      groups[key].phase1 = firstWave;
+    }
+    if (mk.length) groups[key].acts.push(mk[0]);
     if (d.startDate) groups[key].acts.push(String(d.startDate).slice(0,7));
   });
   var out = Object.keys(groups).sort().map(function(key){
@@ -3861,7 +3868,7 @@ function renderSuperDeals() {
 
   // ── Qualitative program table (mirrors Excel Super-Deals tab) ──
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl" style="min-width:1500px"><thead><tr>';
-  html += '<th>Client (Super-Deal)</th><th class="num">Peak HC</th><th class="num">Phase 1</th><th>Activation</th>';
+  html += '<th>Client (Super-Deal)</th><th class="num" title="Total headcount across ALL of this client\'s 100+ HC deals">Peak HC</th><th class="num" title="First wave of the linked deal — headcount that starts billing in its first build month">Phase 1</th><th>Activation</th>';
   html += '<th>Deal Confidence</th><th>Start Readiness</th><th>Readiness Gap</th><th>Speed Sensitivity</th>';
   html += '<th>Ramp Duration</th><th>First Phase Timing</th><th>Phase Risk</th><th>Program Horizon</th><th>Deployment Map</th><th></th>';
   html += '</tr></thead><tbody>';
@@ -3893,7 +3900,7 @@ function renderSuperDeals() {
   html += '<td class="num" style="color:var(--gold)">' + Math.round(totalPhase1).toLocaleString() + '</td>';
   html += '<td colspan="11"></td></tr>';
   html += '</tbody></table></div>';
-  html += '<div class="legend"><span style="font-style:italic">All dropdowns are editable and auto-save per client. Peak HC / Phase 1 / Activation are computed from the deals. Use the ✎ button to add notes.</span></div></div>';
+  html += '<div class="legend"><span style="font-style:italic">All dropdowns are editable and auto-save per client. <b>Peak HC</b> = total across the client\'s 100+ deals · <b>Phase 1</b> = first wave of the linked deal · click the client to open that deal in Zoho. Use the ✎ button to add notes.</span></div></div>';
 
   // ── Financial rollup of deals flagged Super in Aureum Demand Forecast ──
   html += '<div class="card" style="padding:6px"><div class="card-header" style="padding:8px 8px 0"><span class="card-title">Deal-level rollup (deals flagged Super in Aureum Demand Forecast)</span><span class="card-sub">' + flagged.length + ' deals</span></div>';
