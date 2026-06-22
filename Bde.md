@@ -225,6 +225,18 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-06-22 (PM) — Table restructure + rolling quarter + auto Super-Deals + Zoho-vs-Don
+Carlos change-set after the morning review:
+- **Column order across all forecast tables** (Aureum, 3 mo. revenue, 12-Month Plan, Super-Deal rollup): now lead with **Client → Deal** (both frozen-left via new `.freeze-1` / `.freeze-2` CSS).
+- **Aureum & 3 mo. cleanup**: removed **Status, Loc, TCV** columns (Status filter dropdowns removed too).
+- **Deal Summary reordered**: `Start Date · Contract · Zoho HC · Total HC · $/head · MRR · Fcst MRR · Cov % · ARR · Win % · TM % · AM %`. Total HC now sits before the dollar columns. "Start" → **Start Date**. Target % / Actual % → **TM %** / **AM %** (Target Margin / Actual Margin, with tooltips).
+- **Spread is its own column** (⇶) at the start of the Headcount Build group, right before month 1 — pulled out of the frozen Deal cell.
+- **Rolling quarter, automatic.** `ALL_MONTHS` is now generated dynamically from the real current month; default anchor = **month after the current one** (`defaultAnchorMonth`), and any saved anchor at/before the default rolls forward on its own. Today (June) → forecasts **Jul/Aug/Sep**. Managers can still pick a later anchor; it sticks.
+- **Super-Deals auto-derived** from live 100+ HC deals (Michael's rule). Don's 7 static seed programs retired (`SUPER_PROGRAMS_SEED = []`). New `reconcileSuperPrograms()` groups flagged deals by client, computes Peak HC / Phase 1 / Activation, and preserves per-client qualitative assessments + notes across syncs. "+ Add Program" / Delete removed; edit modal now only sets activation override + notes.
+- **Zoho-vs-Don comparison.** `pricePerHead()` now uses **MRR ÷ Zoho HC** as the basis (was MRR ÷ own built HC), so if Zoho maps 200 HC and Don forecasts 100, his **Fcst MRR** comes out to half. New Aureum columns **Zoho HC**, **Fcst MRR** (Total HC × $/head) and **Cov %** (Fcst ÷ Zoho MRR) make the gap explicit; this also makes 3 mo. / 12-month revenue respond to how much HC Don actually commits.
+- Backup saved: `index.backup-2026-06-22.html`. JS validated (inline script compiles); column counts reconcile (Aureum 33 / 3 mo 20 / 12-Month 16).
+- ⚠ To verify live: Zoho `Headcounts` populates `zoho_totalHC` for the Zoho HC / Cov % columns; clear the saved anchor if a stale one is pinned.
+
 ### 2026-06-22 — Don+Michael review change-set (100% Zoho)
 After the live demo to Don & Michael:
 - **Excel retired — 100% Zoho.** Removed the Cleanup tab, the In-Excel column/filter, the MRR Aureum (dual-MRR) column, the Overview reconciliation card, and the Excel seed (one-time migration purges non-Zoho ghosts). `buildSeedIndex()` now returns `{}`.
