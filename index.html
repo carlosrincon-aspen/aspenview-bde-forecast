@@ -291,14 +291,11 @@ var ZOHO_DC         = 'com'; // Zoho data center: 'com' (US), 'eu', 'in', 'au', 
 var ZOHO_MRR_FIELD    = 'MRR';                // monthly recurring revenue per deal
 var ZOHO_MARGIN_FIELD = 'Target_Margin_Band'; // (kept; margin is calculated, not read from Zoho)
 var ZOHO_HC_FIELD     = 'Headcounts';         // total headcount on the deal (single number in Zoho)
-// Deal-summary fields shown by Michael in the Zoho deal (Pricing Framework section).
-// ⚠ VERIFY these API names in Zoho (Setup → Modules → Deals → field → API Name). If any is
-// wrong the sync still works — that field just stays blank and a warning appears in Settings.
-var ZOHO_ARR_FIELD      = 'ARR';                     // label "ARR"
-var ZOHO_TCV_FIELD      = 'TCV';                     // label "TCV" (total contract value)
-var ZOHO_CONTRACT_FIELD = 'Contract_Length_Months';  // label "Contract Length (Months)"
-var ZOHO_START_FIELD    = 'Expected_Start_Date';     // label "Expected Start Date"
-var ZOHO_NRR_FIELD      = 'NRR';                      // label "NRR"
+// Deal-summary fields from the Zoho deal (Pricing Framework). API names confirmed by Carlos.
+var ZOHO_ARR_FIELD      = 'ARR';                  // label "ARR"
+var ZOHO_TCV_FIELD      = 'TCV';                  // label "TCV" (total contract value)
+var ZOHO_CONTRACT_FIELD = 'Contract_Term_Months'; // label "Contract Length (Months)"
+var ZOHO_START_FIELD    = 'Expected_Start_Date';  // label "Expected Start Date"
 var ZOHO_BASE_FIELDS  = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Created_Time,Amount,Probability,Description';
 
 // Exact Zoho Deal Stage API Names that should appear in the dashboard.
@@ -990,7 +987,7 @@ function zohoPatchDeal(token, dealId, payload, cb) {
 // Paginate through ALL Zoho deals across pages of 200
 function fetchAllZohoDeals(token, cb) {
   var EXTRA = [ZOHO_MRR_FIELD, ZOHO_MARGIN_FIELD, ZOHO_HC_FIELD,
-               ZOHO_ARR_FIELD, ZOHO_TCV_FIELD, ZOHO_CONTRACT_FIELD, ZOHO_START_FIELD, ZOHO_NRR_FIELD].filter(Boolean).join(',');
+               ZOHO_ARR_FIELD, ZOHO_TCV_FIELD, ZOHO_CONTRACT_FIELD, ZOHO_START_FIELD].filter(Boolean).join(',');
   var FIELDS_FULL = ZOHO_BASE_FIELDS + (EXTRA ? ',' + EXTRA : '');
   var all = [];
   // Resilient: if a custom field API name is wrong, Zoho rejects the whole query — so on a
@@ -1109,7 +1106,6 @@ function syncZohoDeals() {
         tcv:                   zohoNum(r[ZOHO_TCV_FIELD],      p.tcv),
         contractMonths:        zohoNum(r[ZOHO_CONTRACT_FIELD], p.contractMonths),
         startDate:             r[ZOHO_START_FIELD] || p.startDate || '',
-        nrr:                   zohoNum(r[ZOHO_NRR_FIELD],      p.nrr),
         // MRR Zoho: the Zoho MRR field (falls back to Amount only if MRR is blank). 0 if neither set.
         pricing:               zohoAmount,
         // Win rate adjusted: Zoho's Probability > local edit > seed > default 0.5
