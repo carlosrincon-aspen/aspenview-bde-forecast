@@ -246,6 +246,7 @@ Carlos change-set after the morning review:
 - Super-Deals **Phase 1** = first wave (first build month) of the **linked/representative deal** (the client's largest, the one the link opens), not the sum across all the client's deals. Peak HC stays the per-client total.
 - Aureum: removed the redundant **SUPER pill under the deal name** (there's a Super column).
 - **Closed Won (phase 5) excluded from the forecast** — 3 mo. revenue and 12-Month Plan now drop it (captured in cash flow). Forecast inclusion stays driven by the per-deal **Fcst** checkbox (Carlos chose manual control over auto-by-phase); the phase pills remain an Aureum view filter, so the Aureum phase count and the 3 mo. count intentionally differ.
+- **$/head is now a confirmable rate** (Option 1). `pricePerHead()`: confirmed override → **MRR ÷ Zoho HC only when Zoho carries headcount** → Settings default. Removed the circular `MRR ÷ built/Fcst HC` step that inflated the rate when Zoho mapped fewer heads than Don forecasts. Aureum $/head cell turns **green when Don has confirmed a rate**; blank = suggested (tooltip says which source). Note: Fcst MRR can still legitimately exceed Zoho MRR when Don forecasts more heads than Zoho mapped — that's a real signal, not a bug.
 
 ### 2026-06-22 — Don+Michael review change-set (100% Zoho)
 After the live demo to Don & Michael:
