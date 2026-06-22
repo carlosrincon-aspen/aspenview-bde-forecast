@@ -132,6 +132,9 @@
   .grid-tbl td.freeze-deal, .grid-tbl th.freeze-deal { position: sticky; left: 0; z-index: 6; background: #fff; box-shadow: 1px 0 0 var(--border); min-width: 170px; max-width: 220px; }
   .scroll-x table.grid-tbl thead th.freeze-deal { z-index: 8; background: var(--bg); }
   .grid-tbl tr.row-super td.freeze-deal { background: #f4fdff; }
+  /* Sticky TOTALS bar — stays pinned to the bottom of a scrolling grid. */
+  .scroll-x table.grid-tbl tr.totals-row td { position: sticky; bottom: 0; z-index: 7; background: var(--navy); color: #fff; box-shadow: 0 -1px 0 rgba(255,255,255,0.18); }
+  .scroll-x table.grid-tbl tr.totals-row td.freeze-deal { z-index: 8; }
 
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted); margin-top: 8px; align-items: center; }
   .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
@@ -2331,7 +2334,7 @@ function renderAureumGrid() {
     tot.totHC += (sumMonths(d.monthlyHC) || d.totalHC || 0);
     months.forEach(function(m, i){ tot.hc[i] += (d.monthlyHC || {})[m] || 0; });
   });
-  html += '<tr style="background:var(--navy);color:white;font-weight:700">';
+  html += '<tr class="totals-row" style="background:var(--navy);color:white;font-weight:700">';
   html += '<td colspan="9" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
   html += '<td colspan="2" style="border-left:2px solid var(--gold)"></td>';
   html += '<td class="num" style="color:white">' + fmt$k(tot.mrr) + '</td>';
@@ -2627,7 +2630,7 @@ function render3MoRevenue() {
     html += '</tr>';
   });
 
-  html += '<tr style="background:var(--navy);color:white;font-weight:700">';
+  html += '<tr class="totals-row" style="background:var(--navy);color:white;font-weight:700">';
   html += '<td colspan="8" style="color:white">TOTALS — ' + rows.length + ' deals in forecast</td>';
   for (var i = 0; i < 3; i++) {
     html += '<td class="num" style="color:white">' + tot.hc[i] + '</td>';
@@ -2746,7 +2749,7 @@ function renderMidtermForecast() {
   });
 
   // Totals row
-  html += '<tr style="background:var(--navy);color:white;font-weight:700">';
+  html += '<tr class="totals-row" style="background:var(--navy);color:white;font-weight:700">';
   html += '<td colspan="5" style="color:white">TOTALS — ' + rows.length + ' deals · months 4-12</td>';
   html += '<td></td>';
   var grandTotal = 0;
