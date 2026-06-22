@@ -243,6 +243,9 @@ Carlos change-set after the morning review:
 - **Fcst HC is now an editable, independent field** (renamed from Total HC): Don types the total he forecasts; it is NOT tied to the monthly cells. The **⇶ Spread** modal defaults to that total and distributes it across the phases/months. `updateForecastHC()` only stores `d.totalHC`. (Editing a month cell directly still re-syncs totalHC to the sum — the one "anchored" path.)
 - **Super-Deal rule fixed**: `dealHcForRollup()` / `isSuperDeal()` now take **`max(zoho_totalHC, monthly build, totalHC)`** instead of Zoho-first — so a deal Don forecasts at 100+ counts even when Zoho mapped fewer (e.g. 257 vs 50). ⚠ This also feeds Pipeline HC totals / size bands (uses the larger of mapped vs forecast). Carlos OK'd keeping it shared.
 - Super-Deals tab: client cell now **links to the largest deal in Zoho**; **SUB-TOTAL row is sticky** (`totals-row`).
+- Super-Deals **Phase 1** = first wave (first build month) of the **linked/representative deal** (the client's largest, the one the link opens), not the sum across all the client's deals. Peak HC stays the per-client total.
+- Aureum: removed the redundant **SUPER pill under the deal name** (there's a Super column).
+- **Closed Won (phase 5) excluded from the forecast** — 3 mo. revenue and 12-Month Plan now drop it (captured in cash flow). Forecast inclusion stays driven by the per-deal **Fcst** checkbox (Carlos chose manual control over auto-by-phase); the phase pills remain an Aureum view filter, so the Aureum phase count and the 3 mo. count intentionally differ.
 
 ### 2026-06-22 — Don+Michael review change-set (100% Zoho)
 After the live demo to Don & Michael:
