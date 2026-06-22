@@ -2288,8 +2288,9 @@ function renderAureumGrid() {
     var dealTotHC = sumMonths(d.monthlyHC) || d.totalHC || 0;
     var aMar = actualMarginFor(d);
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
-    // Frozen Deal name (stays visible on horizontal scroll).
-    html += '<td class="freeze-deal">' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '') + '</td>';
+    // Frozen Deal name + always-visible Spread button (so you never scroll to the far right to ramp HC).
+    html += '<td class="freeze-deal">' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '') +
+            '<div style="margin-top:3px"><button class="btn btn-gold btn-sm" style="padding:1px 7px;font-size:10px" onclick="openSpreadModal(' + dealIdx + ')" title="Spread total headcount across the months automatically">⇶ Spread HC</button></div></td>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
     html += '<td style="text-align:center" title="' + (sup ? 'Super-Deal — 100+ total headcount (automatic)' : 'Not a Super-Deal (under 100 total headcount)') + '">' + (sup ? '<span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '<span style="color:var(--border)">–</span>') + '</td>';
     html += bdeCell(d);
@@ -2322,7 +2323,7 @@ function renderAureumGrid() {
       var mrr = hc * pricePerH;
       html += '<td class="cell-hc ' + cls + '" style="' + bl + '"><input type="number" min="0" value="' + (hc || '') + '" onchange="updateDealHC(' + dealIdx + ', \'' + m + '\', this.value)" placeholder="0" title="' + (mrr ? fmt$k(mrr) + ' MRR · ' + monthLabel(m) : monthLabel(m) + ' headcount') + '"></td>';
     });
-    html += '<td style="white-space:nowrap"><button class="btn btn-gold btn-sm" onclick="openSpreadModal(' + dealIdx + ')" title="Spread total headcount across months">&#8703;</button> <button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')" title="Edit">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + dealIdx + ')" title="Delete">&#10005;</button></td>';
+    html += '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')" title="Edit">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + dealIdx + ')" title="Delete">&#10005;</button></td>';
     html += '</tr>';
   });
 
