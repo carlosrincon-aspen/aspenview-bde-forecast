@@ -2322,13 +2322,15 @@ function renderAureumGrid() {
     var dealIdx = deals.indexOf(d);
     var sup = isSuperDeal(d);
     var pricePerH = pricePerHead(d);
-    var dealTotHC = sumMonths(d.monthlyHC) || d.totalHC || 0;
+    // Fcst HC = the total Don types (independent of the months). Falls back to the build sum for
+    // legacy deals that have a ramp but no stored total. The ⇶ Spread tool distributes this total.
+    var fcstHC = d.totalHC || sumMonths(d.monthlyHC) || 0;
     var aMar = actualMarginFor(d);
-    // Zoho-vs-Don comparison. Zoho HC = the mapped headcount; Total HC = what Don is forecasting
-    // (sum of the build). $/head is MRR ÷ Zoho HC, so Don's Fcst MRR scales with his committed HC.
+    // Zoho-vs-Don comparison. Zoho HC = the mapped headcount; Fcst HC = what Don is forecasting.
+    // $/head is MRR ÷ Zoho HC, so Don's Fcst MRR scales with his committed HC.
     var zohoHC  = (d.zoho_totalHC && d.zoho_totalHC > 0) ? d.zoho_totalHC : 0;
     var zohoMRR = d.pricing || 0;
-    var fcstMRR = dealTotHC * pricePerH;
+    var fcstMRR = fcstHC * pricePerH;
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
     // Frozen Client + Deal.
     html += '<td class="freeze-1" style="color:var(--muted)">' + esc(d.client) + '</td>';
@@ -2342,7 +2344,7 @@ function renderAureumGrid() {
     html += '<td style="color:var(--muted);border-left:2px solid var(--gold);white-space:nowrap">' + esc(fmtDate(d.startDate || d.closingDate || d.firstBillableMonth)) + '</td>';
     html += '<td class="num" style="color:var(--muted)">' + (d.contractMonths ? d.contractMonths + ' mo' : '—') + '</td>';
     html += '<td class="num" style="color:var(--muted)" title="Headcount mapped on the Zoho deal">' + (zohoHC || '—') + '</td>';
-    html += '<td class="num"><input class="margin" type="number" min="0" value="' + (dealTotHC || '') + '" onchange="updateForecastHC(' + dealIdx + ', this.value)" placeholder="0" title="Headcount Don is forecasting for this deal. Type the total — it spreads across the months keeping your ramp. Use ⇶ Spread for a custom ramp."></td>';
+    html += '<td class="num"><input class="margin" type="number" min="0" value="' + (fcstHC || '') + '" onchange="updateForecastHC(' + dealIdx + ', this.value)" placeholder="0" title="Total headcount Don forecasts for this deal. Type it here, then click ⇶ Spread to distribute it across the phases/months."></td>';
     html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.dollarPerHead || '') + '" onchange="updateDealField(' + dealIdx + ', \'dollarPerHead\', this.value)" placeholder="' + Math.round(pricePerH) + '" title="$/head override. Current = ' + fmt$k(pricePerH) + '. Blank = MRR ÷ Zoho HC, else the Settings default."></td>';
     html += '<td class="num" title="MRR from Zoho — full mapped headcount">' + (zohoMRR ? fmt$k(zohoMRR) : '—') + '</td>';
     html += '<td class="num num-bold" title="Forecast MRR = Fcst HC × $/head">' + (fcstMRR ? fmt$k(fcstMRR) : '—') + '</td>';
@@ -2373,7 +2375,7 @@ function renderAureumGrid() {
   var tot = { mrr:0, arr:0, totHC:0, zohoHC:0, fcstMRR:0, hc: months.map(function(){ return 0; }) };
   filtered.forEach(function(d){
     var pph = pricePerHead(d);
-    var built = sumMonths(d.monthlyHC) || d.totalHC || 0;
+    var built = d.totalHC || sumMonths(d.monthlyHC) || 0;
     tot.mrr += (d.pricing || 0); tot.arr += (d.arr || 0);
     tot.totHC  += built;
     tot.zohoHC += ((d.zoho_totalHC && d.zoho_totalHC > 0) ? d.zoho_totalHC : 0);
@@ -2418,42 +2420,17 @@ function updateDealHC(idx, monthKey, value) {
   setDeals(deals);
   logActivity('Forecast', 'Edit HC', d.dealName + ' · ' + monthKey + ': ' + oldV + ' → ' + (d.monthlyHC[monthKey] || 0));
 }
-// The deal's start month as 'YYYY-MM' if Zoho carries one, else the current forecast anchor.
-function firstBuildMonth(d) {
-  var s = String(d.startDate || d.firstBillableMonth || '').match(/(\d{4})-(\d{2})/);
-  return s ? (s[1] + '-' + s[2]) : getAnchorMonth();
-}
-// Fcst HC is a single editable field: Don types the total headcount he's forecasting for the
-// deal. We keep the monthly build (the billing-month model) consistent with it:
-//   • existing ramp → rescaled proportionally to the new total (shape preserved)
-//   • no ramp yet   → the whole total seeded into the deal's start month (visible & forecastable)
-// He can still fine-tune months directly or use ⇶ Spread for a custom ramp.
+// Fcst HC is an independent field: Don types the total headcount he forecasts for the deal.
+// It is NOT tied to the monthly cells — the ⇶ Spread tool is what distributes this total
+// across the phases/months when Don is ready. So we only store the total here.
 function updateForecastHC(idx, value) {
   var deals = getDeals();
   var d = deals[idx]; if (!d) return;
   var total = parseInt(value); if (isNaN(total) || total < 0) total = 0;
-  var cur = d.monthlyHC || {};
-  var curSum = sumMonths(cur);
-  var oldTotal = curSum || d.totalHC || 0;
-  if (total <= 0) {
-    d.monthlyHC = {};
-  } else if (curSum > 0) {
-    var keys = Object.keys(cur), scaled = {}, acc = 0;
-    keys.forEach(function(k){ var v = Math.round(cur[k] * total / curSum); if (v > 0) { scaled[k] = v; acc += v; } });
-    var diff = total - acc;
-    if (diff !== 0 && keys.length) {
-      var biggest = keys.reduce(function(a,b){ return (scaled[b] || 0) >= (scaled[a] || 0) ? b : a; }, keys[0]);
-      scaled[biggest] = Math.max(0, (scaled[biggest] || 0) + diff);
-      if (!scaled[biggest]) delete scaled[biggest];
-    }
-    d.monthlyHC = scaled;
-  } else {
-    d.monthlyHC = {};
-    d.monthlyHC[firstBuildMonth(d)] = total;
-  }
-  d.totalHC = sumMonths(d.monthlyHC);
+  var oldTotal = d.totalHC || 0;
+  d.totalHC = total;
   setDeals(deals);
-  logActivity('Forecast', 'Edit Fcst HC', d.dealName + ': ' + oldTotal + ' → ' + d.totalHC);
+  logActivity('Forecast', 'Edit Fcst HC', d.dealName + ': ' + oldTotal + ' → ' + total);
   renderTab();
 }
 function updateDealField(idx, field, value) {
@@ -2549,7 +2526,8 @@ function newDealInZoho() {
 function openSpreadModal(idx) {
   var deals = getDeals(); var d = deals[idx]; if (!d) return;
   var anchor = getAnchorMonth();
-  var totalDefault = (d.zoho_totalHC || sumMonths(d.monthlyHC) || d.totalHC || 0) || '';
+  // Default to the Fcst HC Don typed (d.totalHC) — Spread distributes exactly that across the months.
+  var totalDefault = (d.totalHC || sumMonths(d.monthlyHC) || d.zoho_totalHC || 0) || '';
   var monthOpts = rollingMonths(anchor, 24).map(function(m){ return '<option value="' + m + '"' + (m === anchor ? ' selected' : '') + '>' + monthLabel(m) + '</option>'; }).join('');
   var html = '';
   html += '<h3>Spread headcount — ' + esc(d.dealName) + '</h3>';
