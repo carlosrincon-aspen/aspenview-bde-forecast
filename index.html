@@ -483,7 +483,7 @@ function getDeals() {
   var deals = load('deals', []);
   deals.forEach(function(d) {
     // Super-Deal is automatic: 100+ total headcount. Always re-derive so the stored flag never drifts.
-    d.isSuperDeal = (d.zoho_totalHC || sumMonths(d.monthlyHC || {}) || d.totalHC || 0) >= 100;
+    d.isSuperDeal = Math.max(d.zoho_totalHC || 0, sumMonths(d.monthlyHC || {}), d.totalHC || 0) >= 100;
     if (d.inForecast === undefined) d.inForecast = sumMonths(d.monthlyHC || {}) > 0;
     if (d.bde        === undefined) d.bde        = '';
     if (d.zohoId     === undefined) d.zohoId     = '';
@@ -1884,9 +1884,11 @@ function togglePipelinePhase(id) { pipelineExpanded[id] = !pipelineExpanded[id];
 function focusPipelinePhase(id) { pipelineSelectedPhase = (pipelineSelectedPhase === id ? null : id); renderTab(); }
 
 function dealHcForRollup(d) {
-  // For pipeline aggregates, prefer the Zoho-side total HC (deal-level number),
-  // fall back to monthlyHC sum, then to seed totalHC.
-  return d.zoho_totalHC || sumMonths(d.monthlyHC) || d.totalHC || 0;
+  // Headcount for rollups, size bands and the Super-Deal test: the LARGEST of the Zoho-mapped
+  // HC, the monthly build, and Don's forecast total. So a deal counts as 100+ (Super) if ANY of
+  // those says so — previously this was Zoho-first, which hid deals Don forecasts big (e.g. 257)
+  // when Zoho had only a small number mapped (e.g. 50).
+  return Math.max(d.zoho_totalHC || 0, sumMonths(d.monthlyHC), d.totalHC || 0);
 }
 function dealMRR(d) { return effectivePricing(d) || 0; }
 function dealARR(d) { return dealMRR(d) * 12; }
@@ -3814,8 +3816,11 @@ function reconcileSuperPrograms() {
   getDeals().filter(isSuperDeal).forEach(function(d){
     var key = normDealName(d.client || d.dealName || '');
     if (!key) return;
-    if (!groups[key]) groups[key] = { client: d.client || d.dealName, hc:0, phase1:0, acts:[] };
-    groups[key].hc += dealHcForRollup(d);
+    if (!groups[key]) groups[key] = { client: d.client || d.dealName, hc:0, phase1:0, acts:[], topHC:-1, zohoId:'', dealName:'' };
+    var hc = dealHcForRollup(d);
+    groups[key].hc += hc;
+    // Representative deal for the Zoho link = the largest deal in this client.
+    if (hc > groups[key].topHC) { groups[key].topHC = hc; groups[key].zohoId = d.zohoId || ''; groups[key].dealName = d.dealName || ''; }
     var mk = Object.keys(d.monthlyHC || {}).sort();
     if (mk.length) { groups[key].phase1 += (d.monthlyHC[mk[0]] || 0); groups[key].acts.push(mk[0]); }
     if (d.startDate) groups[key].acts.push(String(d.startDate).slice(0,7));
@@ -3828,6 +3833,8 @@ function reconcileSuperPrograms() {
     p.client     = g.client;
     p.peakHC     = g.hc;
     p.phase1     = g.phase1;
+    p.zohoId     = g.zohoId;
+    p.dealName   = g.dealName;
     var firstAct = g.acts.filter(Boolean).sort()[0] || '';
     p.activation = prev.activation || (/^\d{4}-\d{2}$/.test(firstAct) ? monthLabel(firstAct) : firstAct);
     return p;
@@ -3860,7 +3867,10 @@ function renderSuperDeals() {
   html += '</tr></thead><tbody>';
   progs.forEach(function(p, i) {
     html += '<tr class="row-super">';
-    html += '<td><b>' + esc(p.client) + '</b>' + (p.notes ? ' <span title="' + esc(p.notes) + '" style="cursor:help;color:var(--gold)">&#9432;</span>' : '') + '</td>';
+    var clientCell = p.zohoId
+      ? '<a href="https://crm.zoho.' + ZOHO_DC + '/crm/tab/Potentials/' + encodeURIComponent(p.zohoId) + '" target="_blank" rel="noopener" style="color:var(--navy);font-weight:700;text-decoration:none;border-bottom:1px dashed var(--gold)" title="Open ' + esc(p.dealName || p.client) + ' in Zoho CRM">' + esc(p.client) + ' ↗</a>'
+      : '<b>' + esc(p.client) + '</b>';
+    html += '<td>' + clientCell + (p.notes ? ' <span title="' + esc(p.notes) + '" style="cursor:help;color:var(--gold)">&#9432;</span>' : '') + '</td>';
     html += '<td class="num num-bold">' + (p.peakHC || '—') + '</td>';
     html += '<td class="num">' + (p.phase1 || '—') + '</td>';
     html += '<td style="white-space:nowrap;font-size:10.5px">' + esc(p.activation || '') + '</td>';
@@ -3878,7 +3888,7 @@ function renderSuperDeals() {
   });
   if (!progs.length) html += '<tr><td colspan="14" class="empty">No deals with 100+ headcount yet. Build headcount on a deal in <b>Aureum Demand Forecast</b> (or sync from Zoho) and it appears here automatically.</td></tr>';
   // Totals
-  html += '<tr style="background:var(--navy);color:white;font-weight:700"><td style="color:white">SUB-TOTAL (' + progs.length + ')</td>';
+  html += '<tr class="totals-row" style="background:var(--navy);color:white;font-weight:700"><td style="color:white">SUB-TOTAL (' + progs.length + ')</td>';
   html += '<td class="num" style="color:white">' + totalPeak.toLocaleString() + '</td>';
   html += '<td class="num" style="color:var(--gold)">' + Math.round(totalPhase1).toLocaleString() + '</td>';
   html += '<td colspan="11"></td></tr>';
