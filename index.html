@@ -2298,17 +2298,17 @@ function renderAureumGrid() {
   // Row 2 — sub-columns. First 3 months tinted (precise); a gold divider marks month 3→4.
   html += '<tr>';
   html += '<th style="border-left:2px solid var(--gold)" title="Expected start date (Zoho)">Start Date</th>';
-  html += '<th class="num" title="Contract length in months (Zoho)">Contract</th>';
-  html += '<th class="num" title="Headcount mapped on the Zoho deal (Headcounts field)">Zoho HC</th>';
-  html += '<th class="num" title="Total headcount being forecast — the sum of the monthly build below">Total HC</th>';
+  html += '<th class="num" title="Contract length in months (Zoho)">Contract Terms</th>';
+  html += '<th class="num" title="Headcount mapped on the Zoho deal (Zoho Headcounts field)">Zoho HC</th>';
+  html += '<th class="num" title="Headcount Don is forecasting — the SUM of the monthly build below. Set it by typing in the month cells or with the ⇶ Spread tool.">Fcst HC</th>';
   html += '<th class="num" title="$ per head — per-deal override, else MRR ÷ Zoho HC, else the Settings default">$/head</th>';
   html += '<th class="num" title="MRR from Zoho — based on the full mapped headcount">MRR</th>';
   html += '<th class="num" title="Forecast MRR = Total HC (forecast) × $/head — what Don is actually forecasting">Fcst MRR</th>';
   html += '<th class="num" title="Coverage = Forecast MRR ÷ Zoho MRR — how much of the mapped deal is being forecast">Cov %</th>';
   html += '<th class="num" title="Annual recurring revenue (Zoho)">ARR</th>';
   html += '<th class="num" title="Win % — from Zoho Probability, editable per deal">Win %</th>';
-  html += '<th class="num" title="TM = Target Margin — default from Stage Rules (edit in Settings)">TM %</th>';
-  html += '<th class="num" title="AM = Actual Margin — once the deal is priced/closed (blank until known)">AM %</th>';
+  html += '<th class="num" title="Target Margin — default from Stage Rules (edit in Settings)">Target MG</th>';
+  html += '<th class="num" title="Actual Margin — once the deal is priced/closed (blank until known)">Actual MG</th>';
   // Spread sits at the start of the Headcount Build group, right before month 1.
   html += '<th class="num" style="border-left:2px solid var(--gold)" title="Spread the total headcount across the months automatically">Spread</th>';
   months.forEach(function(m, i){
@@ -2342,9 +2342,9 @@ function renderAureumGrid() {
     html += '<td>' + phasePill(phaseForDeal(d)) + '</td>';
     // ── Deal Summary (Zoho data + Don's forecast) ──
     html += '<td style="color:var(--muted);border-left:2px solid var(--gold);white-space:nowrap">' + esc(fmtDate(d.startDate || d.closingDate || d.firstBillableMonth)) + '</td>';
-    html += '<td class="num" style="color:var(--muted)">' + (d.contractMonths ? d.contractMonths : '—') + '</td>';
+    html += '<td class="num" style="color:var(--muted)">' + (d.contractMonths ? d.contractMonths + ' mo' : '—') + '</td>';
     html += '<td class="num" style="color:var(--muted)" title="Headcount mapped on the Zoho deal">' + (zohoHC || '—') + '</td>';
-    html += '<td class="num num-bold" title="Total headcount Don is forecasting (sum of the monthly build)">' + (dealTotHC || '—') + '</td>';
+    html += '<td class="num num-bold" title="Headcount Don is forecasting = sum of the monthly build (type in the month cells or use ⇶ Spread)">' + (dealTotHC || '—') + '</td>';
     html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.dollarPerHead || '') + '" onchange="updateDealField(' + dealIdx + ', \'dollarPerHead\', this.value)" placeholder="' + Math.round(pricePerH) + '" title="$/head override. Current = ' + fmt$k(pricePerH) + '. Blank = MRR ÷ Zoho HC, else the Settings default."></td>';
     html += '<td class="num" title="MRR from Zoho — full mapped headcount">' + (zohoMRR ? fmt$k(zohoMRR) : '—') + '</td>';
     html += '<td class="num num-bold" title="Forecast MRR = Total HC × $/head">' + (fcstMRR ? fmt$k(fcstMRR) : '—') + '</td>';
