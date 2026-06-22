@@ -225,6 +225,21 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-06-22 — Don+Michael review change-set (100% Zoho)
+After the live demo to Don & Michael:
+- **Excel retired — 100% Zoho.** Removed the Cleanup tab, the In-Excel column/filter, the MRR Aureum (dual-MRR) column, the Overview reconciliation card, and the Excel seed (one-time migration purges non-Zoho ghosts). `buildSeedIndex()` now returns `{}`.
+- **Deal Summary from Zoho** in Aureum: Start date, Contract (months), MRR, ARR, TCV, Total HC — new configurable field constants `ZOHO_ARR_FIELD / ZOHO_TCV_FIELD / ZOHO_CONTRACT_FIELD / ZOHO_START_FIELD / ZOHO_NRR_FIELD` (⚠ API names guessed — Carlos to verify; sync degrades gracefully if wrong). Win % = Zoho `Probability`. Margin is calculated (NOT in Zoho).
+- **$/head**: per-deal override → MRR÷HC → global default (Settings → Forecast Assumptions).
+- **Target vs Actual margin**: Target = Stage Rules table (read-only in grid, edit in Settings); Actual = per-deal, blank until priced/closed.
+- **Headcount Spread tool** (⇶ per row): total HC + start + first wave + #phases + months/phase → auto-fills the monthly build.
+- **Frozen Deal column** (sticky-left) so it stays visible scrolling sideways.
+- **3 mo. revenue**: added Total Billable HC to the summary big numbers.
+- **Week-over-week forecast changes** card in Forecast Accuracy (added / removed / HC+rev changed, from weekly snapshots).
+- **Access reversed**: Don + Juliana now FULL (admin + governance). `canGovern()` = `isAdmin()`. Don restored to manager role.
+- **Demo trend data removed** — starts clean; `purgeDemoTrendSnapshots()` strips any seeded demo points.
+- Decisions: $/head = MRR÷HC (no Zoho field); margin 30%/accuracy 15% defaults; tool name TBD; domain forecast.aspenview.com pending.
+- Behind the scenes (separate, with John Jacobs): load Statements of Work for closed-won → real HC/$-per-head/margin → push to Zoho. Not in the tool yet.
+
 ### 2026-06-19 (PM) — Michael review change-set (pre-Don final, Monday)
 Implemented Michael's post-demo feedback, to the letter, for the Monday final review with Don:
 - **Single input model**: `Aureum Demand Forecast` is now the only input and rolls a full 12 months from the anchor (new `rollingMonths()` helper). `3 mo. revenue` and `12-Month Plan` are read-only OUTPUTS of it (removed the duplicate HC inputs from 12-Month Plan).

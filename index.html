@@ -128,6 +128,10 @@
   .grid-tbl input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,184,75,0.2); }
   .grid-tbl input.margin { width: 50px; }
   .grid-tbl input.price { width: 80px; }
+  /* Frozen Deal column — stays visible when scrolling the grid sideways. */
+  .grid-tbl td.freeze-deal, .grid-tbl th.freeze-deal { position: sticky; left: 0; z-index: 6; background: #fff; box-shadow: 1px 0 0 var(--border); min-width: 170px; max-width: 220px; }
+  .scroll-x table.grid-tbl thead th.freeze-deal { z-index: 8; background: var(--bg); }
+  .grid-tbl tr.row-super td.freeze-deal { background: #f4fdff; }
 
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted); margin-top: 8px; align-items: center; }
   .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
@@ -285,8 +289,16 @@ var ZOHO_API        = 'https://www.zohoapis.com/crm/v3';
 var ZOHO_DC         = 'com'; // Zoho data center: 'com' (US), 'eu', 'in', 'au', 'jp'
 // Zoho Deals field API names. MRR Zoho comes from the MRR field (NOT Amount, which is often blank).
 var ZOHO_MRR_FIELD    = 'MRR';                // monthly recurring revenue per deal
-var ZOHO_MARGIN_FIELD = 'Target_Margin_Band'; // commercial-design target margin
+var ZOHO_MARGIN_FIELD = 'Target_Margin_Band'; // (kept; margin is calculated, not read from Zoho)
 var ZOHO_HC_FIELD     = 'Headcounts';         // total headcount on the deal (single number in Zoho)
+// Deal-summary fields shown by Michael in the Zoho deal (Pricing Framework section).
+// ⚠ VERIFY these API names in Zoho (Setup → Modules → Deals → field → API Name). If any is
+// wrong the sync still works — that field just stays blank and a warning appears in Settings.
+var ZOHO_ARR_FIELD      = 'ARR';                     // label "ARR"
+var ZOHO_TCV_FIELD      = 'TCV';                     // label "TCV" (total contract value)
+var ZOHO_CONTRACT_FIELD = 'Contract_Length_Months';  // label "Contract Length (Months)"
+var ZOHO_START_FIELD    = 'Expected_Start_Date';     // label "Expected Start Date"
+var ZOHO_NRR_FIELD      = 'NRR';                      // label "NRR"
 var ZOHO_BASE_FIELDS  = 'Deal_Name,Account_Name,Stage,Owner,Closing_Date,Created_Time,Amount,Probability,Description';
 
 // Exact Zoho Deal Stage API Names that should appear in the dashboard.
@@ -309,7 +321,7 @@ var ALLOWED_STAGES = [
 var USERS = {
   carlos:   { id: 'carlos',   name: 'Carlos Rincon',     email: 'carlos.rincon@aspenview.com',     role: 'manager', initials: 'CR' },
   michael:  { id: 'michael',  name: 'Michael Durham',    email: 'michael.durham@aspenview.com',    role: 'manager', initials: 'MD' },
-  don:      { id: 'don',      name: 'Don Kelly',         email: 'don.kelly@aspenview.com',         role: 'bde',     initials: 'DK' },
+  don:      { id: 'don',      name: 'Don Kelly',         email: 'don.kelly@aspenview.com',         role: 'manager', initials: 'DK' },
   juliana:  { id: 'juliana',  name: 'Juliana Castaneda', email: 'juliana.castaneda@aspenview.com', role: 'manager', initials: 'JC' }
 };
 
@@ -324,7 +336,6 @@ var TABS = [
   { id: 'accuracy',    label: 'Forecast Accuracy' },   // absorbs Forecast Trend as a section
   { id: 'super',       label: 'Super-Deals' },
   { id: 'active',      label: 'Active Customers - Actuals' },
-  { id: 'cleanup',     label: 'Cleanup' },
   { id: 'settings',    label: 'Settings' }              // absorbs Stage Rules as a section
   // 'admin' tab opens from the ★ Admin button in the top-right header (admins only).
 ];
@@ -447,19 +458,14 @@ function save(k, v) {
 }
 
 function getDeals() {
-  var deals = load('deals', SEED_DEALS);
-  // Migration: ensure new fields exist on every deal
+  // 100% Zoho — no Excel seed. Deals come from the Zoho sync.
+  var deals = load('deals', []);
   deals.forEach(function(d) {
-    // Super-Deal is automatic: 100+ total headcount. Always re-derive so the stored flag
-    // never drifts from the rule (manual super toggling is removed — see isSuperDeal()).
+    // Super-Deal is automatic: 100+ total headcount. Always re-derive so the stored flag never drifts.
     d.isSuperDeal = (d.zoho_totalHC || sumMonths(d.monthlyHC || {}) || d.totalHC || 0) >= 100;
-    if (d.inForecast  === undefined) d.inForecast  = sumMonths(d.monthlyHC || {}) > 0;
-    if (d.bde         === undefined) d.bde         = '';
-    if (d.zohoId      === undefined) d.zohoId      = '';
-    // Dual-MRR migration: pricing = Zoho.Amount (sync target). mrrAureum = Don's manual.
-    // Legacy data with pricing but no mrrAureum: move value to mrrAureum (it was Don's, not Zoho's).
-    if (d.mrrAureum   === undefined) { d.mrrAureum = d.pricing || 0; }
-    if (d.inExcel     === undefined) d.inExcel = false;  // set by v11 migration / sync
+    if (d.inForecast === undefined) d.inForecast = sumMonths(d.monthlyHC || {}) > 0;
+    if (d.bde        === undefined) d.bde        = '';
+    if (d.zohoId     === undefined) d.zohoId     = '';
   });
   return deals;
 }
@@ -532,14 +538,11 @@ function isAdmin(u) {
   if (u.role === 'manager') return true;
   return getAdminExtra().indexOf((u.email || '').toLowerCase()) >= 0;
 }
-// Forecast GOVERNANCE (reliability bands, months-4–12 assumptions, long-term growth)
-// is restricted to Carlos + Michael only — per Michael: "only you and I move these."
-// Stricter than isAdmin(): a general admin (e.g. Juliana) does NOT govern these dials.
-var GOVERNANCE_EMAILS = ['carlos.rincon@aspenview.com', 'michael.durham@aspenview.com'];
+// Forecast GOVERNANCE (reliability bands, months-4–12 assumptions, long-term growth,
+// the margin table). After the Don+Michael review, ALL four managers get full access —
+// Don and Juliana included. Kept as its own gate so it's easy to re-restrict later.
 function canGovern(u) {
-  u = u || currentUser;
-  if (!u) return false;
-  return GOVERNANCE_EMAILS.indexOf((u.email || '').toLowerCase()) >= 0;
+  return isAdmin(u);
 }
 function recordKnownUser(u) {
   if (!u || !u.email) return;
@@ -601,9 +604,9 @@ function userStatus(lastSeen) {
 // ONBOARDING TOUR — walks new users through every tab
 // ─────────────────────────────────────────────────────────────────────────────
 var ONBOARDING_STEPS = [
-  { tab: 'overview',   title: 'Overview',                body: 'Your starting point each session. The four KPI cards summarize the next 3 months — deal count, forecasted headcount, adjusted revenue, and margin. Below: a Deal Count Reconciliation (total vs in-Zoho vs not-in-Zoho), the rolling 3-month window, a Rolling Months 4–12 block with its own accuracy, and the reliability bands (M+0 / M+1 / M+2). Managers can pin those bands.' },
+  { tab: 'overview',   title: 'Overview',                body: 'Your starting point each session. The four KPI cards summarize the next 3 months — deal count, forecasted headcount, adjusted revenue, and margin. Below: the rolling 3-month window, a Rolling Months 4–12 block with its own accuracy, and the reliability bands (M+0 / M+1 / M+2). Managers can pin those bands.' },
   { tab: 'pipeline',   title: 'Pipeline',                body: 'The investor-grade view. All deals (excluding Closed Lost) grouped by the 5-phase model: SQL → Recruitment → Pricing → Legal Contracting → Closed Won. Includes a Forecast Coverage by Phase report — how much of the pipeline is actually being forecast — plus Deal Age cards (Healthy / Active / Slow / Critical) flagging what is stuck.' },
-  { tab: 'aureum',     title: 'Aureum Demand Forecast',  body: 'The single input — one row per deal, rolling 12 months. Edit monthly headcount, MRR Aureum, Win %, Margin %. Columns group into Deal Summary and Headcount Build; months 1–3 are precise, 4–12 are lighter. Super-Deal is automatic at 100+ headcount. Turn on Filter by phase (top-left) to focus. 3 mo. revenue & 12-Month Plan are outputs of this grid.' },
+  { tab: 'aureum',     title: 'Aureum Demand Forecast',  body: 'The single input — one row per Zoho deal, rolling 12 months. The Deal column is frozen so it stays visible as you scroll. Deal Summary (MRR, ARR, TCV, contract, $/head, win %, target vs actual margin) comes from Zoho; the Headcount Build is where you type headcount by month — or use the ⇶ Spread button to ramp it automatically. Check Forecast to include a deal; Super-Deal is automatic at 100+ headcount. 3 mo. revenue & 12-Month Plan are outputs of this grid.' },
   { tab: 'threemo',    title: '3 mo. revenue',           body: 'Deep-dive on the next 3 months. Only deals you flagged as Forecast appear here. When the numbers are right, click "🔒 Lock {month}" — that snapshot becomes immutable and is what the accuracy bands compare against when actuals roll in. The "Apply BDE accuracy haircut" checkbox discounts every cell by that BDE\'s historical accuracy.' },
   { tab: 'midterm',    title: '12-Month Plan',           body: 'A read-only OUTPUT of months 4 through 12 — the headcount ramp you entered in Aureum Demand Forecast, with revenue computed automatically (HC × $/head). These months use a single standard margin % and accuracy %, set by a manager in Settings. Reminder: this is "Build & Invoice, NOT Close" — HC by month is when a person STARTS BILLING, not when the deal closes.' },
   { tab: 'longterm',   title: 'Rolling Months 13–24',    body: 'The long-term outlook. No per-deal forecasting at this horizon — take month-12 as the baseline, pick a monthly growth rate, and the model projects the 2-year (24-month) outlook for Finance without forcing certainty that does not exist. The growth rate is set by a manager.' },
@@ -611,7 +614,6 @@ var ONBOARDING_STEPS = [
   { tab: 'accuracy',   title: 'Forecast Accuracy',       body: 'Your forecast track record. Lock a 3-month forecast → wait for the month to close → enter the actuals → the bands populate. Per-BDE table breaks accuracy down by person at M+0 / M+1 / M+2. Use "📥 Backfill historical data" to seed past months and skip the wait. Below: trend charts comparing forecast vs actual over time.' },
   { tab: 'super',      title: 'Super-Deals',             body: 'Qualitative assessment of programs with 100+ headcount. Each program is rated across 9 dimensions: deal confidence, start readiness, readiness gap, speed sensitivity, ramp duration, first phase timing, phase risk concentration, program horizon, deployment map. Edit Peak HC / Phase 1 / Activation / Notes with the pencil icon.' },
   { tab: 'active',     title: 'Active Customers — Actuals', body: 'Customers already producing revenue today: Active, Expanding, Aureum, and Closed Won deals. Shows current headcount, MRR per head, and monthly billing. Different from Pipeline — these are the deals already alive, not the ones in pursuit.' },
-  { tab: 'cleanup',    title: 'Cleanup',                 body: 'Data hygiene. Deals from the original Excel that did not auto-match to a Zoho record show up here with the best Zoho candidates from the same account. Choose Merge to link or Kill to delete the ghost row. Goal: empty this tab so every deal in the platform is linked to Zoho.' },
   { tab: 'settings',   title: 'Settings',                body: 'Configuration. Stage Rules (defaults for Win % and Margin % by stage), Zoho integration status, field mapping reference, JSON export/import for backup. The "↻ Replay tour" button is here — click it any time you want to walk through the modules again.' }
 ];
 var _onboardingStep = 0;
@@ -741,7 +743,7 @@ function maybeStartOnboarding() {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -987,7 +989,8 @@ function zohoPatchDeal(token, dealId, payload, cb) {
 }
 // Paginate through ALL Zoho deals across pages of 200
 function fetchAllZohoDeals(token, cb) {
-  var EXTRA = [ZOHO_MRR_FIELD, ZOHO_MARGIN_FIELD, ZOHO_HC_FIELD].filter(Boolean).join(',');
+  var EXTRA = [ZOHO_MRR_FIELD, ZOHO_MARGIN_FIELD, ZOHO_HC_FIELD,
+               ZOHO_ARR_FIELD, ZOHO_TCV_FIELD, ZOHO_CONTRACT_FIELD, ZOHO_START_FIELD, ZOHO_NRR_FIELD].filter(Boolean).join(',');
   var FIELDS_FULL = ZOHO_BASE_FIELDS + (EXTRA ? ',' + EXTRA : '');
   var all = [];
   // Resilient: if a custom field API name is wrong, Zoho rejects the whole query — so on a
@@ -1101,10 +1104,14 @@ function syncZohoDeals() {
         activationMonth:       r.Closing_Date || p.activationMonth || (seed && seed.activationMonth) || '',
         closingDate:           r.Closing_Date || p.closingDate || '',
         createdAt:             r.Created_Time || p.createdAt || '',
+        // Deal-summary fields from Zoho (Pricing Framework). Depend on the API names configured above.
+        arr:                   zohoNum(r[ZOHO_ARR_FIELD],      p.arr),
+        tcv:                   zohoNum(r[ZOHO_TCV_FIELD],      p.tcv),
+        contractMonths:        zohoNum(r[ZOHO_CONTRACT_FIELD], p.contractMonths),
+        startDate:             r[ZOHO_START_FIELD] || p.startDate || '',
+        nrr:                   zohoNum(r[ZOHO_NRR_FIELD],      p.nrr),
         // MRR Zoho: the Zoho MRR field (falls back to Amount only if MRR is blank). 0 if neither set.
         pricing:               zohoAmount,
-        // MRR Aureum (Don's manual): preserved across syncs. Sync never touches it.
-        mrrAureum:             p.mrrAureum !== undefined ? p.mrrAureum : ((seed && seed.mrrAureum) || 0),
         // Win rate adjusted: Zoho's Probability > local edit > seed > default 0.5
         winRateAdj:            (zohoProb !== null && zohoProb > 0) ? zohoProb : ((p.winRateAdj !== undefined && p.winRateAdj > 0) ? p.winRateAdj : ((seed && seed.winRateAdj) || 0.5)),
         // Snapshot of Zoho's probability at this sync (for Playground diff vs current value)
@@ -1119,7 +1126,6 @@ function syncZohoDeals() {
         // Flags: if user has touched this deal before, respect their flag; else use seed default
         inForecast:            prior ? !!p.inForecast  : (seed ? !!seed.inForecast  : false),
         isSuperDeal:           prior ? !!p.isSuperDeal : (seed ? !!seed.isSuperDeal : false),
-        inExcel:               !!seed || !!(prior && prior.inExcel),  // matched Don's Excel seed
         // Zoho commercial-design target margin (Target_Margin_Band). Source of truth for margin.
         zohoMargin:            parseMarginBand(r[ZOHO_MARGIN_FIELD]),
         zohoMarginBand:        (r[ZOHO_MARGIN_FIELD] !== undefined && r[ZOHO_MARGIN_FIELD] !== null) ? String(r[ZOHO_MARGIN_FIELD]) : '',
@@ -1138,7 +1144,7 @@ function syncZohoDeals() {
               '  • ' + seedMatched + ' new deals matched the Excel seed by name\n' +
               '  • ' + rec.merged + ' prior manual deals reconciled into their Zoho record\n' +
               '  • ' + rec.flagged + ' deals not found in Zoho (kept & flagged for review)\n\n' +
-              'Replace the deal list with this reconciled set? Your HC / MRR Aureum / flags are preserved.';
+              'Replace the deal list with this reconciled set? Your HC / $-per-head / margin / flags are preserved.';
     if (!confirm(msg)) return;
     var finalDeals = mapped.concat(rec.kept);
     backfillOwners(finalDeals);
@@ -1185,6 +1191,7 @@ function fmt$k(n)   { if (!n) return '$0'; if (Math.abs(n) >= 1e6) return '$' + 
 function fmtPct(n)  { if (n === null || n === undefined || isNaN(n)) return '—'; return (n * 100).toFixed(0) + '%'; }
 function fmtPct1(n) { if (n === null || n === undefined || isNaN(n)) return '—'; return (n * 100).toFixed(1) + '%'; }
 function esc(s)     { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
+function fmtDate(s) { if (!s) return '—'; var d = new Date(s); if (isNaN(d.getTime())) return String(s); return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: '2-digit' }); }
 // Super-Deal is AUTOMATIC (Michael's rule): any deal with 100+ total headcount on the
 // project is a Super-Deal — no manual checkbox. Total HC = Zoho deal-level headcount,
 // else the sum of the monthly build, else the seed total. The stored d.isSuperDeal flag
@@ -1274,14 +1281,8 @@ function passSearch(scope, haystack) {
 function normDealName(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
-function buildSeedIndex() {
-  var idx = {};
-  SEED_DEALS.forEach(function(s) {
-    var k = normDealName(s.dealName);
-    if (k) idx[k] = s;
-  });
-  return idx;
-}
+// Excel seed retired — we are 100% Zoho. Empty index = the sync never merges Excel data.
+function buildSeedIndex() { return {}; }
 // Two tokens "match" if equal, or one is a prefix of the other (≥4 chars) — so
 // "info" ≈ "information", "sec" stays distinct from "security" (too short).
 function tokMatch(x, y) {
@@ -1412,89 +1413,19 @@ function mergeSeedData(dst, src) {
   if (src.isSuperDeal && !dst.isSuperDeal) dst.isSuperDeal = true;
   dst.inExcel = true;  // src always comes from Don's Excel seed/ghost
 }
-// Idempotent seed merge with smart name matching — called AFTER Firestore fetch.
-// (1) Merges existing ghosts into matching Zoho deals (cleanup of v5 duplicates),
-// (2) For each seed deal, finds a similar-named local deal and merges data into it,
-//     or adds as ghost if no match. Local flag prevents re-runs in this browser.
+// One-time Zoho-only migration (replaces the old Excel seed/merge logic). We are now
+// 100% Zoho: drop any non-Zoho ghost deals and retire the old Excel-only fields. Runs
+// once per browser; setDeals pushes the cleaned set to Firestore for the whole team.
 function autoApplySeedOnce() {
-  // v9: reconcile Excel ghosts against the live Zoho deals (improved fuzzy matching),
-  // collapsing duplicates so each row reflects Zoho's stage/owner/link. Then re-backfill owners.
-  if (!load('reconciled_v10', false)) {
-    var dv = getDeals();
-    var zoho = dv.filter(function(d){ return d.zohoId; });
-    var ghosts = dv.filter(function(d){ return !d.zohoId; });
-    var r = reconcileGhosts(zoho, ghosts);
-    var all = zoho.concat(r.kept);
-    backfillOwners(all);
-    setDeals(all);
-    save('reconciled_v10', true);
-    console.log('Reconcile v10: ' + r.merged + ' ghosts merged into Zoho deals & removed, ' + r.flagged + ' kept & flagged not-in-Zoho.');
-  }
-  // Independent step: backfill owners on every load-once-per-version (runs even if v7 done)
-  if (!load('owners_backfilled_v8', false)) {
-    var dd = getDeals();
-    var n = backfillOwners(dd);
-    if (n > 0) setDeals(dd);
-    save('owners_backfilled_v8', true);
-    console.log('Owner backfill v8: ' + n + ' deals got an owner from account siblings.');
-  }
-  // v11: mark which deals are in Don's Excel (matched a seed deal, or are not-in-Zoho ghosts).
-  if (!load('inexcel_flagged_v11', false)) {
-    var de = getDeals();
-    var changed = 0;
-    de.forEach(function(d) {
-      var inX = !d.zohoId; // ghosts came from Excel
-      if (!inX) {
-        for (var i = 0; i < SEED_DEALS.length; i++) { if (sameDeal(d, SEED_DEALS[i])) { inX = true; break; } }
-      }
-      if (d.inExcel !== inX) { d.inExcel = inX; changed++; }
-    });
-    if (changed > 0) setDeals(de);
-    save('inexcel_flagged_v11', true);
-    console.log('In-Excel flag v11: ' + de.filter(function(d){return d.inExcel;}).length + ' deals marked as in Don\'s Excel.');
-  }
-  if (load('seed_merged_v7', false)) return;
-  var deals  = getDeals();
-  var zohoDeals = deals.filter(function(d) { return d.zohoId; });
-  var ghosts    = deals.filter(function(d) { return !d.zohoId; });
-
-  // 1) Merge existing ghosts into matching Zoho deals (de-duplicate)
-  var keepGhosts = [];
-  var ghostsMerged = 0;
-  ghosts.forEach(function(g) {
-    var match = null;
-    for (var i = 0; i < zohoDeals.length; i++) {
-      if (sameDeal(g, zohoDeals[i])) { match = zohoDeals[i]; break; }
-    }
-    if (match) { mergeSeedData(match, g); ghostsMerged++; }
-    else keepGhosts.push(g);
-  });
-
-  // 2) For each seed deal, find a local match (Zoho or kept ghost) via nameSimilar
-  var localPool = zohoDeals.concat(keepGhosts);
-  var seedApplied = 0, newGhosts = 0;
-  SEED_DEALS.forEach(function(s) {
-    var match = null;
-    for (var i = 0; i < localPool.length; i++) {
-      if (sameDeal(s, localPool[i])) { match = localPool[i]; break; }
-    }
-    if (match) { mergeSeedData(match, s); seedApplied++; }
-    else {
-      var copy = JSON.parse(JSON.stringify(s));
-      copy.zohoId = '';
-      copy.bde = '';
-      copy.commercialDescription = '';
-      keepGhosts.push(copy);
-      localPool.push(copy);
-      newGhosts++;
-    }
-  });
-
-  var allMerged = zohoDeals.concat(keepGhosts);
-  var ownersFilled = backfillOwners(allMerged);
-  setDeals(allMerged);
-  save('seed_merged_v7', true);
-  console.log('Seed merge v7: ' + ghostsMerged + ' ghosts merged, ' + seedApplied + ' seed applied, ' + newGhosts + ' Excel-only ghosts, ' + ownersFilled + ' owners backfilled from account siblings.');
+  if (load('zoho_only_v1', false)) return;
+  var deals = getDeals();
+  var before = deals.length;
+  var zohoOnly = deals.filter(function(d){ return d.zohoId; });
+  zohoOnly.forEach(function(d){ delete d.mrrAureum; delete d.inExcel; delete d.notInZoho; });
+  backfillOwners(zohoOnly);
+  setDeals(zohoOnly);
+  save('zoho_only_v1', true);
+  console.log('Zoho-only migration: removed ' + (before - zohoOnly.length) + ' non-Zoho (Excel) deals; ' + zohoOnly.length + ' Zoho deals kept.');
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 // Margin resolution (Michael's model):
@@ -1504,15 +1435,27 @@ function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { 
 //   3. Super-Deal rule (if flagged)
 //   4. Stage standard margin
 //   5. Default
-function getMarginFor(deal) {
-  if (deal.marginOverride !== undefined && deal.marginOverride !== null && deal.marginOverride !== '') return parseFloat(deal.marginOverride);
-  if (deal.zohoMargin !== undefined && deal.zohoMargin !== null && deal.zohoMargin !== '' && parseFloat(deal.zohoMargin) > 0) return parseFloat(deal.zohoMargin);
+// TARGET margin — the default from the Stage Rules table (or the Super-Deal rule). This is
+// what we forecast off of until a deal is priced/closed. Margin is NOT in Zoho — it's calculated.
+function targetMarginFor(deal) {
   var rules = getMarginRules();
   if (isSuperDeal(deal)) { var r = rules.find(function(r){ return r.dealType === 'Aureum / Super-Deal'; }); if (r) return r.margin; }
   var match = rules.find(function(r) { return r.dealType === deal.stage; });
   if (match) return match.margin;
   var fb = rules.find(function(r) { return r.dealType === 'Default'; });
   return fb ? fb.margin : 0.35;
+}
+// ACTUAL margin — the real margin once we know pricing (entered per deal, or later from the SOW).
+// Returns null when not yet known. (marginOverride kept as a legacy alias for actualMargin.)
+function actualMarginFor(deal) {
+  if (deal.actualMargin   !== undefined && deal.actualMargin   !== null && deal.actualMargin   !== '') return parseFloat(deal.actualMargin);
+  if (deal.marginOverride !== undefined && deal.marginOverride !== null && deal.marginOverride !== '') return parseFloat(deal.marginOverride);
+  return null;
+}
+// Effective margin used in the forecast: actual if known, otherwise target.
+function getMarginFor(deal) {
+  var a = actualMarginFor(deal);
+  return (a !== null && !isNaN(a)) ? a : targetMarginFor(deal);
 }
 // True when a deal that SHOULD have a real target margin (Commercial Design+) is falling
 // back to a stage default — i.e. neither a manual override nor a Zoho target margin is set.
@@ -1559,18 +1502,31 @@ function parseMarginBand(val) {
   if (v < 0 || v > 1) return null; // sanity
   return v;
 }
-// Effective deal total: MRR Zoho (pricing) wins when populated; otherwise MRR Aureum (Don's manual).
+// Parse a numeric Zoho field value → number, or keep the prior value if blank/invalid.
+function zohoNum(v, prev) {
+  if (v === undefined || v === null || v === '') return (prev !== undefined ? prev : undefined);
+  var n = parseFloat(v);
+  return isNaN(n) ? (prev !== undefined ? prev : undefined) : n;
+}
+// Effective deal MRR: the Zoho MRR field (we are 100% Zoho — no Excel/manual MRR anymore).
 function effectivePricing(deal) {
-  if (deal && deal.pricing && deal.pricing > 0) return deal.pricing;
-  return (deal && deal.mrrAureum) || 0;
+  return (deal && deal.pricing) || 0;
 }
 // Per-resource MRR per month: effective total / total HC in plan.
+// $/head priority (Michael's model): per-deal override → MRR ÷ HC (Zoho) → global default.
 function pricePerHead(deal) {
+  if (deal && deal.dollarPerHead !== undefined && deal.dollarPerHead !== null && deal.dollarPerHead !== '' && parseFloat(deal.dollarPerHead) > 0) {
+    return parseFloat(deal.dollarPerHead);
+  }
   var totHc = sumMonths(deal.monthlyHC) || deal.totalHC;
   var p = effectivePricing(deal);
   if (totHc > 0 && p > 0) return p / totHc;
-  return p || 0;
+  return getDefaultPricePerHead();
 }
+// Global default $/head — editable in Settings, team-synced. Used when a deal has no
+// override and no Zoho MRR to derive from.
+function getDefaultPricePerHead()  { var v = load('default_price_per_head', 10000); return (typeof v === 'number' && !isNaN(v)) ? v : 10000; }
+function setDefaultPricePerHead(v) { save('default_price_per_head', v); logActivity('Forecast', 'Default $/head', '$' + Math.round(v)); renderTab(); }
 function projectedRevenue(deal, monthKey)  { return ((deal.monthlyHC || {})[monthKey] || 0) * pricePerHead(deal); }
 function adjustedRevenue(deal, monthKey)   { return projectedRevenue(deal, monthKey) * getWinRateFor(deal); }
 function marginDollarsAdj(deal, monthKey)  { return adjustedRevenue(deal, monthKey) * getMarginFor(deal); }
@@ -1752,7 +1708,6 @@ function renderTab() {
   if (currentTab === 'super')       return renderSuperDeals();
   if (currentTab === 'active')      return renderActiveCustomers();
   if (currentTab === 'playground')  return renderPlayground();
-  if (currentTab === 'cleanup')     return renderCleanup();
   if (currentTab === 'admin')       return renderAdminPanel();
   if (currentTab === 'settings')    return renderSettings();
   // Removed tabs (trend/fulfillment/mrr/margin) fall through here — redirect to overview.
@@ -1809,20 +1764,6 @@ function renderOverview() {
   html += statCard('Margin $ (3mo)',      fmt$k(totalMargin),        'Adjusted × Margin %', 'good');
   html += '</div>';
 
-  // Deal-count reconciliation — Michael wants the detail behind the max number,
-  // right here in the Overview: how many are in Zoho vs spreadsheet-only ghosts.
-  var inZoho  = deals.filter(function(d){ return d.zohoId; }).length;
-  var ghosts  = deals.filter(function(d){ return !d.zohoId; }).length;
-  var inExcel = deals.filter(function(d){ return d.inExcel; }).length;
-  html += '<div class="card"><div class="card-header"><span class="card-title">Deal Count Reconciliation</span><span class="card-sub">The detail behind the ' + totalDeals + ' total — what is in Zoho vs not</span></div>';
-  html += '<table><thead><tr><th>Source</th><th class="num">Deals</th><th>Notes</th></tr></thead><tbody>';
-  html += '<tr><td><b>Total deals on the platform</b></td><td class="num num-bold">' + totalDeals + '</td><td style="color:var(--muted)">The max — everything shown across all tabs</td></tr>';
-  html += '<tr><td>✓ In Zoho (linked)</td><td class="num">' + inZoho + '</td><td style="color:var(--muted)">Have a Zoho record — the source of truth</td></tr>';
-  html += '<tr><td>⚠ Not in Zoho (spreadsheet ghosts)</td><td class="num" style="color:' + (ghosts ? 'var(--danger)' : 'var(--muted)') + ';font-weight:700">' + ghosts + '</td><td style="color:var(--muted)">From Don\'s Excel, no Zoho match yet — reconcile in <b>Cleanup</b></td></tr>';
-  html += '<tr><td>In Excel baseline</td><td class="num">' + inExcel + '</td><td style="color:var(--muted)">Matched Don\'s APR\'26 workbook</td></tr>';
-  html += '</tbody></table>';
-  if (ghosts) html += '<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="selectTab(\'cleanup\')">Open Cleanup to reconcile ' + ghosts + ' ghost' + (ghosts === 1 ? '' : 's') + ' →</button></div>';
-  html += '</div>';
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Rolling 3-Month Window</span><span class="card-sub">' + monthLabel(months[0]) + ' &middot; ' + monthLabel(months[1]) + ' &middot; ' + monthLabel(months[2]) + '</span></div>';
   html += '<table><thead><tr><th>Metric</th><th class="num">' + monthLabel(months[0]) + '</th><th class="num">' + monthLabel(months[1]) + '</th><th class="num">' + monthLabel(months[2]) + '</th><th class="num">3-mo Total</th></tr></thead><tbody>';
@@ -2242,7 +2183,6 @@ function renderAureumGrid() {
     if (!passMulti('aureum', 'bde',    d.bde))    return false;
     if (f.forecastOnly && !d.inForecast) return false;
     if (f.superOnly    && !isSuperDeal(d)) return false;
-    if (f.excelOnly    && !d.inExcel) return false;
     if (f.phaseFilterOn) {
       var pid = phaseForDeal(d);
       if (!pid || activePhases.indexOf(pid) < 0) return false;
@@ -2307,33 +2247,38 @@ function renderAureumGrid() {
   html += msDropdown('aureum', 'status', 'Status', Object.keys(STATUS_PILL));
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.forecastOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').forecastOnly=this.checked; renderAureumGrid()"> Forecast only</label>';
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.superOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').superOnly=this.checked; renderAureumGrid()"> Super-deals only</label>';
-  html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.excelOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').excelOnly=this.checked; renderAureumGrid()"> In Excel baseline</label>';
   html += '<span class="spacer"></span>';
   html += '<span style="font-size:11px;color:var(--muted)">Showing ' + filtered.length + ' / ' + deals.length + ' deals</span>';
   html += '</div>';
 
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead>';
-  // Row 1 — grouped headers: identifiers (rowspan) + "Deal Summary" + "Headcount Build".
+  // Row 1 — grouped headers. Deal column is frozen so it stays visible when scrolling right.
   html += '<tr>';
+  html += '<th class="freeze-deal" rowspan="2">Deal</th>';
   html += '<th rowspan="2" title="Include this deal in the 3 mo. revenue tab">Fcst</th>';
   html += '<th rowspan="2" title="Automatic — a deal with 100+ total headcount is a Super-Deal">Super</th>';
-  html += '<th rowspan="2" title="✓ = this deal exists in the Excel baseline">Excel</th>';
-  html += '<th rowspan="2">BDE</th><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Deal</th><th rowspan="2">Stage</th><th rowspan="2" title="5-phase sales model">Phase</th><th rowspan="2">Loc</th><th rowspan="2">1st Bill.</th>';
-  html += '<th colspan="5" style="text-align:center;background:#1c3250;color:white;border-left:2px solid var(--gold)">Deal Summary</th>';
+  html += '<th rowspan="2">BDE</th><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Stage</th><th rowspan="2" title="5-phase sales model">Phase</th><th rowspan="2">Loc</th>';
+  html += '<th colspan="10" style="text-align:center;background:#1c3250;color:white;border-left:2px solid var(--gold)">Deal Summary</th>';
   html += '<th colspan="12" style="text-align:center;background:#0A1928;color:white;border-left:2px solid var(--gold)">Headcount Build — Headcount by Month</th>';
   html += '<th rowspan="2"></th>';
   html += '</tr>';
   // Row 2 — sub-columns. First 3 months tinted (precise); a gold divider marks month 3→4.
   html += '<tr>';
-  html += '<th class="num" style="border-left:2px solid var(--gold)" title="MRR from Zoho — read-only, auto-filled by Sync">MRR Zoho</th>';
-  html += '<th class="num" title="MRR Aureum — manual value from Don\'s spreadsheet. Used when MRR Zoho is empty.">MRR Aureum</th>';
-  html += '<th class="num">Win %</th><th class="num">Margin %</th>';
-  html += '<th class="num" title="Total headcount on the project — sum of the monthly build">Total HC</th>';
+  html += '<th style="border-left:2px solid var(--gold)" title="Expected start date (Zoho)">Start</th>';
+  html += '<th class="num" title="Contract length in months (Zoho)">Contract</th>';
+  html += '<th class="num" title="MRR from Zoho">MRR</th>';
+  html += '<th class="num" title="Annual recurring revenue (Zoho)">ARR</th>';
+  html += '<th class="num" title="Total contract value (Zoho)">TCV</th>';
+  html += '<th class="num" title="Total headcount — sum of the monthly build">Total HC</th>';
+  html += '<th class="num" title="$ per head — per-deal override, else MRR÷HC, else the Settings default">$/head</th>';
+  html += '<th class="num" title="Win % — from Zoho Probability, editable per deal">Win %</th>';
+  html += '<th class="num" title="Target margin — default from Stage Rules">Target %</th>';
+  html += '<th class="num" title="Actual margin — once the deal is priced/closed (blank until known)">Actual %</th>';
   months.forEach(function(m, i){
     var first3 = i < 3;
     var bl = (i === 0 || i === 3) ? 'border-left:2px solid var(--gold);' : '';
     var tint = first3 ? 'background:#eef4fb;color:var(--navy);' : '';
-    html += '<th class="num" style="' + bl + tint + '" title="' + (first3 ? 'Months 1–3 — precise (lock these for accuracy)' : 'Months 4–12 — HC × $/head, standard margin') + '">' + monthLabel(m) + '</th>';
+    html += '<th class="num" style="' + bl + tint + '" title="' + (first3 ? 'Months 1–3 — precise (lock these for accuracy)' : 'Months 4–12 — HC × $/head') + '">' + monthLabel(m) + '</th>';
   });
   html += '</tr></thead><tbody>';
 
@@ -2341,32 +2286,30 @@ function renderAureumGrid() {
     var dealIdx = deals.indexOf(d);
     var sup = isSuperDeal(d);
     var pricePerH = pricePerHead(d);
-    var zohoActive = (d.pricing && d.pricing > 0);
     var dealTotHC = sumMonths(d.monthlyHC) || d.totalHC || 0;
+    var aMar = actualMarginFor(d);
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
-    html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast  ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
-    // Super is AUTOMATIC (100+ headcount) — read-only indicator, not a checkbox.
+    // Frozen Deal name (stays visible on horizontal scroll).
+    html += '<td class="freeze-deal">' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '') + '</td>';
+    html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
     html += '<td style="text-align:center" title="' + (sup ? 'Super-Deal — 100+ total headcount (automatic)' : 'Not a Super-Deal (under 100 total headcount)') + '">' + (sup ? '<span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '<span style="color:var(--border)">–</span>') + '</td>';
-    html += '<td style="text-align:center">' + (d.inExcel ? '<span style="color:var(--success)" title="In the Excel baseline">&#10003;</span>' : '<span style="color:var(--border)" title="Not in the Excel baseline">–</span>') + '</td>';
     html += bdeCell(d);
     html += '<td>' + statusPill(d.status) + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
-    html += '<td>' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="margin-left:4px">Aureum</span>' : '') + '</td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
     html += '<td>' + phasePill(phaseForDeal(d)) + '</td>';
     html += '<td style="color:var(--muted)">' + esc(d.location) + '</td>';
-    html += '<td style="color:var(--muted)">' + esc(d.firstBillableMonth) + '</td>';
-    // ── Deal Summary ──
-    html += '<td class="num" style="background:' + (zohoActive ? '#E8F5E9' : 'transparent') + ';color:var(--muted);border-left:2px solid var(--gold)" title="' + (zohoActive ? 'Zoho MRR — winning the calculation' : 'Empty in Zoho — Aureum MRR wins') + '">' + (zohoActive ? fmt$k(d.pricing) : '—') + '</td>';
-    // Highlight MRR Aureum when it differs from Zoho MRR (the 21k-vs-40k case — reconcile in Playground).
-    var mrrDiff = zohoActive && d.mrrAureum && Math.abs((d.mrrAureum || 0) - d.pricing) > 0.5;
-    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.mrrAureum || '') + '" onchange="updateDealField(' + dealIdx + ', \'mrrAureum\', this.value)" title="' + (mrrDiff ? 'Differs from Zoho MRR (' + fmt$k(d.pricing) + ') — reconcile in Playground' : 'Manual MRR (Don\'s spreadsheet). Used when MRR Zoho is empty.') + '"' + (mrrDiff ? ' style="border-color:var(--warn);background:#fff8e1"' : '') + ' placeholder="0"></td>';
-    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
-    var mMiss = marginIsMissing(d);
-    var mTitle = mMiss ? 'No target margin set — using stage default. Set Target_Margin_Band in Zoho or type here.'
-                       : (d.zohoMargin > 0 ? ('From Zoho Target_Margin_Band: ' + esc(d.zohoMarginBand || (Math.round(d.zohoMargin*100)+'%'))) : 'Margin %');
-    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getMarginFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'marginOverride\', this.value/100)"' + (mMiss ? ' style="border-color:var(--warn);background:#fff8e1"' : (d.zohoMargin > 0 ? ' style="border-color:var(--success);background:#E8F5E9"' : '')) + ' title="' + mTitle + '"></td>';
+    // ── Deal Summary (from Zoho) ──
+    html += '<td style="color:var(--muted);border-left:2px solid var(--gold);white-space:nowrap">' + esc(fmtDate(d.startDate || d.closingDate || d.firstBillableMonth)) + '</td>';
+    html += '<td class="num" style="color:var(--muted)">' + (d.contractMonths ? d.contractMonths : '—') + '</td>';
+    html += '<td class="num">' + (d.pricing ? fmt$k(d.pricing) : '—') + '</td>';
+    html += '<td class="num">' + (d.arr ? fmt$k(d.arr) : '—') + '</td>';
+    html += '<td class="num">' + (d.tcv ? fmt$k(d.tcv) : '—') + '</td>';
     html += '<td class="num num-bold" title="Total headcount built across all months">' + (dealTotHC || '—') + '</td>';
+    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.dollarPerHead || '') + '" onchange="updateDealField(' + dealIdx + ', \'dollarPerHead\', this.value)" placeholder="' + Math.round(pricePerH) + '" title="$/head override. Current = ' + fmt$k(pricePerH) + '. Blank = MRR÷HC, else the Settings default."></td>';
+    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
+    html += '<td class="num"><input class="margin" type="number" value="' + Math.round(targetMarginFor(d) * 100) + '" readonly style="background:#f5f5f5;color:var(--muted)" title="Target margin from Stage Rules — edit it in Settings"></td>';
+    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + (aMar !== null ? Math.round(aMar * 100) : '') + '" onchange="updateDealField(' + dealIdx + ', \'actualMargin\', this.value === \'\' ? \'\' : this.value/100)" placeholder="—" title="Actual margin once priced/closed"' + (aMar !== null ? ' style="border-color:var(--success);background:#E8F5E9"' : '') + '></td>';
     // ── Headcount Build (rolling 12 months) ──
     months.forEach(function(m, i) {
       var hc = (d.monthlyHC || {})[m] || 0;
@@ -2380,20 +2323,26 @@ function renderAureumGrid() {
       var mrr = hc * pricePerH;
       html += '<td class="cell-hc ' + cls + '" style="' + bl + '"><input type="number" min="0" value="' + (hc || '') + '" onchange="updateDealHC(' + dealIdx + ', \'' + m + '\', this.value)" placeholder="0" title="' + (mrr ? fmt$k(mrr) + ' MRR · ' + monthLabel(m) : monthLabel(m) + ' headcount') + '"></td>';
     });
-    html += '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')" title="Edit">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + dealIdx + ')" title="Delete this deal from the dashboard">&#10005;</button></td>';
+    html += '<td style="white-space:nowrap"><button class="btn btn-gold btn-sm" onclick="openSpreadModal(' + dealIdx + ')" title="Spread total headcount across months">&#8703;</button> <button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')" title="Edit">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + dealIdx + ')" title="Delete">&#10005;</button></td>';
     html += '</tr>';
   });
 
-  // Totals row. 11 identifier cols + 4 Deal-Summary cols (through Margin %) = 15 spanned,
-  // then a Total-HC total, then the 12 monthly HC totals, then the actions cell.
-  var tot = { hc: months.map(function(){ return 0; }), totHC: 0 };
+  // Totals row (32 columns): 9 identifiers + 2 blank (Start/Contract) + MRR/ARR/TCV/Total HC
+  // + 4 blank ($/head, Win, Target, Actual) + 12 monthly HC totals + actions.
+  var tot = { mrr:0, arr:0, tcv:0, totHC:0, hc: months.map(function(){ return 0; }) };
   filtered.forEach(function(d){
-    months.forEach(function(m, i){ tot.hc[i] += (d.monthlyHC || {})[m] || 0; });
+    tot.mrr += (d.pricing || 0); tot.arr += (d.arr || 0); tot.tcv += (d.tcv || 0);
     tot.totHC += (sumMonths(d.monthlyHC) || d.totalHC || 0);
+    months.forEach(function(m, i){ tot.hc[i] += (d.monthlyHC || {})[m] || 0; });
   });
   html += '<tr style="background:var(--navy);color:white;font-weight:700">';
-  html += '<td colspan="15" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
-  html += '<td class="num" style="color:white;border-left:2px solid var(--gold)">' + tot.totHC + '</td>';
+  html += '<td colspan="9" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
+  html += '<td colspan="2" style="border-left:2px solid var(--gold)"></td>';
+  html += '<td class="num" style="color:white">' + fmt$k(tot.mrr) + '</td>';
+  html += '<td class="num" style="color:white">' + fmt$k(tot.arr) + '</td>';
+  html += '<td class="num" style="color:white">' + fmt$k(tot.tcv) + '</td>';
+  html += '<td class="num" style="color:white">' + tot.totHC + '</td>';
+  html += '<td colspan="4"></td>';
   tot.hc.forEach(function(v, i) { var bl = (i === 0 || i === 3) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:white;' + bl + '">' + v + '</td>'; });
   html += '<td></td></tr>';
 
@@ -2427,11 +2376,11 @@ function updateDealField(idx, field, value) {
   var oldV = d[field];
   d[field] = value === '' || isNaN(parseFloat(value)) ? '' : parseFloat(value);
   setDeals(deals);
-  var labels = { mrrAureum: 'MRR Aureum', winRateAdj: 'Win %', marginOverride: 'Margin %' };
+  var labels = { winRateAdj: 'Win %', actualMargin: 'Actual margin %', marginOverride: 'Actual margin %', dollarPerHead: '$/head' };
   var label = labels[field] || field;
   var fmtVal = function(v){
     if (v === '' || v === undefined || v === null) return '—';
-    if (field === 'winRateAdj' || field === 'marginOverride') return Math.round(v * 100) + '%';
+    if (field === 'winRateAdj' || field === 'actualMargin' || field === 'marginOverride') return Math.round(v * 100) + '%';
     return v;
   };
   logActivity('Forecast', 'Edit ' + label, d.dealName + ': ' + fmtVal(oldV) + ' → ' + fmtVal(d[field]));
@@ -2450,10 +2399,10 @@ function openDealModal(idx) {
   html += '<div class="form-row"><div class="form-group"><label>Location</label><input id="m_location" value="' + esc(d.location) + '"></div>';
   html += '<div class="form-group"><label>First Billable Month</label><input id="m_fbm" value="' + esc(d.firstBillableMonth) + '"></div></div>';
   html += '<div class="form-row"><div class="form-group"><label>MRR Zoho ($) — synced from the Zoho MRR field</label><input type="number" id="m_pricing" value="' + (d.pricing || 0) + '" readonly style="background:#f5f5f5"></div>';
-  html += '<div class="form-group"><label>MRR Aureum ($) — manual value</label><input type="number" id="m_mrrAureum" value="' + (d.mrrAureum || 0) + '"></div></div>';
-  html += '<div class="form-row"><div class="form-group"><label>Adjusted Win Rate (0-1)</label><input type="number" min="0" max="1" step="0.05" id="m_winRate" value="' + (d.winRateAdj || 0.5) + '"></div></div>';
-  html += '<div class="form-row"><div class="form-group"><label>Margin % Override (blank = use rule)</label><input type="number" min="0" max="100" step="1" id="m_margin" value="' + (d.marginOverride !== undefined && d.marginOverride !== '' ? Math.round(d.marginOverride * 100) : '') + '" placeholder="—"></div>';
-  html += '<div class="form-group"><label>Activation Month</label><input id="m_activation" value="' + esc(d.activationMonth || '') + '"></div></div>';
+  html += '<div class="form-group"><label>$ / head (blank = MRR÷HC or default)</label><input type="number" min="0" id="m_dph" value="' + (d.dollarPerHead || '') + '" placeholder="' + Math.round(pricePerHead(d)) + '"></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Adjusted Win Rate (0-1)</label><input type="number" min="0" max="1" step="0.05" id="m_winRate" value="' + (d.winRateAdj || 0.5) + '"></div>';
+  html += '<div class="form-group"><label>Actual Margin % (blank = use target)</label><input type="number" min="0" max="100" step="1" id="m_margin" value="' + (actualMarginFor(d) !== null ? Math.round(actualMarginFor(d) * 100) : '') + '" placeholder="target ' + Math.round(targetMarginFor(d) * 100) + '%"></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Activation Month</label><input id="m_activation" value="' + esc(d.activationMonth || '') + '"></div><div class="form-group"></div></div>';
   html += '<div class="form-group"><label>Commercial Description (from Zoho)</label><textarea id="m_desc">' + esc(d.commercialDescription || '') + '</textarea></div>';
   html += '<div class="modal-actions">';
   if (idx !== null) html += '<button class="btn btn-danger" onclick="deleteDeal(' + idx + ')">Delete</button>';
@@ -2472,10 +2421,11 @@ function saveDeal(idx) {
   d.location  = document.getElementById('m_location').value.trim();
   d.firstBillableMonth = document.getElementById('m_fbm').value.trim();
   d.pricing   = parseFloat(document.getElementById('m_pricing').value) || 0;
-  d.mrrAureum = parseFloat(document.getElementById('m_mrrAureum').value) || 0;
+  var dph = document.getElementById('m_dph').value;
+  d.dollarPerHead = dph === '' ? undefined : (parseFloat(dph) || 0);
   d.winRateAdj = parseFloat(document.getElementById('m_winRate').value) || 0;
   var mo = document.getElementById('m_margin').value;
-  d.marginOverride = mo === '' ? undefined : (parseFloat(mo) || 0) / 100;
+  d.actualMargin = mo === '' ? undefined : (parseFloat(mo) || 0) / 100;
   d.activationMonth = document.getElementById('m_activation').value.trim();
   d.commercialDescription = document.getElementById('m_desc').value;
   if (idx === null) deals.push(d);
@@ -2505,6 +2455,55 @@ function newDealInZoho() {
   if (confirm('New deals are created in Zoho (the source of truth), then pulled in via Sync.\n\nOpen Zoho to create the deal now?')) {
     window.open(url, '_blank', 'noopener');
   }
+}
+
+// ── Headcount Spread tool (Don's ask) ──
+// Enter a total headcount and how it ramps; the tool fills the monthly build so the
+// user doesn't type month by month. Overwrites the deal's current build.
+function openSpreadModal(idx) {
+  var deals = getDeals(); var d = deals[idx]; if (!d) return;
+  var anchor = getAnchorMonth();
+  var totalDefault = (d.zoho_totalHC || sumMonths(d.monthlyHC) || d.totalHC || 0) || '';
+  var monthOpts = rollingMonths(anchor, 24).map(function(m){ return '<option value="' + m + '"' + (m === anchor ? ' selected' : '') + '>' + monthLabel(m) + '</option>'; }).join('');
+  var html = '';
+  html += '<h3>Spread headcount — ' + esc(d.dealName) + '</h3>';
+  html += '<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Enter the total headcount and how it ramps. The tool fills the monthly build for you — it <b>overwrites</b> this deal\'s current build.</p>';
+  html += '<div class="form-row"><div class="form-group"><label>Total headcount</label><input type="number" id="sp_total" min="0" value="' + totalDefault + '"></div>';
+  html += '<div class="form-group"><label>Start month</label><select id="sp_start">' + monthOpts + '</select></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>First wave at start (HC you know now)</label><input type="number" id="sp_first" min="0" value="0" placeholder="0 = even spread"></div>';
+  html += '<div class="form-group"><label># of phases / waves</label><input type="number" id="sp_phases" min="1" value="3"></div></div>';
+  html += '<div class="form-row"><div class="form-group"><label>Months between phases</label><input type="number" id="sp_step" min="1" value="2"></div><div class="form-group"></div></div>';
+  html += '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="applySpread(' + idx + ')">Spread it</button></div>';
+  openModal(html);
+}
+function applySpread(idx) {
+  var deals = getDeals(); var d = deals[idx]; if (!d) { closeModal(); return; }
+  var total  = parseInt(document.getElementById('sp_total').value) || 0;
+  var start  = document.getElementById('sp_start').value;
+  var first  = parseInt(document.getElementById('sp_first').value) || 0;
+  var phases = Math.max(1, parseInt(document.getElementById('sp_phases').value) || 1);
+  var step   = Math.max(1, parseInt(document.getElementById('sp_step').value) || 1);
+  if (total <= 0) { alert('Enter a total headcount greater than 0.'); return; }
+  if (first > total) first = total;
+  var plan = {};
+  if (first > 0) {
+    plan[start] = first;
+    var remaining = total - first, lp = phases - 1;
+    if (lp <= 0) { plan[start] = total; }
+    else {
+      var per = Math.floor(remaining / lp), left = remaining - per * lp;
+      for (var i = 1; i <= lp; i++) { var mk = monthKeyAfter(start, i * step); var c = per + (i === lp ? left : 0); if (c > 0) plan[mk] = (plan[mk] || 0) + c; }
+    }
+  } else {
+    var per2 = Math.floor(total / phases), left2 = total - per2 * phases;
+    for (var j = 0; j < phases; j++) { var mk2 = monthKeyAfter(start, j * step); var c2 = per2 + (j === phases - 1 ? left2 : 0); if (c2 > 0) plan[mk2] = (plan[mk2] || 0) + c2; }
+  }
+  d.monthlyHC = plan;
+  d.totalHC = sumMonths(plan);
+  setDeals(deals);
+  logActivity('Forecast', 'Spread headcount', d.dealName + ' · ' + total + ' HC over ' + phases + ' phase(s), every ' + step + ' mo');
+  closeModal();
+  renderTab();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2645,9 +2644,10 @@ function render3MoRevenue() {
 
   // Bottom summary
   html += '<div class="stat-grid">';
+  html += statCard('3-Mo Billable HC',   tot.hc.reduce(function(s,v){return s+v;},0),           'Total headcount billing over 90 days', 'aureum');
   html += statCard('3-Mo Projected Rev', fmt$k(tot.proj.reduce(function(s,v){return s+v;},0)), 'Raw pipeline × HC × MRR/head');
   html += statCard('3-Mo Adj. Rev',      fmt$k(tot.adj.reduce(function(s,v){return s+v;},0)),  '× Win rate', 'gold');
-  html += statCard('3-Mo Margin $',      fmt$k(tot.mar.reduce(function(s,v){return s+v;},0)),  '× Margin % (per Margin Rules tab)', 'good');
+  html += statCard('3-Mo Margin $',      fmt$k(tot.mar.reduce(function(s,v){return s+v;},0)),  '× Margin %', 'good');
   html += '</div>';
 
   html += '<div class="legend"><span style="font-style:italic">Move the anchor month forward each month to roll the window. Only deals with the <b>Forecast</b> checkbox in Aureum Demand Forecast appear here. Click a deal name to open it in Zoho.</span></div>';
@@ -2936,6 +2936,38 @@ function renderLongtermGrowth() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: FORECAST ACCURACY
 // ─────────────────────────────────────────────────────────────────────────────
+// Week-over-week forecast changes (Don's ask): diff the two most recent weekly snapshots
+// per deal — what was added, removed, or had its headcount / adjusted revenue change.
+function weekOverWeekChanges() {
+  var snaps = getTrendSnapshots().filter(function(s){ return !s.isDemo && s.deals; })
+    .sort(function(a,b){ return a.weekKey < b.weekKey ? -1 : 1; });
+  if (snaps.length < 2) return null;
+  var cur = snaps[snaps.length - 1], prev = snaps[snaps.length - 2];
+  var prevBy = {}; (prev.deals || []).forEach(function(d){ prevBy[d.dealName] = d; });
+  var curBy  = {}; (cur.deals  || []).forEach(function(d){ curBy[d.dealName]  = d; });
+  var added = [], removed = [], changed = [];
+  (cur.deals || []).forEach(function(d){
+    var p = prevBy[d.dealName];
+    if (!p) { added.push(d); return; }
+    if ((p.hc || 0) !== (d.hc || 0) || Math.abs((p.adjRev || 0) - (d.adjRev || 0)) > 0.5) {
+      changed.push({ deal: d, prevHc: p.hc || 0, hc: d.hc || 0, prevAdj: p.adjRev || 0, adj: d.adjRev || 0 });
+    }
+  });
+  (prev.deals || []).forEach(function(d){ if (!curBy[d.dealName]) removed.push(d); });
+  return { cur: cur, prev: prev, added: added, removed: removed, changed: changed };
+}
+function weekOverWeekCardHtml() {
+  var w = weekOverWeekChanges();
+  var h = '<div class="card"><div class="card-header"><span class="card-title">Forecast Changes — Week over Week</span><span class="card-sub">' + (w ? weekShortLabel(w.prev.weekKey) + ' → ' + weekShortLabel(w.cur.weekKey) : 'Need at least two weekly snapshots') + '</span></div>';
+  if (!w) { h += '<div class="empty">Once the platform has two weekly snapshots, changes to forecasted deals (added, removed, headcount up or down) show here.</div></div>'; return h; }
+  if (!w.added.length && !w.removed.length && !w.changed.length) { h += '<div class="empty">No changes to the forecast since last week.</div></div>'; return h; }
+  h += '<table><thead><tr><th>Change</th><th>Deal</th><th>BDE</th><th class="num">HC (prev → now)</th><th class="num">Adj. Rev</th></tr></thead><tbody>';
+  w.added.forEach(function(d){ h += '<tr><td><span class="pill pill-green">+ Added</span></td><td>' + esc(d.dealName) + '</td><td style="color:var(--muted)">' + esc(d.bde || '') + '</td><td class="num">' + (d.hc || 0) + '</td><td class="num">' + fmt$k(d.adjRev || 0) + '</td></tr>'; });
+  w.changed.forEach(function(c){ var dHc = c.hc - c.prevHc; var col = dHc >= 0 ? 'var(--success)' : 'var(--danger)'; h += '<tr><td><span class="pill pill-gold">~ Changed</span></td><td>' + esc(c.deal.dealName) + '</td><td style="color:var(--muted)">' + esc(c.deal.bde || '') + '</td><td class="num" style="color:' + col + '">' + c.prevHc + ' → ' + c.hc + ' (' + (dHc >= 0 ? '+' : '') + dHc + ')</td><td class="num">' + fmt$k(c.prevAdj) + ' → ' + fmt$k(c.adj) + '</td></tr>'; });
+  w.removed.forEach(function(d){ h += '<tr><td><span class="pill pill-red">− Removed</span></td><td>' + esc(d.dealName) + '</td><td style="color:var(--muted)">' + esc(d.bde || '') + '</td><td class="num">' + (d.hc || 0) + '</td><td class="num">' + fmt$k(d.adjRev || 0) + '</td></tr>'; });
+  h += '</tbody></table></div>';
+  return h;
+}
 function renderForecastAccuracy() {
   var snaps    = getSnapshots();
   var actuals  = getActuals();
@@ -2958,6 +2990,9 @@ function renderForecastAccuracy() {
   html += accCard('m1', '+1 Month (M+1)',     bands.m1);
   html += accCard('m2', '+2 Months (M+2)',    bands.m2);
   html += '</div>';
+
+  // Week-over-week forecast changes (Don's ask).
+  html += weekOverWeekCardHtml();
 
   // ── Per-BDE accuracy table ──
   if (bdes.length) {
@@ -4064,8 +4099,9 @@ function toggleApproved(idx) {
 function revertPlayground(idx) {
   var deals = getDeals();
   var d = deals[idx]; if (!d) return;
-  if (!confirm('Revert this deal\'s playground edits and use Zoho values?\n\nThis clears MRR Aureum override, Margin Override, and resets Win % to Zoho\'s probability.')) return;
-  if (d.mrrAureum > 0 && d.pricing > 0) d.mrrAureum = 0;
+  if (!confirm('Revert this deal\'s playground edits and use Zoho values?\n\nThis clears the $/head and Actual Margin overrides, and resets Win % to Zoho\'s probability.')) return;
+  d.dollarPerHead = undefined;
+  d.actualMargin = undefined;
   d.marginOverride = undefined;
   if (d.zoho_winRateAdj !== null && d.zoho_winRateAdj !== undefined) d.winRateAdj = d.zoho_winRateAdj;
   d.approved = false; delete d.approvedBy;
@@ -4173,7 +4209,7 @@ function renderPlayground() {
   html += '</div>';
 
   if (!edited.length) {
-    html += '<div class="card empty">✅ No manual edits yet. Tweak HC, MRR Aureum, Win %, or Margin % in <b>Aureum Demand Forecast</b> and they will appear here for review.</div>';
+    html += '<div class="card empty">✅ No manual edits yet. Tweak HC, $/head, Win %, or Margin % in <b>Aureum Demand Forecast</b> and they will appear here for review.</div>';
     document.getElementById('mainContent').innerHTML = html;
     return;
   }
@@ -4556,10 +4592,12 @@ function renderSettings() {
     html += '<select onchange="setMidtermAccuracy(parseFloat(this.value))" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12.5px;background:white;font-weight:700">';
     [0.05,0.10,0.15,0.20,0.25,0.30,0.40,0.50].forEach(function(g){ var sel = Math.abs(g - mAcc) < 0.0001 ? ' selected' : ''; html += '<option value="' + g + '"' + sel + '>' + Math.round(g*100) + '%</option>'; });
     html += '</select></div>';
-    html += '<div style="font-size:11px;color:var(--muted);max-width:340px">These feed the months 4–12 figures in the 12-Month Plan and the Overview. Only managers can change them.</div>';
+    html += '<div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:5px">Default $ / head</div>';
+    html += '<input type="number" min="0" value="' + getDefaultPricePerHead() + '" onchange="setDefaultPricePerHead(parseFloat(this.value)||0)" style="width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12.5px;font-weight:700"></div>';
+    html += '<div style="font-size:11px;color:var(--muted);max-width:340px">Margin &amp; accuracy feed the months 4–12 figures. The default $/head is used when a deal has no override and no Zoho MRR to divide.</div>';
     html += '</div>';
   } else {
-    html += '<div style="font-size:12.5px;color:var(--navy)">Standard margin <b>' + Math.round(mMar*100) + '%</b> · accuracy <b>' + Math.round(mAcc*100) + '%</b>. <span style="color:var(--muted)">Only a manager can change these.</span></div>';
+    html += '<div style="font-size:12.5px;color:var(--navy)">Standard margin <b>' + Math.round(mMar*100) + '%</b> · accuracy <b>' + Math.round(mAcc*100) + '%</b> · default $/head <b>$' + Math.round(getDefaultPricePerHead()).toLocaleString() + '</b>. <span style="color:var(--muted)">Only a manager can change these.</span></div>';
   }
   html += '</div>';
 
