@@ -235,7 +235,14 @@ Carlos change-set after the morning review:
 - **Super-Deals auto-derived** from live 100+ HC deals (Michael's rule). Don's 7 static seed programs retired (`SUPER_PROGRAMS_SEED = []`). New `reconcileSuperPrograms()` groups flagged deals by client, computes Peak HC / Phase 1 / Activation, and preserves per-client qualitative assessments + notes across syncs. "+ Add Program" / Delete removed; edit modal now only sets activation override + notes.
 - **Zoho-vs-Don comparison.** `pricePerHead()` now uses **MRR ÷ Zoho HC** as the basis (was MRR ÷ own built HC), so if Zoho maps 200 HC and Don forecasts 100, his **Fcst MRR** comes out to half. New Aureum columns **Zoho HC**, **Fcst MRR** (Total HC × $/head) and **Cov %** (Fcst ÷ Zoho MRR) make the gap explicit; this also makes 3 mo. / 12-month revenue respond to how much HC Don actually commits.
 - Backup saved: `index.backup-2026-06-22.html`. JS validated (inline script compiles); column counts reconcile (Aureum 33 / 3 mo 20 / 12-Month 16).
-- ⚠ To verify live: Zoho `Headcounts` populates `zoho_totalHC` for the Zoho HC / Cov % columns; clear the saved anchor if a stale one is pinned.
+- ⚠ To verify live: Zoho `Headcounts` populates `zoho_totalHC` for the Zoho HC column; clear the saved anchor if a stale one is pinned.
+
+**Follow-up refinements same session (live, commits up to `4bfd9de`):**
+- Labels: `Contract` → **Contract Terms** (value shows "N mo"); **TM % / AM %** → **Target MG / Actual MG**.
+- **Cov % column removed** (confused the read; comparison now read directly as Zoho HC vs Fcst HC and MRR vs Fcst MRR).
+- **Fcst HC is now an editable, independent field** (renamed from Total HC): Don types the total he forecasts; it is NOT tied to the monthly cells. The **⇶ Spread** modal defaults to that total and distributes it across the phases/months. `updateForecastHC()` only stores `d.totalHC`. (Editing a month cell directly still re-syncs totalHC to the sum — the one "anchored" path.)
+- **Super-Deal rule fixed**: `dealHcForRollup()` / `isSuperDeal()` now take **`max(zoho_totalHC, monthly build, totalHC)`** instead of Zoho-first — so a deal Don forecasts at 100+ counts even when Zoho mapped fewer (e.g. 257 vs 50). ⚠ This also feeds Pipeline HC totals / size bands (uses the larger of mapped vs forecast). Carlos OK'd keeping it shared.
+- Super-Deals tab: client cell now **links to the largest deal in Zoho**; **SUB-TOTAL row is sticky** (`totals-row`).
 
 ### 2026-06-22 — Don+Michael review change-set (100% Zoho)
 After the live demo to Don & Michael:
