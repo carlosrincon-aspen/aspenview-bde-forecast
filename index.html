@@ -2586,7 +2586,7 @@ function render3MoRevenue() {
 
   var tot = { proj:[0,0,0], adj:[0,0,0], mar:[0,0,0], hc:[0,0,0] };
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead>';
-  html += '<tr><th rowspan="2">BDE</th><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Deal</th><th rowspan="2">Stage</th><th rowspan="2">Phase</th><th rowspan="2" class="num">Win %</th><th rowspan="2" class="num">MRR / Head</th>';
+  html += '<tr><th class="freeze-deal" rowspan="2">Deal</th><th rowspan="2">BDE</th><th rowspan="2">Status</th><th rowspan="2">Client</th><th rowspan="2">Stage</th><th rowspan="2">Phase</th><th rowspan="2" class="num">Win %</th><th rowspan="2" class="num">MRR / Head</th>';
   months.forEach(function(m){ html += '<th colspan="4" style="text-align:center;background:#1c3250;color:white">' + monthLabel(m) + '</th>'; });
   html += '<th rowspan="2" class="num" style="background:var(--navy);color:white">Total Adj.</th></tr>';
   html += '<tr>';
@@ -2599,10 +2599,10 @@ function render3MoRevenue() {
     var pph = pricePerHead(d);
     var wr  = getWinRateFor(d);
     html += '<tr>';
+    html += '<td class="freeze-deal">' + dealNameCell(d) + '</td>';
     html += bdeCell(d);
     html += '<td>' + statusPill(d.status) + '</td>';
     html += '<td>' + esc(d.client) + '</td>';
-    html += '<td>' + dealNameCell(d) + '</td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
     html += '<td>' + phasePill(phaseForDeal(d)) + '</td>';
     html += '<td class="num">' + fmtPct(wr) + '</td>';
@@ -2713,7 +2713,7 @@ function renderMidtermForecast() {
   var totals = months.map(function(){ return { hc: 0, mrr: 0 }; });
   var allDealsIdx = deals;
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
-  html += '<th>BDE</th><th>Client</th><th>Deal</th><th>Stage</th><th>Phase</th><th class="num">MRR / Head</th>';
+  html += '<th class="freeze-deal">Deal</th><th>BDE</th><th>Client</th><th>Stage</th><th>Phase</th><th class="num">MRR / Head</th>';
   months.forEach(function(m){ html += '<th class="num">' + monthLabel(m) + '</th>'; });
   html += '<th class="num" style="background:var(--navy);color:white">12-mo MRR Total</th>';
   html += '</tr></thead><tbody>';
@@ -2724,9 +2724,9 @@ function renderMidtermForecast() {
     var sup = isSuperDeal(d);
     var dealMrrTotal = 0;
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
+    html += '<td class="freeze-deal">' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '') + '</td>';
     html += bdeCell(d);
     html += '<td>' + esc(d.client) + '</td>';
-    html += '<td>' + dealNameCell(d) + (sup ? ' <span class="pill pill-aureum" style="margin-left:4px">Aureum</span>' : '') + '</td>';
     html += '<td>' + stagePill(d.stage) + '</td>';
     html += '<td>' + phasePill(phaseForDeal(d)) + '</td>';
     html += '<td class="num">' + fmt$k(pph) + '</td>';
