@@ -1542,18 +1542,20 @@ function zohoNum(v, prev) {
 function effectivePricing(deal) {
   return (deal && deal.pricing) || 0;
 }
-// Per-resource MRR per month: effective total / total HC in plan.
-// $/head priority (Michael's model): per-deal override → MRR ÷ HC (Zoho) → global default.
+// $/head = the rate Don bills per consultant per month. Priority:
+//   1. Don's CONFIRMED rate (per-deal override) — always wins.
+//   2. Suggested rate = MRR ÷ Zoho HC, but ONLY when Zoho actually carries a headcount (the one
+//      case where the MRR/HC pair is real). We deliberately do NOT derive a rate from Don's own
+//      forecast HC — that's circular and inflates the rate when Zoho mapped fewer heads.
+//   3. No reliable Zoho headcount → the Settings default rate (Don can then confirm a real one).
+// Note: Don's Fcst HC × $/head can legitimately exceed the Zoho MRR — that means Don forecasts
+// more heads than Zoho mapped, not that the rate is wrong.
 function pricePerHead(deal) {
   if (deal && deal.dollarPerHead !== undefined && deal.dollarPerHead !== null && deal.dollarPerHead !== '' && parseFloat(deal.dollarPerHead) > 0) {
     return parseFloat(deal.dollarPerHead);
   }
-  // $/head is a property of the deal: MRR over the Zoho-mapped headcount. So if Zoho maps
-  // 200 HC and Don only forecasts 100, his revenue (HC × $/head) comes out to HALF — not the
-  // full MRR. Falls back to the built HC when Zoho carries no headcount for the deal.
-  var totHc = (deal.zoho_totalHC && deal.zoho_totalHC > 0) ? deal.zoho_totalHC : (sumMonths(deal.monthlyHC) || deal.totalHC);
   var p = effectivePricing(deal);
-  if (totHc > 0 && p > 0) return p / totHc;
+  if (deal && deal.zoho_totalHC > 0 && p > 0) return p / deal.zoho_totalHC;
   return getDefaultPricePerHead();
 }
 // Global default $/head — editable in Settings, team-synced. Used when a deal has no
@@ -2303,7 +2305,7 @@ function renderAureumGrid() {
   html += '<th class="num" title="Contract length in months (Zoho)">Contract Terms</th>';
   html += '<th class="num" title="Headcount mapped on the Zoho deal (Zoho Headcounts field)">Zoho HC</th>';
   html += '<th class="num" title="Headcount Don is forecasting — the SUM of the monthly build below. Set it by typing in the month cells or with the ⇶ Spread tool.">Fcst HC</th>';
-  html += '<th class="num" title="$ per head — per-deal override, else MRR ÷ Zoho HC, else the Settings default">$/head</th>';
+  html += '<th class="num" title="Rate per head per month. Don\'s confirmed rate (green) wins; otherwise a suggestion: MRR ÷ Zoho HC when Zoho has headcount, else the Settings default.">$/head</th>';
   html += '<th class="num" title="MRR from Zoho — based on the full mapped headcount">MRR</th>';
   html += '<th class="num" title="Forecast MRR = Fcst HC × $/head — what Don is actually forecasting">Fcst MRR</th>';
   html += '<th class="num" title="Annual recurring revenue (Zoho)">ARR</th>';
@@ -2347,7 +2349,11 @@ function renderAureumGrid() {
     html += '<td class="num" style="color:var(--muted)">' + (d.contractMonths ? d.contractMonths + ' mo' : '—') + '</td>';
     html += '<td class="num" style="color:var(--muted)" title="Headcount mapped on the Zoho deal">' + (zohoHC || '—') + '</td>';
     html += '<td class="num"><input class="margin" type="number" min="0" value="' + (fcstHC || '') + '" onchange="updateForecastHC(' + dealIdx + ', this.value)" placeholder="0" title="Total headcount Don forecasts for this deal. Type it here, then click ⇶ Spread to distribute it across the phases/months."></td>';
-    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.dollarPerHead || '') + '" onchange="updateDealField(' + dealIdx + ', \'dollarPerHead\', this.value)" placeholder="' + Math.round(pricePerH) + '" title="$/head override. Current = ' + fmt$k(pricePerH) + '. Blank = MRR ÷ Zoho HC, else the Settings default."></td>';
+    var rateConfirmed = d.dollarPerHead !== undefined && d.dollarPerHead !== null && d.dollarPerHead !== '' && parseFloat(d.dollarPerHead) > 0;
+    var rateTitle = rateConfirmed
+      ? 'Confirmed rate: ' + fmt$k(pricePerH) + ' (Don\'s override).'
+      : 'Suggested rate: ' + fmt$k(pricePerH) + (zohoHC ? ' (MRR ÷ Zoho HC).' : ' (Settings default — Zoho has no headcount).') + ' Type to confirm/override.';
+    html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.dollarPerHead || '') + '" onchange="updateDealField(' + dealIdx + ', \'dollarPerHead\', this.value)" placeholder="' + Math.round(pricePerH) + '"' + (rateConfirmed ? ' style="border-color:var(--success);background:#E8F5E9"' : '') + ' title="' + rateTitle + '"></td>';
     html += '<td class="num" title="MRR from Zoho — full mapped headcount">' + (zohoMRR ? fmt$k(zohoMRR) : '—') + '</td>';
     html += '<td class="num num-bold" title="Forecast MRR = Fcst HC × $/head">' + (fcstMRR ? fmt$k(fcstMRR) : '—') + '</td>';
     html += '<td class="num">' + (d.arr ? fmt$k(d.arr) : '—') + '</td>';
@@ -2405,6 +2411,7 @@ function renderAureumGrid() {
   html += '<span><span class="sw" style="background:#E8F5E9"></span>≥ $10K per head</span>';
   html += '<span><span class="sw" style="background:#FDECEA"></span>&lt; $10K per head</span>';
   html += '<span><span class="sw" style="background:#eef4fb"></span>Months 1–3 (precise)</span>';
+  html += '<span><span class="sw" style="background:#E8F5E9;border:1px solid var(--success)"></span>$/head confirmed by Don (green) · blank = suggested rate</span>';
   html += '<span style="margin-left:auto;font-style:italic">Single input — months 1–3 precise, 4–12 forecast. 3 mo. revenue &amp; 12-Month Plan are read-only outputs of this grid.</span>';
   html += '</div>';
 
@@ -2464,7 +2471,7 @@ function openDealModal(idx) {
   html += '<div class="form-row"><div class="form-group"><label>Location</label><input id="m_location" value="' + esc(d.location) + '"></div>';
   html += '<div class="form-group"><label>First Billable Month</label><input id="m_fbm" value="' + esc(d.firstBillableMonth) + '"></div></div>';
   html += '<div class="form-row"><div class="form-group"><label>MRR Zoho ($) — synced from the Zoho MRR field</label><input type="number" id="m_pricing" value="' + (d.pricing || 0) + '" readonly style="background:#f5f5f5"></div>';
-  html += '<div class="form-group"><label>$ / head (blank = MRR÷HC or default)</label><input type="number" min="0" id="m_dph" value="' + (d.dollarPerHead || '') + '" placeholder="' + Math.round(pricePerHead(d)) + '"></div></div>';
+  html += '<div class="form-group"><label>$ / head rate (blank = suggested: MRR ÷ Zoho HC, else default)</label><input type="number" min="0" id="m_dph" value="' + (d.dollarPerHead || '') + '" placeholder="' + Math.round(pricePerHead(d)) + '"></div></div>';
   html += '<div class="form-row"><div class="form-group"><label>Adjusted Win Rate (0-1)</label><input type="number" min="0" max="1" step="0.05" id="m_winRate" value="' + (d.winRateAdj || 0.5) + '"></div>';
   html += '<div class="form-group"><label>Actual Margin % (blank = use target)</label><input type="number" min="0" max="100" step="1" id="m_margin" value="' + (actualMarginFor(d) !== null ? Math.round(actualMarginFor(d) * 100) : '') + '" placeholder="target ' + Math.round(targetMarginFor(d) * 100) + '%"></div></div>';
   html += '<div class="form-row"><div class="form-group"><label>Activation Month</label><input id="m_activation" value="' + esc(d.activationMonth || '') + '"></div><div class="form-group"></div></div>';
