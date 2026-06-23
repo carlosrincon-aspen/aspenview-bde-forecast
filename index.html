@@ -1760,6 +1760,9 @@ function renderOverview() {
   var months   = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
   var totals   = { hc: [0,0,0], proj: [0,0,0], adj: [0,0,0], margin$: [0,0,0] };
   deals.forEach(function(d) {
+    // Match the 3 mo. revenue tab's forecast set exactly: only deals flagged Forecast, and never
+    // Closed Won (captured in cash flow). Otherwise the Overview totals drift above that tab.
+    if (!d.inForecast || phaseForDeal(d) === 5) return;
     months.forEach(function(m, i) {
       totals.hc[i]      += (d.monthlyHC || {})[m] || 0;
       totals.proj[i]    += projectedRevenue(d, m);
@@ -1812,7 +1815,7 @@ function renderOverview() {
   var m412 = rollingMonths(monthKeyAfter(anchor, 3), 9);
   var hc412 = 0, proj412 = 0;
   deals.forEach(function(d){
-    if (!d.inForecast) return;
+    if (!d.inForecast || phaseForDeal(d) === 5) return;
     m412.forEach(function(m){ var h = (d.monthlyHC || {})[m] || 0; hc412 += h; proj412 += h * pricePerHead(d); });
   });
   var mAcc = getMidtermAccuracy(), mMar = getMidtermMargin();
