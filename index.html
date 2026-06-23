@@ -1567,6 +1567,31 @@ function adjustedRevenue(deal, monthKey)   { return projectedRevenue(deal, month
 function marginDollarsAdj(deal, monthKey)  { return adjustedRevenue(deal, monthKey) * getMarginFor(deal); }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SINGLE SOURCE OF TRUTH for the forecast (so Overview / 3 mo. revenue / 12-Month Plan
+// can never drift). forecastDeals() is the ONE definition of "what's in the forecast":
+// flagged Fcst in Aureum, excluding Closed Won (captured in cash flow). forecastTotals()
+// sums HC / projected / adjusted / margin per month using the same helpers every view uses.
+// ─────────────────────────────────────────────────────────────────────────────
+function forecastDeals() {
+  return getDeals().filter(function(d){ return d.inForecast && phaseForDeal(d) !== 5; });
+}
+function forecastTotals(monthKeys, dealList) {
+  var ds = dealList || forecastDeals();
+  var t = { hc: monthKeys.map(function(){ return 0; }), proj: monthKeys.map(function(){ return 0; }),
+            adj: monthKeys.map(function(){ return 0; }), margin: monthKeys.map(function(){ return 0; }) };
+  ds.forEach(function(d){
+    monthKeys.forEach(function(m, i){
+      t.hc[i]     += (d.monthlyHC || {})[m] || 0;
+      t.proj[i]   += projectedRevenue(d, m);
+      t.adj[i]    += adjustedRevenue(d, m);
+      t.margin[i] += marginDollarsAdj(d, m);
+    });
+  });
+  return t;
+}
+function sumArr(a) { return a.reduce(function(s,v){ return s + v; }, 0); }
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SNAPSHOTS (for forecast accuracy)
 // ─────────────────────────────────────────────────────────────────────────────
 function buildPerDealSnapshot(deals, key) {
@@ -1758,18 +1783,9 @@ function renderOverview() {
   var deals    = getDeals();
   var anchor   = getAnchorMonth();
   var months   = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
-  var totals   = { hc: [0,0,0], proj: [0,0,0], adj: [0,0,0], margin$: [0,0,0] };
-  deals.forEach(function(d) {
-    // Match the 3 mo. revenue tab's forecast set exactly: only deals flagged Forecast, and never
-    // Closed Won (captured in cash flow). Otherwise the Overview totals drift above that tab.
-    if (!d.inForecast || phaseForDeal(d) === 5) return;
-    months.forEach(function(m, i) {
-      totals.hc[i]      += (d.monthlyHC || {})[m] || 0;
-      totals.proj[i]    += projectedRevenue(d, m);
-      totals.adj[i]     += adjustedRevenue(d, m);
-      totals.margin$[i] += marginDollarsAdj(d, m);
-    });
-  });
+  // Drawn from the single source of truth — identical to the 3 mo. revenue tab (no view filters).
+  var ft = forecastTotals(months);
+  var totals = { hc: ft.hc, proj: ft.proj, adj: ft.adj, margin$: ft.margin };
   var totalAdj      = totals.adj.reduce(function(s,v){ return s + v; }, 0);
   var totalMargin   = totals.margin$.reduce(function(s,v){ return s + v; }, 0);
   var totalHc       = totals.hc.reduce(function(s,v){ return s + v; }, 0);
@@ -1813,11 +1829,8 @@ function renderOverview() {
 
   // Rolling months 4–12 — the lighter horizon, with its own accuracy % and standard margin.
   var m412 = rollingMonths(monthKeyAfter(anchor, 3), 9);
-  var hc412 = 0, proj412 = 0;
-  deals.forEach(function(d){
-    if (!d.inForecast || phaseForDeal(d) === 5) return;
-    m412.forEach(function(m){ var h = (d.monthlyHC || {})[m] || 0; hc412 += h; proj412 += h * pricePerHead(d); });
-  });
+  var ft412 = forecastTotals(m412);
+  var hc412 = sumArr(ft412.hc), proj412 = sumArr(ft412.proj);
   var mAcc = getMidtermAccuracy(), mMar = getMidtermMargin();
   var adj412 = proj412 * mAcc, mar412 = adj412 * mMar;
   html += '<div class="card"><div class="card-header"><span class="card-title">Rolling Months 4–12</span><span class="card-sub">' + monthLabel(m412[0]) + ' → ' + monthLabel(m412[m412.length-1]) + ' · lighter horizon · accuracy ' + Math.round(mAcc*100) + '% · standard margin ' + Math.round(mMar*100) + '%</span></div>';
@@ -2610,13 +2623,11 @@ function render3MoRevenue() {
   var months = [anchor, monthKeyAfter(anchor, 1), monthKeyAfter(anchor, 2)];
 
   // Only deals flagged "Forecast" in Aureum, then search + multi-select filters
-  var rows = deals.filter(function(d) {
-    if (!d.inForecast) return false;
-    if (phaseForDeal(d) === 5) return false;   // Closed Won is captured in cash flow, not forecasted
+  // Base set = the single source of truth; only VIEW filters (search/BDE/stage) are layered here.
+  var rows = forecastDeals().filter(function(d) {
     if (!passSearch('3mo', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
     if (!passMulti('3mo', 'bde',    d.bde))    return false;
     if (!passMulti('3mo', 'stage',  d.stage))  return false;
-    if (!passMulti('3mo', 'status', d.status)) return false;
     return true;
   });
   // Group by account for traceability
@@ -2743,9 +2754,8 @@ function renderMidtermForecast() {
   // Build a 9-month window starting at anchor + 3 (months 4 through 12 of the plan).
   var months = []; for (var i = 3; i < 12; i++) months.push(monthKeyAfter(anchor, i));
 
-  var rows = deals.filter(function(d) {
-    if (!d.inForecast) return false;
-    if (phaseForDeal(d) === 5) return false;   // Closed Won is captured in cash flow, not forecasted
+  // Base set = the single source of truth; only VIEW filters (search/BDE/stage) are layered here.
+  var rows = forecastDeals().filter(function(d) {
     if (!passSearch('midterm', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
     if (!passMulti('midterm', 'bde',   d.bde))   return false;
     if (!passMulti('midterm', 'stage', d.stage)) return false;
