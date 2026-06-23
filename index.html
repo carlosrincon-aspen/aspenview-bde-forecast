@@ -927,6 +927,7 @@ function loginAs(u) {
   if (adminBtn) adminBtn.style.display = isAdmin(u) ? '' : 'none';
   // autoApplySeedOnce is called from fbInitDataSync after Firestore fetch (or from degrade fallback)
   ensureMonthlySnapshot();
+  ensureZohoActuals();   // Option A: refresh actuals from Zoho Closed Won (quiet; keeps manual entries)
   renderTopNav();
   renderTab();
   refreshZohoPill();
@@ -1180,12 +1181,69 @@ function syncZohoDeals() {
     backfillOwners(finalDeals);
     setDeals(finalDeals);
     save('last_zoho_sync', new Date().toISOString());
+    ensureZohoActuals();   // refresh actuals from the freshly-synced Closed Won deals
     renderTab();
     var warn = window._zohoFieldWarning ? '\n\n⚠ ' + window._zohoFieldWarning : '';
     logActivity('Zoho', 'Sync from Zoho', mapped.length + ' pulled · ' + rec.merged + ' merged · ' + rec.flagged + ' flagged');
     alert('Zoho sync complete: ' + mapped.length + ' from Zoho + ' + rec.kept.length + ' not-in-Zoho = ' + finalDeals.length + ' total. ' + rec.merged + ' duplicates reconciled.' + warn);
   });
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACTUALS FROM ZOHO (Option A) — no manual typing.
+// Each Zoho deal carries its Owner (BDE), so deriving actuals from Closed Won deals gives us
+// per-BDE actuals for real (not the proportional proxy). Proxy semantics: a Closed Won deal is
+// attributed to its START month (when it begins billing — Build & Invoice), valued at its MRR and
+// headcount. This is NOT true billed revenue (that lives in the finance system) — it's the best
+// Zoho-only signal, and Don can still override any month via Enter Actuals.
+// ─────────────────────────────────────────────────────────────────────────────
+function buildZohoActuals() {
+  var byMonth = {};
+  var cur = currentMonthKey();
+  getDeals().forEach(function(d) {
+    if (d.stage !== 'Closed Won') return;
+    var ref = String(d.startDate || d.firstBillableMonth || d.closingDate || '').match(/(\d{4})-(\d{2})/);
+    if (!ref) return;
+    var mk = ref[1] + '-' + ref[2];
+    if (mk >= cur) return;                       // only closed/past months — current month is still in progress
+    var hc = dealHcForRollup(d), rev = effectivePricing(d), mar = rev * getMarginFor(d);
+    var bde = d.bde || 'Unassigned';
+    if (!byMonth[mk]) byMonth[mk] = { hc: 0, adjRev: 0, margin$: 0, byBde: {} };
+    byMonth[mk].hc += hc; byMonth[mk].adjRev += rev; byMonth[mk].margin$ += mar;
+    if (!byMonth[mk].byBde[bde]) byMonth[mk].byBde[bde] = { hc: 0, adjRev: 0, margin$: 0 };
+    byMonth[mk].byBde[bde].hc += hc; byMonth[mk].byBde[bde].adjRev += rev; byMonth[mk].byBde[bde].margin$ += mar;
+  });
+  return byMonth;
+}
+// Write the Zoho-derived actuals into the actuals store. Non-destructive: a month that was entered
+// manually (source !== 'zoho') is never overwritten. Returns what changed. `silent` = no alert/render
+// (used by the auto-run on login / after sync).
+function pullActualsFromZoho(silent) {
+  var derived = buildZohoActuals();
+  var actuals = getActuals();
+  var before  = JSON.stringify(actuals);
+  var written = 0, skipped = 0;
+  Object.keys(derived).forEach(function(mk) {
+    var existing = actuals[mk];
+    if (existing && existing.source !== 'zoho') { skipped++; return; }  // keep manual entries
+    var d = derived[mk];
+    actuals[mk] = { hc: d.hc, adjRev: d.adjRev, margin$: d.margin$, byBde: d.byBde, source: 'zoho', notes: 'Auto from Zoho Closed Won (start month · by owner)' };
+    written++;
+  });
+  var changed = JSON.stringify(actuals) !== before;
+  if (changed) { setActuals(actuals); logActivity('Zoho', 'Pull actuals', written + ' month(s) from Closed Won' + (skipped ? ' · ' + skipped + ' manual kept' : '')); }
+  if (!silent) {
+    alert('Pulled actuals for ' + written + ' month(s) from Zoho Closed Won (grouped by owner).' +
+          (skipped ? '\n' + skipped + ' month(s) with manual actuals were left untouched.' : '') +
+          '\n\nThese are a proxy (deal MRR at its start month), not finance-system billed revenue. Edit any month with Enter Actuals if needed.');
+    renderTab();
+  }
+  return { written: written, skipped: skipped, changed: changed };
+}
+// Quiet auto-refresh of Zoho-sourced actuals — called on login and after a Zoho sync.
+function ensureZohoActuals() {
+  try { pullActualsFromZoho(true); } catch (e) {}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1676,14 +1734,21 @@ function computeAccuracyBands(opts) {
       var act = actuals[targetMonth];
       if (!act) return;
       var fcastRev = subset.reduce(function(t, p) { return t + (p.adjRev[h] || 0); }, 0);
-      // When filtering by BDE, the per-BDE actual is not currently captured;
-      // we use the aggregate actual scaled by this BDE's share of forecast as a
-      // proxy. If no BDE filter, this is just the raw aggregate comparison.
+      // Per-BDE actual: if the actual carries a real by-owner breakdown (Zoho-pulled), use it
+      // directly. Otherwise fall back to the aggregate actual scaled by this BDE's forecast share
+      // (proxy). With no BDE filter, it's the raw aggregate comparison.
       var actRev;
       if (opts.bde) {
-        var totalFcast = Object.values(s.perDeal).reduce(function(t, p) { return t + (p.adjRev[h] || 0); }, 0);
-        var share = totalFcast > 0 ? (fcastRev / totalFcast) : 0;
-        actRev = (act.adjRev || 0) * share;
+        var bkey = (opts.bde || '').toLowerCase();
+        var real = null;
+        if (act.byBde) { Object.keys(act.byBde).forEach(function(k){ if (k.toLowerCase() === bkey) real = act.byBde[k]; }); }
+        if (real) {
+          actRev = real.adjRev || 0;
+        } else {
+          var totalFcast = Object.values(s.perDeal).reduce(function(t, p) { return t + (p.adjRev[h] || 0); }, 0);
+          var share = totalFcast > 0 ? (fcastRev / totalFcast) : 0;
+          actRev = (act.adjRev || 0) * share;
+        }
       } else {
         actRev = act.adjRev || 0;
       }
@@ -3069,7 +3134,7 @@ function renderForecastAccuracy() {
   if (backfillN) sourceBits.push('<b>' + backfillN + ' backfilled month' + (backfillN === 1 ? '' : 's') + '</b>');
   var sourceLabel = sourceBits.length ? 'Computed from ' + sourceBits.join(' + ') : 'Computed from auto-snapshots — lock a forecast or backfill historical data to base accuracy on explicit commitments instead';
   html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · ' + sourceLabel + '</div></div>';
-  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-ghost btn-sm" onclick="openBackfillModal()" title="Enter historical forecast + actual pairs to populate the accuracy bands without waiting for the natural cycle">📥 Backfill historical data</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
+  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-ghost btn-sm" onclick="openBackfillModal()" title="Enter historical forecast + actual pairs to populate the accuracy bands without waiting for the natural cycle">📥 Backfill historical data</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-ghost btn-sm" onclick="pullActualsFromZoho()" title="Pull actuals from Zoho Closed Won deals (grouped by owner). Non-destructive — manual entries are kept.">↻ Pull actuals from Zoho</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
 
   html += '<div class="acc-bands">';
   html += accCard('m0', 'Current Month (M0)', bands.m0);
@@ -3136,7 +3201,8 @@ function renderForecastAccuracy() {
       var varDollars = fc ? (a.adjRev - fc) : 0;
       var varPct = fc ? (varDollars / fc) : 0;
       var vc = Math.abs(varPct) < 0.05 ? 'var-green' : Math.abs(varPct) < 0.15 ? 'var-yellow' : 'var-red';
-      html += '<tr><td>' + monthLabel(mk) + '</td><td class="num">' + (a.hc || '—') + '</td>';
+      var srcTag = a.source === 'zoho' ? ' <span class="pill pill-blue" style="font-size:8.5px" title="Auto-pulled from Zoho Closed Won — edit to override">ZOHO</span>' : (Object.keys(a).length ? ' <span class="pill pill-gray" style="font-size:8.5px" title="Entered manually">MANUAL</span>' : '');
+      html += '<tr><td>' + monthLabel(mk) + srcTag + '</td><td class="num">' + (a.hc || '—') + '</td>';
       html += '<td class="num">' + fmt$k(a.adjRev || 0) + '</td>';
       html += '<td class="num var-cell ' + vc + '">' + (fc ? (varPct >= 0 ? '+' : '') + fmtPct1(varPct) : '—') + '</td>';
       html += '<td><button class="btn btn-ghost btn-sm" onclick="openActualsModal(\'' + mk + '\')">&#9998;</button></td></tr>';
