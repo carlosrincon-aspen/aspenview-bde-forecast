@@ -2486,7 +2486,7 @@ function renderAureumGrid() {
     var y3Dollars = y2Dollars * (1 + grow / 100);
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
     html += '<td class="freeze-1" style="color:var(--muted)">' + esc(d.client) + '</td>';
-    html += '<td class="freeze-2">' + dealNameCell(d) + '</td>';
+    html += '<td class="freeze-2">' + dealNameCell(d) + ' <button class="btn btn-ghost btn-sm" style="padding:0 5px;font-size:12px;color:var(--muted)" onclick="revertDeal(' + dealIdx + ')" title="Revert this deal to its original Zoho values (undo manual changes)">&#8634;</button></td>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
     html += '<td style="text-align:center" title="' + (sup ? 'Super-Deal — 100+ total headcount (automatic)' : 'Not a Super-Deal (under 100 total headcount)') + '">' + (sup ? '<span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '<span style="color:var(--border)">–</span>') + '</td>';
     html += bdeCell(d);
@@ -2521,7 +2521,7 @@ function renderAureumGrid() {
     // Y3 growth % (editable) + projected total
     html += '<td class="num" style="border-left:2px solid var(--gold)"><input class="margin" type="number" step="0.5" value="' + (d.growthPct !== undefined && d.growthPct !== null && d.growthPct !== '' ? d.growthPct : '') + '" onchange="updateDealField(' + dealIdx + ', \'growthPct\', this.value)" placeholder="' + defGrowth + '" title="Growth % for ' + Y3 + ' (blank = default ' + defGrowth + '%)"></td>';
     html += '<td class="num num-bold" style="background:#f3f7fb;color:var(--navy)" title="' + Y3 + ' = ' + Y2 + ' total × (1 + ' + grow + '%)">' + (y3Dollars ? fmt$k(y3Dollars) : '—') + '</td>';
-    html += '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="revertDeal(' + dealIdx + ')" title="Revert to original Zoho values — undo manual changes (HC build, $/head, win %, margin, growth %)">&#8634;</button> <button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')" title="Edit">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + dealIdx + ')" title="Delete">&#10005;</button></td>';
+    html += '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="openDealModal(' + dealIdx + ')" title="Edit">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="killDeal(' + dealIdx + ')" title="Delete">&#10005;</button></td>';
     html += '</tr>';
   });
 
