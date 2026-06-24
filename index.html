@@ -2420,6 +2420,7 @@ function renderAureumGrid() {
   html += '<th rowspan="2" title="Automatic — a deal with 100+ total headcount is a Super-Deal">Super</th>';
   html += '<th rowspan="2">BDE</th><th rowspan="2">Stage</th><th rowspan="2" title="5-phase sales model">Phase</th>';
   html += '<th colspan="12" style="text-align:center;background:#1c3250;color:white;border-left:2px solid var(--gold)">Deal Summary</th>';
+  html += '<th rowspan="2" class="num" title="Revert this deal to its original Zoho values (undo manual changes)">Revert</th>';
   html += '<th rowspan="2" class="num" style="border-left:2px solid var(--gold)" title="Spread the total headcount across the months automatically">Spread</th>';
   html += '<th colspan="' + (N1 + 1) + '" style="text-align:center;background:#0A1928;color:white;border-left:2px solid var(--gold)">' + Y1 + ' — Headcount by Month</th>';
   html += '<th colspan="13" style="text-align:center;background:#0A1928;color:white;border-left:2px solid var(--gold)">' + Y2 + ' — Headcount by Month</th>';
@@ -2486,7 +2487,7 @@ function renderAureumGrid() {
     var y3Dollars = y2Dollars * (1 + grow / 100);
     html += '<tr' + (sup ? ' class="row-super"' : '') + '>';
     html += '<td class="freeze-1" style="color:var(--muted)">' + esc(d.client) + '</td>';
-    html += '<td class="freeze-2">' + dealNameCell(d) + ' <button class="btn btn-ghost btn-sm" style="padding:0 5px;font-size:12px;color:var(--muted)" onclick="revertDeal(' + dealIdx + ')" title="Revert this deal to its original Zoho values (undo manual changes)">&#8634;</button></td>';
+    html += '<td class="freeze-2">' + dealNameCell(d) + '</td>';
     html += '<td style="text-align:center"><input type="checkbox"' + (d.inForecast ? ' checked' : '') + ' onchange="toggleDealFlag(' + dealIdx + ', \'inForecast\')" title="Include in 3 mo. revenue"></td>';
     html += '<td style="text-align:center" title="' + (sup ? 'Super-Deal — 100+ total headcount (automatic)' : 'Not a Super-Deal (under 100 total headcount)') + '">' + (sup ? '<span class="pill pill-aureum" style="font-size:9px">SUPER</span>' : '<span style="color:var(--border)">–</span>') + '</td>';
     html += bdeCell(d);
@@ -2510,7 +2511,8 @@ function renderAureumGrid() {
     html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
     html += '<td class="num"><input class="margin" type="number" value="' + Math.round(targetMarginFor(d) * 100) + '" readonly style="background:#f5f5f5;color:var(--muted)" title="Target margin from Stage Rules — edit it in Settings"></td>';
     html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + (aMar !== null ? Math.round(aMar * 100) : '') + '" onchange="updateDealField(' + dealIdx + ', \'actualMargin\', this.value === \'\' ? \'\' : this.value/100)" placeholder="—" title="Actual margin once priced/closed"' + (aMar !== null ? ' style="border-color:var(--success);background:#E8F5E9"' : '') + '></td>';
-    // Spread
+    // Revert + Spread (per-row actions, grouped just before the months)
+    html += '<td class="num" style="text-align:center"><button class="btn btn-ghost btn-sm" style="padding:1px 6px;font-size:13px;color:var(--muted)" onclick="revertDeal(' + dealIdx + ')" title="Revert this deal to its original Zoho values (undo manual changes)">&#8634;</button></td>';
     html += '<td class="num" style="border-left:2px solid var(--gold);text-align:center"><button class="btn btn-gold btn-sm" style="padding:1px 7px;font-size:11px" onclick="openSpreadModal(' + dealIdx + ')" title="Spread total headcount across the months automatically">⇶</button></td>';
     // Y1 months + Y1 total
     monthsY1.forEach(function(m, i){ html += hcCell(d, dealIdx, m, sup, pricePerH, i === 0); });
@@ -2553,6 +2555,7 @@ function renderAureumGrid() {
   html += '<td class="num" style="color:white">' + fmt$k(tot.fcstMRR) + '</td>';      // Fcst MRR
   html += '<td class="num" style="color:white">' + fmt$k(tot.arr) + '</td>';          // ARR
   html += '<td colspan="3"></td>';                                                   // Win, TM, AM
+  html += '<td></td>';                                                               // Revert
   html += '<td style="border-left:2px solid var(--gold)"></td>';                     // Spread
   tot.hcY1.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:white;' + bl + '">' + v + '</td>'; });
   html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';        // Y1 total $
