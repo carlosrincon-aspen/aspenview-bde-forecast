@@ -225,6 +225,15 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-06-24 — Michael 1:1 change-set (multi-year Aureum, lock/push at bottom, $/head split, branding)
+Implemented from the Carlos↔Michael meeting (scope: this tool only):
+- **Multi-year on one Aureum tab** (calendar year): deal details → **Y1 months (anchor→Dec)** → **Y1 $ total** → **Y2 months (Jan–Dec)** → **Y2 $ total** → **Y3 growth %** (per-deal, editable, default % in the toolbar — manager-only) → **Y3 $ total**. Year totals = Σ HC × $/head; Y3 = Y2 × (1+growth%). Spread works across Y1+Y2 (24-mo). Helpers `getDefaultGrowthPct/effectiveGrowthPct`, `yearDollars`; new synced key `default_growth_pct`.
+- **$/head split** (Michael's revert idea): **Zoho $/head** (read-only, MRR÷Zoho HC — original never overwritten) + **Fcst $/head** (editable, green when confirmed). Zoho HC also read-only. `zohoPricePerHead()` added.
+- **Bottom sticky action bar** on Aureum: bottom-line totals (Fcst HC + Y1/Y2/Y3 $) + **🔒 Lock {anchor}** + **↗ Push changes to Zoho**, so the flow (select Fcst → adjust → see totals → lock → push) stays on one screen. `aureumLockForecast()` locks then prompts to push; `aureumPushToZoho()` requires lock first (routes to existing push; needs Zoho WRITE scope, still pending).
+- **Branding**: wordmark "VIEW" now blue (`--brand-blue #5B9BD5`, ⚠ confirm exact hex with Alejandra/Laura), trees moved to the RIGHT of the text in header + login.
+- Column counts reconcile (43 with a July anchor = 37 + 6 Y1 months); JS validated. Other tabs (3 mo/12-Month/Overview) left as-is per Michael ("don't worry about other tabs yet").
+- ⚠ Pending from the meeting (not yet done): Overview multi-year summary (26/27/28), tool name, logo polish ("lollipops"), real "push changed deals" once WRITE scope lands.
+
 ### 2026-06-22 (PM) — Table restructure + rolling quarter + auto Super-Deals + Zoho-vs-Don
 Carlos change-set after the morning review:
 - **Column order across all forecast tables** (Aureum, 3 mo. revenue, 12-Month Plan, Super-Deal rollup): now lead with **Client → Deal** (both frozen-left via new `.freeze-1` / `.freeze-2` CSS).
