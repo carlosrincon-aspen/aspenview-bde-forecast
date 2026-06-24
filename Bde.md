@@ -225,6 +225,10 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-06-24 (PM) — Tool named "Horizon" + official brand palette
+- **Tool name: "Horizon"** (Carlos/Michael had no name; Aureum is taken — Horizon fits the AspenView navigation family: Vantage / Compass / Horizon, and "view → horizon"). Set in `<title>`, header, and login. Alternatives floated: Summit, Meridian. NOTE: the main tab is still labelled "Aureum Demand Forecast" — the word "Aureum" there is the aureum-tier (super-deal) concept, not the product; rename later if it causes confusion.
+- **Official brand palette** applied from `AspenView Color Codes.pdf` via CSS vars (propagates to all var-based theming): `--navy #0C1A28` (Dark Blue), `--navy2 #1B3244` (Pre-Dark), `--gold #FEC219` (Aureum) + `--gold2 #D4AF37` (alt), `--brand-blue #008BC9` (Main Blue) + `--brand-blue2 #00AFE6`, plus light/baby/greyish blues. Wordmark "VIEW" now Main Blue. ⚠ Some accents are hardcoded hex (phase pills, banner backgrounds) and weren't swapped — tune later if needed. If `--gold #FEC219` reads too bright, switch to `#D4AF37`.
+
 ### 2026-06-24 — Michael 1:1 change-set (multi-year Aureum, lock/push at bottom, $/head split, branding)
 Implemented from the Carlos↔Michael meeting (scope: this tool only):
 - **Multi-year on one Aureum tab** (calendar year): deal details → **Y1 months (anchor→Dec)** → **Y1 $ total** → **Y2 months (Jan–Dec)** → **Y2 $ total** → **Y3 growth %** (per-deal, editable, default % in the toolbar — manager-only) → **Y3 $ total**. Year totals = Σ HC × $/head; Y3 = Y2 × (1+growth%). Spread works across Y1+Y2 (24-mo). Helpers `getDefaultGrowthPct/effectiveGrowthPct`, `yearDollars`; new synced key `default_growth_pct`.

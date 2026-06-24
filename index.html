@@ -3,17 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AspenView — BDE Rolling 12-Month Sales &amp; Readiness Forecast</title>
+<title>Horizon — AspenView Sales Forecast</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230A1928'/%3E%3Crect x='6' y='19' width='4' height='7' rx='1' fill='%23E8B84B' opacity='0.55'/%3E%3Crect x='13' y='15' width='4' height='11' rx='1' fill='%23E8B84B' opacity='0.75'/%3E%3Crect x='20' y='10' width='4' height='16' rx='1' fill='%23E8B84B'/%3E%3Cpath d='M5 18 L12 13 L18 15 L26 6' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M21 6 L26 6 L26 11' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
     color-scheme: light;
-    --navy:    #0A1928;
-    --navy2:   #132336;
-    --navy3:   #1c3250;
-    --gold:    #E8B84B;
-    --gold2:   #d4a53d;
-    --brand-blue: #5B9BD5;  /* AspenView wordmark blue — confirm exact hex with Alejandra/Laura */
+    /* AspenView official palette (from the brand color codes PDF) */
+    --navy:    #0C1A28;     /* Dark Blue (primary dark + text) */
+    --navy2:   #1B3244;     /* Pre-Dark Blue */
+    --navy3:   #173a52;     /* mid blue for gradients */
+    --gold:    #FEC219;     /* Aureum */
+    --gold2:   #D4AF37;     /* Aureum alternate */
+    --brand-blue: #008BC9;  /* Main Blue */
+    --brand-blue2:#00AFE6;  /* New Blue (alternate accent) */
+    --light-blue: #EBF3FC;  /* Light Blue (backgrounds) */
+    --baby-blue:  #99CEE8;
+    --greyish-blue:#507289;
     --softblue:#D9F1FB;
     --softgreen:#E8F5E9;
     --softred: #FDECEA;
@@ -232,7 +237,7 @@
       <path d="M 3 31 Q 25 42 47 31" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
     </svg>
   </div>
-  <div class="login-title">BDE Rolling 12-Month Sales &amp; Readiness Forecast</div>
+  <div class="login-title">Horizon <span style="opacity:.6;font-weight:400">— Sales &amp; Demand Forecast</span></div>
   <div class="login-box">
     <div class="hint">Sign in with your AspenView Google account</div>
     <button class="login-pick" onclick="signInWithGoogle()" style="display:flex;align-items:center;gap:10px;margin:0 auto;padding:12px 28px;font-size:14px">
@@ -262,7 +267,7 @@
         <path d="M 3 31 Q 25 42 47 31" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
       </svg>
     </div>
-    <div class="header-center">BDE Rolling 12-Month Sales &amp; Readiness Forecast</div>
+    <div class="header-center"><b>Horizon</b> <span style="opacity:.55;font-weight:400">· Sales &amp; Demand Forecast</span></div>
     <div class="header-right">
       <a class="logout-btn" href="guide-en.html" target="_blank" rel="noopener" style="text-decoration:none" title="Open the User Guide in a new tab">&#128214; Guide</a>
       <button class="logout-btn" onclick="startOnboarding()" title="Launch the guided tour — walks you through every module">&#127891; Take Tour</button>
