@@ -4662,8 +4662,10 @@ function resetMarginRules() {
 // Returns an object with per-field diffs (each can be null = no diff) plus a boolean any.
 function playgroundDiff(d) {
   var diff = { hc: null, mrr: null, win: null, margin: null, any: false };
-  // HC override: Zoho stores a single Total Headcount; the playground stores monthly HC. Compare totals.
-  var playHc = sumMonths(d.monthlyHC || {});
+  // HC override: compare Zoho's Total Headcount against Don's FORECAST total (the Fcst HC field —
+  // same value the Aureum grid shows), NOT the monthly-build sum. An empty build (not yet spread)
+  // is not a manual change, so a deal that equals Zoho no longer shows a phantom diff here.
+  var playHc = d.totalHC || sumMonths(d.monthlyHC || {}) || 0;
   if (d.zoho_totalHC !== null && d.zoho_totalHC !== undefined && Math.abs(playHc - d.zoho_totalHC) > 0.5) {
     diff.hc = { zoho: d.zoho_totalHC, play: playHc };
     diff.any = true;
