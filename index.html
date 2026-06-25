@@ -4484,6 +4484,20 @@ function renderMRRForecast() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: ACTIVE CUSTOMERS - ACTUALS
 // ─────────────────────────────────────────────────────────────────────────────
+// Active Customers — which client groups are expanded (collapsed by default). In-memory,
+// keyed by client name; survives re-renders within the session.
+var activeExpanded = {};
+var _activeClients = [];
+function toggleActiveClient(i) {
+  var c = _activeClients[i]; if (c === undefined) return;
+  if (activeExpanded[c]) delete activeExpanded[c]; else activeExpanded[c] = true;
+  renderTab();
+}
+function setAllActiveExpanded(open) {
+  activeExpanded = {};
+  if (open) _activeClients.forEach(function(c){ activeExpanded[c] = true; });
+  renderTab();
+}
 function renderActiveCustomers() {
   // Active = account status is Active/Expanding/Aureum, OR the deal is Closed Won (won = billing).
   var base = getDeals().filter(function(d){ return /Aureum Active|Active|Expanding/.test(d.status) || d.stage === 'Closed Won'; });
@@ -4494,21 +4508,8 @@ function renderActiveCustomers() {
     if (!passMulti('active', 'bde', d.bde)) return false;
     return true;
   });
-  var html = '';
-  html += '<div class="page-title"><div><h1>Active Customers — Actuals</h1><div class="sub">Customers currently producing revenue (Active / Expanding / Aureum, plus Closed Won deals)</div></div></div>';
-  html += '<div class="stat-grid">';
-  html += statCard('Active Customers', new Set(deals.map(function(d){return d.client;})).size, deals.length + ' deals', 'good');
-  html += statCard('Aureum Customers', new Set(deals.filter(function(d){return d.status==='Aureum Active Account';}).map(function(d){return d.client;})).size, 'Aureum-tier accounts', 'aureum');
-  html += statCard('Annualized Rev',   fmt$k(deals.reduce(function(s,d){return s + effectivePricing(d)*12;}, 0)), 'Effective MRR × 12 (raw)', 'gold');
-  html += '</div>';
-  html += '<div class="toolbar">' + searchBox('active', 'Search deal, client, BDE…') + msDropdown('active', 'bde', 'BDE', bdes) + msDropdown('active', 'status', 'Status', ['Aureum Active Account','Active Client','Expanding']) + '</div>';
-  html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#f6f9fc;border-radius:4px;border-left:3px solid var(--gold)"><b>HC legend:</b> a plain number is the manually-planned monthly HC for the anchor month · <b style="color:var(--navy)">·z</b> next to a number means the value came from the Zoho <code>Headcounts</code> field (used when no monthly HC has been entered yet — typical for Closed Won deals already in operation).</div>';
-  html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#fff8e1;border-radius:4px;border-left:3px solid var(--gold)">Deals are grouped by <b>client</b>, each with a subtotal row (Don\'s ask: see one customer\'s total headcount and MRR at a glance — search a client name to isolate it).</div>';
-  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
-  html += '<th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th class="num">HC (current)</th><th class="num">MRR/Head</th><th class="num">Monthly $</th><th class="num">Margin %</th>';
-  html += '</tr></thead><tbody>';
   var anchor = getAnchorMonth();
-  // Per-deal HC + monthly $ (shared logic), reused for both rows and subtotals.
+  // Per-deal HC + monthly $ (shared logic), reused for rows and client subtotals.
   function _row(d) {
     // HC fallback chain: planned HC for the anchor month → Zoho Headcounts → totalHC → 0.
     var monthHC = (d.monthlyHC || {})[anchor] || 0;
@@ -4518,35 +4519,64 @@ function renderActiveCustomers() {
     var monthly$ = hc > 0 ? pricing : 0;
     return { hc: hc, fromZoho: (monthHC === 0 && d.zoho_totalHC), pph: pph, monthly$: monthly$ };
   }
-  // Group by client, then sort deals within each client by name.
+  // Group by client.
   var byClient = {};
   deals.forEach(function(d){ var c = d.client || '—'; (byClient[c] = byClient[c] || []).push(d); });
   var clients = Object.keys(byClient).sort(function(a,b){ return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
-  var grand = { hc: 0, monthly$: 0 };
-  clients.forEach(function(c) {
+  _activeClients = clients;
+  var anyOpen = clients.some(function(c){ return activeExpanded[c]; });
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Active Customers — Actuals</h1><div class="sub">Customers currently producing revenue (Active / Expanding / Aureum, plus Closed Won deals)</div></div></div>';
+  html += '<div class="stat-grid">';
+  html += statCard('Active Customers', clients.length, deals.length + ' deals', 'good');
+  html += statCard('Aureum Customers', new Set(deals.filter(function(d){return d.status==='Aureum Active Account';}).map(function(d){return d.client;})).size, 'Aureum-tier accounts', 'aureum');
+  html += statCard('Annualized Rev',   fmt$k(deals.reduce(function(s,d){return s + effectivePricing(d)*12;}, 0)), 'Effective MRR × 12 (raw)', 'gold');
+  html += '</div>';
+  html += '<div class="toolbar">' + searchBox('active', 'Search deal, client, BDE…') + msDropdown('active', 'bde', 'BDE', bdes) + msDropdown('active', 'status', 'Status', ['Aureum Active Account','Active Client','Expanding']);
+  html += '<span class="spacer"></span><button class="btn btn-ghost btn-sm" onclick="setAllActiveExpanded(' + (anyOpen ? 'false' : 'true') + ')">' + (anyOpen ? '▸ Collapse all' : '▾ Expand all') + '</button></div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#fff8e1;border-radius:4px;border-left:3px solid var(--gold)">Grouped by <b>client</b> — click a client row (or ▸) to expand its deals. <b># Deals</b>, total <b>HC</b> and <b>Monthly $</b> show on the client line. <b style="color:var(--navy)">·z</b> on a deal\'s HC = value from the Zoho <code>Headcounts</code> field (no monthly HC entered yet).</div>';
+  html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
+  html += '<th>Client</th><th class="num"># Deals</th><th class="num">HC (current)</th><th class="num">Monthly $</th><th>Status</th><th>Deal</th><th>Stage</th><th class="num">MRR/Head</th><th class="num">Margin %</th>';
+  html += '</tr></thead><tbody>';
+  var grand = { hc: 0, monthly$: 0, deals: 0 };
+  clients.forEach(function(c, ci) {
     var list = byClient[c].slice().sort(function(a,b){ return (a.dealName||'').toLowerCase() < (b.dealName||'').toLowerCase() ? -1 : 1; });
     var cHC = 0, cMonthly = 0;
-    list.forEach(function(d) {
-      var r = _row(d);
-      cHC += r.hc; cMonthly += r.monthly$;
-      var hcLabel = r.hc + (r.fromZoho ? ' <span style="color:var(--muted);font-size:10px" title="From Zoho Headcounts (no monthly HC planned for this month)">·z</span>' : '');
-      html += '<tr><td>' + statusPill(d.status) + '</td><td style="color:var(--muted)">' + esc(d.client) + '</td><td><b>' + esc(d.dealName) + '</b></td>';
-      html += '<td>' + stagePill(d.stage) + '</td>';
-      html += '<td class="num">' + hcLabel + '</td>';
-      html += '<td class="num">' + fmt$k(r.pph) + '</td>';
-      html += '<td class="num num-bold">' + fmt$k(r.monthly$) + '</td>';
-      html += '<td class="num">' + fmtPct(getMarginFor(d)) + '</td></tr>';
-    });
-    grand.hc += cHC; grand.monthly$ += cMonthly;
-    // Client subtotal row
-    html += '<tr style="background:#eef4fb;font-weight:700"><td></td><td colspan="3" style="color:var(--navy)">' + esc(c) + ' — subtotal (' + list.length + ' deal' + (list.length === 1 ? '' : 's') + ')</td>';
-    html += '<td class="num" style="color:var(--navy)">' + cHC + '</td><td></td>';
-    html += '<td class="num" style="color:var(--navy)">' + fmt$k(cMonthly) + '</td><td></td></tr>';
+    var rows = list.map(function(d){ var r = _row(d); cHC += r.hc; cMonthly += r.monthly$; return { d: d, r: r }; });
+    grand.hc += cHC; grand.monthly$ += cMonthly; grand.deals += list.length;
+    var open = !!activeExpanded[c];
+    // Client header row (collapsible) — summary lives here.
+    html += '<tr style="background:#eef4fb;cursor:pointer" onclick="toggleActiveClient(' + ci + ')" title="Click to ' + (open ? 'collapse' : 'expand') + ' ' + esc(c) + '">';
+    html += '<td style="font-weight:700;color:var(--navy)"><span style="display:inline-block;width:14px;color:var(--muted)">' + (open ? '▾' : '▸') + '</span>' + esc(c) + '</td>';
+    html += '<td class="num" style="font-weight:700;color:var(--navy)">' + list.length + '</td>';
+    html += '<td class="num" style="font-weight:700;color:var(--navy)">' + cHC + '</td>';
+    html += '<td class="num" style="font-weight:700;color:var(--navy)">' + fmt$k(cMonthly) + '</td>';
+    html += '<td colspan="5"></td></tr>';
+    // Deal detail rows — only when expanded.
+    if (open) {
+      rows.forEach(function(x){
+        var d = x.d, r = x.r;
+        var hcLabel = r.hc + (r.fromZoho ? ' <span style="color:var(--muted);font-size:10px" title="From Zoho Headcounts (no monthly HC planned)">·z</span>' : '');
+        html += '<tr style="background:#fcfdff">';
+        html += '<td style="padding-left:22px;color:var(--muted)">' + esc(d.client) + '</td>';
+        html += '<td></td>';
+        html += '<td class="num">' + hcLabel + '</td>';
+        html += '<td class="num num-bold">' + fmt$k(r.monthly$) + '</td>';
+        html += '<td>' + statusPill(d.status) + '</td>';
+        html += '<td><b>' + esc(d.dealName) + '</b></td>';
+        html += '<td>' + stagePill(d.stage) + '</td>';
+        html += '<td class="num">' + fmt$k(r.pph) + '</td>';
+        html += '<td class="num">' + fmtPct(getMarginFor(d)) + '</td></tr>';
+      });
+    }
   });
   // Grand total
-  html += '<tr style="background:var(--navy);color:white;font-weight:700"><td colspan="4" style="color:white">TOTAL (' + clients.length + ' clients · ' + deals.length + ' deals)</td>';
-  html += '<td class="num" style="color:white">' + grand.hc + '</td><td></td>';
-  html += '<td class="num" style="color:var(--gold)">' + fmt$k(grand.monthly$) + '</td><td></td></tr>';
+  html += '<tr style="background:var(--navy);color:white;font-weight:700"><td style="color:white">TOTAL (' + clients.length + ' clients)</td>';
+  html += '<td class="num" style="color:white">' + grand.deals + '</td>';
+  html += '<td class="num" style="color:white">' + grand.hc + '</td>';
+  html += '<td class="num" style="color:var(--gold)">' + fmt$k(grand.monthly$) + '</td>';
+  html += '<td colspan="5"></td></tr>';
   html += '</tbody></table></div></div>';
   document.getElementById('mainContent').innerHTML = html;
 }
