@@ -1320,9 +1320,19 @@ function fmtDate(s) { if (!s) return '—'; var d = new Date(s); if (isNaN(d.get
 // fallback). Used to default the Spread tool's start month to a month AFTER close —
 // Michael's conservative cash-flow rule: people start billing ~a month after we sign.
 function dealCloseMonthKey(d) {
-  var raw = (d && (d.closingDate || d.startDate || d.firstBillableMonth)) || '';
-  var m = String(raw).match(/(\d{4})-(\d{2})/);
-  if (m) return m[1] + '-' + m[2];
+  var raw = String((d && (d.closingDate || d.startDate || d.firstBillableMonth)) || '');
+  if (!raw) return null;
+  // 1) ISO date "2026-08-30"
+  var iso = raw.match(/(\d{4})-(\d{2})/);
+  if (iso) return iso[1] + '-' + iso[2];
+  // 2) Month-name forms like "JUL'26", "Jul 2026" (the firstBillableMonth fallback)
+  var mon = raw.match(/([A-Za-z]{3,})\.?\s*'?\s*(\d{2,4})/);
+  if (mon) {
+    var names = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    var mi = names.indexOf(mon[1].slice(0, 3).toLowerCase());
+    if (mi >= 0) { var yy = parseInt(mon[2]); if (yy < 100) yy += 2000; return yy + '-' + ('0' + (mi + 1)).slice(-2); }
+  }
+  // 3) Anything else the browser can parse
   var dt = new Date(raw);
   if (!isNaN(dt.getTime())) return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2);
   return null;
@@ -2565,7 +2575,7 @@ function renderAureumGrid() {
     var tint = precise ? 'background:#eef4fb;color:var(--navy);' : '';
     html += '<th class="num" style="' + bl + tint + '" title="' + (precise ? 'Precise month — lock window for accuracy' : 'HC × $/head') + '">' + monthLabel(m) + '</th>';
   });
-  html += '<th class="num" style="' + totCss + '" title="Total forecast revenue for calendar year ' + Y1 + ' (Σ HC × $/head)">' + Y1 + ' Total</th>';
+  html += '<th class="num" style="' + totCss + '" title="Total forecast MRR for calendar year ' + Y1 + ' (Σ HC × $/head across the months)">' + Y1 + ' Total MRR</th>';
   // Y2 months + calendar-year total
   monthsY2.forEach(function(m, i){
     var precise = months.indexOf(m) < 3;
@@ -2573,10 +2583,10 @@ function renderAureumGrid() {
     var tint = precise ? 'background:#eef4fb;color:var(--navy);' : '';
     html += '<th class="num" style="' + bl + tint + '">' + monthLabel(m) + '</th>';
   });
-  html += '<th class="num" style="' + totCss + '" title="Total forecast revenue for calendar year ' + Y2 + '">' + Y2 + ' Total</th>';
+  html += '<th class="num" style="' + totCss + '" title="Total forecast MRR for calendar year ' + Y2 + '">' + Y2 + ' Total MRR</th>';
   // Y3 growth % + projected total
   html += '<th class="num" style="border-left:2px solid var(--gold)" title="Annual MRR growth % applied to ' + Y2 + ' to project ' + Y3 + '. Blank = the default % at the top.">' + Y3 + ' MRR Growth %</th>';
-  html += '<th class="num" style="' + totCss + '" title="Projected revenue for ' + Y3 + ' = ' + Y2 + ' total × (1 + growth%)">' + Y3 + ' Total</th>';
+  html += '<th class="num" style="' + totCss + '" title="Projected MRR for ' + Y3 + ' = ' + Y2 + ' total × (1 + growth%)">' + Y3 + ' Total MRR</th>';
   html += '</tr></thead><tbody>';
 
   function hcCell(d, dealIdx, m, sup, pricePerH, goldLeft) {
@@ -2911,10 +2921,13 @@ function openSpreadModal(idx) {
   var totalDefault = (d.totalHC || sumMonths(d.monthlyHC) || d.zoho_totalHC || 0) || '';
   // Default start month = one month AFTER the deal's close date (Michael's conservative
   // cash-flow rule). Falls back to the anchor if there's no usable close date / it's out of range.
-  var optMonths = rollingMonths(anchor, 24);
   var closeM = dealCloseMonthKey(d);
   var defaultStart = closeM ? monthKeyAfter(closeM, 1) : anchor;
-  if (optMonths.indexOf(defaultStart) < 0) defaultStart = anchor;
+  // Build the dropdown around THIS deal's close date so the default follows the deal — not the
+  // current month (Don's ask). Start the list at the earlier of the anchor and the default so the
+  // close-date-driven default is always selectable; span 36 months to cover Y1+Y2+.
+  var listStart = (defaultStart < anchor) ? defaultStart : anchor;
+  var optMonths = rollingMonths(listStart, 36);
   var monthOpts = optMonths.map(function(m){ return '<option value="' + m + '"' + (m === defaultStart ? ' selected' : '') + '>' + monthLabel(m) + '</option>'; }).join('');
   var html = '';
   html += '<h3>Spread headcount — ' + esc(d.dealName) + '</h3>';
