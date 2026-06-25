@@ -1176,8 +1176,11 @@ function syncZohoDeals() {
         startDate:             r[ZOHO_START_FIELD] || p.startDate || '',
         // MRR Zoho: the Zoho MRR field (falls back to Amount only if MRR is blank). 0 if neither set.
         pricing:               zohoAmount,
-        // Win rate adjusted: Zoho's Probability > local edit > seed > default 0.5
-        winRateAdj:            (zohoProb !== null && zohoProb > 0) ? zohoProb : ((p.winRateAdj !== undefined && p.winRateAdj > 0) ? p.winRateAdj : ((seed && seed.winRateAdj) || 0.5)),
+        // Win rate: per Don/Michael, the Win % DEFAULTS to the STAGE rule (Settings) — NOT Zoho's
+        // Probability. So we keep winRateAdj ONLY when Don has explicitly overridden it in the grid;
+        // otherwise it stays unset and getWinRateFor() falls back to the stage rule. Zoho's
+        // probability is still captured in zoho_winRateAdj (below) for the Playground diff.
+        winRateAdj:            (p.winRateAdj !== undefined && p.winRateAdj !== null && p.winRateAdj !== '') ? p.winRateAdj : undefined,
         // Snapshot of Zoho's probability at this sync (for Playground diff vs current value)
         zoho_winRateAdj:       (zohoProb !== null) ? zohoProb : (p.zoho_winRateAdj !== undefined ? p.zoho_winRateAdj : null),
         // Snapshot of Zoho's Total Headcount (single number) for Playground diff vs sum of monthly HC
@@ -1578,23 +1581,42 @@ function migrateStageRules20260625() {
   save('stage_rules_20260625', true);
   console.log('Stage Rules migrated to the 2026-06-25 Win %/Margin % set.');
 }
-// One-time: "forget the spreadsheet" (Don & Michael). Several deals still carried the old
-// Excel-seeded monthly build (the 257, the 50, the blue super-deal). Clear every deal's
-// monthly build so the forecast starts 100% from Zoho — Fcst HC defaults to the Zoho
-// headcount (totalHC = zoho_totalHC), and Don rebuilds the months with ⇶ Spread.
+// "Forget the spreadsheet" (Don & Michael). Strips EVERY trace of the old Excel file from a deal
+// while KEEPING Don's Forecast pick (inForecast): clears the monthly build, resets Fcst HC to the
+// Zoho headcount, and drops the per-deal overrides ($/head, win %, margins, growth %) so the deal
+// reads straight from Zoho — Fcst HC = Zoho HC, Win % = stage rule, $/head = MRR ÷ Zoho HC,
+// Fcst MRR = the real Zoho MRR. Returns how many deals were touched.
+function stripOldFileFromDeal(d) {
+  d.monthlyHC = {};
+  d.totalHC = (d.zoho_totalHC && d.zoho_totalHC > 0) ? d.zoho_totalHC : 0;
+  delete d.dollarPerHead;
+  delete d.winRateAdj;
+  delete d.actualMargin;
+  delete d.marginOverride;
+  delete d.growthPct;
+  // inForecast (Don's pick) and isSuperDeal (auto) are intentionally left untouched.
+}
+// One-time auto-run on load. (Has a localStorage flag, so it runs once per browser; the
+// deterministic Settings button below is the reliable path if the first-load sync races.)
 function purgeSeededHcOnce() {
-  if (load('purge_seeded_hc_v1', false)) return;
+  if (load('purge_oldfile_v2', false)) return;
   var deals = getDeals();
-  var touched = 0;
-  deals.forEach(function(d) {
-    var hadBuild = d.monthlyHC && Object.keys(d.monthlyHC).length > 0;
-    d.monthlyHC = {};
-    d.totalHC = (d.zoho_totalHC && d.zoho_totalHC > 0) ? d.zoho_totalHC : 0;
-    if (hadBuild) touched++;
-  });
+  deals.forEach(stripOldFileFromDeal);
   setDeals(deals);
-  save('purge_seeded_hc_v1', true);
-  console.log('Purged seeded monthly HC from ' + touched + ' deals — forecast now starts from Zoho HC.');
+  save('purge_oldfile_v2', true);
+  console.log('Purged old-file data from ' + deals.length + ' deals — forecast now reads from Zoho (Fcst picks kept).');
+}
+// Manual, deterministic reset Carlos can run from Settings — no flag, no race. Keeps the
+// Forecast checkboxes Don already set.
+function resetDealsToZoho() {
+  if (!confirm('Reset all deals to their Zoho values?\n\nThis clears every leftover from the old Excel file — monthly build, Fcst HC overrides, $/head, win %, margins — so each deal reads straight from Zoho (Fcst HC = Zoho HC, Win % = stage rule, Fcst MRR = real Zoho MRR).\n\nThe Forecast (Fcst) checkboxes Don selected are KEPT. Continue?')) return;
+  var deals = getDeals();
+  deals.forEach(stripOldFileFromDeal);
+  setDeals(deals);
+  save('purge_oldfile_v2', true);
+  logActivity('Forecast', 'Reset deals to Zoho', deals.length + ' deals cleared of old-file data (Fcst picks kept)');
+  alert('Done — ' + deals.length + ' deals reset to Zoho values. Fcst HC now matches Zoho HC and Win % follows the stage.');
+  renderTab();
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 // Margin resolution (Michael's model):
@@ -5158,6 +5180,14 @@ function renderSettings() {
   html += '<input type="file" id="importFile" style="display:none" accept=".json" onchange="importData(this.files[0])">';
   html += '<button class="btn btn-danger btn-sm" onclick="resetAllData()">⚠ Reset all data</button></div>';
   html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">Deals, margin rules, snapshots, and actuals are all stored in your browser. Export regularly as backup.</div></div>';
+
+  // Reset deals to Zoho (clear old Excel-file data, keep Fcst picks) — the deterministic
+  // version of the auto-purge, for when the first-load sync races.
+  if (canGovern()) {
+    html += '<div class="card"><div class="card-header"><span class="card-title">Forget the Spreadsheet — Reset Deals to Zoho</span><span class="card-sub">Clears every leftover from Don\'s old Excel file so deals read 100% from Zoho</span></div>';
+    html += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Clears the monthly build, Fcst HC overrides, $/head, win %, margins and growth % on every deal — so <b>Fcst HC = Zoho HC</b>, <b>Win % follows the stage rule</b>, and <b>Fcst MRR = the real Zoho MRR</b>. The Forecast (Fcst) checkboxes Don selected are <b>kept</b>.</div>';
+    html += '<button class="btn btn-gold btn-sm" onclick="resetDealsToZoho()">↻ Reset all deals to Zoho (keep Fcst picks)</button></div>';
+  }
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Daily Workflow</span></div>';
   html += '<ol style="font-size:12.5px;color:var(--muted);line-height:1.75;padding-left:20px">';
