@@ -134,6 +134,11 @@
   .grid-tbl input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(232,184,75,0.2); }
   .grid-tbl input.margin { width: 50px; }
   .grid-tbl input.price { width: 80px; }
+  /* Column color scheme (Michael): editable fields get a faint gold tint so the user
+     knows what to fill; Zoho inputs are grey text; calculated outputs stay white.
+     Inline styles (confirmed-green, readonly-grey) still win where set. */
+  .grid-tbl input:not([readonly]) { background: #fffbea; }
+  .grid-tbl input[readonly] { background: #f5f5f5; color: var(--muted); }
   /* Frozen Deal column — stays visible when scrolling the grid sideways. */
   .grid-tbl td.freeze-deal, .grid-tbl th.freeze-deal { position: sticky; left: 0; z-index: 6; background: #fff; box-shadow: 1px 0 0 var(--border); min-width: 170px; max-width: 220px; }
   .scroll-x table.grid-tbl thead th.freeze-deal { z-index: 8; background: var(--bg); }
@@ -371,19 +376,19 @@ var ALL_MONTHS = buildRollingCalendar();
 // Stage IDs MUST match Zoho's exact Stage API Names (case-sensitive). Add legacy entries
 // at the bottom so seed data still renders before the first Zoho sync.
 var STAGES = [
-  { id: 'SQL - Solution Discovery',     label: 'SQL - Solution Discovery',    cls: 'pill-gold',  winRate: 0.20 },
+  { id: 'SQL - Solution Discovery',     label: 'SQL - Solution Discovery',    cls: 'pill-gold',  winRate: 0.10 },
   { id: 'Stage 2 (WTW)',                label: 'Stage 2 (WTW)',               cls: 'pill-gold',  winRate: 0.30 },
-  { id: 'Commercial Design',            label: 'Commercial Design',           cls: 'pill-gold',  winRate: 0.30 },
-  { id: 'Recruitment (Path 2.1)',       label: 'Recruitment (Path 2.1)',      cls: 'pill-blue',  winRate: 0.50 },
+  { id: 'Commercial Design',            label: 'Commercial Design',           cls: 'pill-gold',  winRate: 0.50 },
+  { id: 'Recruitment (Path 2.1)',       label: 'Recruitment (Path 2.1)',      cls: 'pill-blue',  winRate: 0.75 },
   { id: 'P.S (Path 2.2)',               label: 'P.S (Path 2.2)',              cls: 'pill-blue',  winRate: 0.50 },
   { id: 'Pricing',                      label: 'Pricing',                     cls: 'pill-blue',  winRate: 0.75 },
-  { id: 'Paper Process / Contracting',  label: 'Paper Process / Contracting', cls: 'pill-green', winRate: 0.90 },
+  { id: 'Paper Process / Contracting',  label: 'Paper Process / Contracting', cls: 'pill-green', winRate: 0.95 },
   { id: 'Closed Won',                   label: 'Closed Won',                  cls: 'pill-green', winRate: 1.00 },
   { id: 'Closed Lost',                  label: 'Closed Lost',                 cls: 'pill-red',   winRate: 0.00 },
   // Legacy stages from seed data — kept for display before Zoho sync replaces them
-  { id: 'SQL',                          label: 'SQL (legacy)',                cls: 'pill-gray',  winRate: 0.20 },
+  { id: 'SQL',                          label: 'SQL (legacy)',                cls: 'pill-gray',  winRate: 0.10 },
   { id: 'Professional Services (Path 2.2)', label: 'P.S (legacy)',            cls: 'pill-gray',  winRate: 0.50 },
-  { id: 'Paper Process',                label: 'Paper Process (legacy)',      cls: 'pill-gray',  winRate: 0.90 }
+  { id: 'Paper Process',                label: 'Paper Process (legacy)',      cls: 'pill-gray',  winRate: 0.95 }
 ];
 
 var STATUS_PILL = {
@@ -426,16 +431,19 @@ function phasePill(phaseId) {
 
 // Stage Rules — per-stage standard Win % AND Margin % (Michael's model). As a deal
 // progresses, both can evolve. Order: manual override → Zoho target margin → stage rule.
+// Win % and margin % per stage set with Don & Michael in the 2026-06-25 review.
+// Win % follows the stage; margin % is the aggressive standard (35%) except P.S (45%)
+// and Super-Deals (25% — big/complex programs priced lower).
 var DEFAULT_MARGIN_RULES = [
-  { dealType: 'SQL - Solution Discovery',     winRate: 0.10, margin: 0.40, note: 'Early stage — low probability, standard margin' },
-  { dealType: 'Stage 2 (WTW)',                winRate: 0.20, margin: 0.40, note: 'Working-toward-win; not yet priced' },
-  { dealType: 'Commercial Design',            winRate: 0.30, margin: 0.40, note: 'Margin should come from Zoho commercial-design target' },
-  { dealType: 'Recruitment (Path 2.1)',       winRate: 0.50, margin: 0.35, note: 'Staffing engagements' },
+  { dealType: 'SQL - Solution Discovery',     winRate: 0.10, margin: 0.35, note: 'Early stage — low probability' },
+  { dealType: 'Stage 2 (WTW)',                winRate: 0.30, margin: 0.35, note: 'Working-toward-win; not yet priced' },
+  { dealType: 'Commercial Design',            winRate: 0.50, margin: 0.35, note: 'Solution scoped' },
+  { dealType: 'Recruitment (Path 2.1)',       winRate: 0.75, margin: 0.35, note: 'Actively recruiting — job descriptions out' },
   { dealType: 'P.S (Path 2.2)',               winRate: 0.50, margin: 0.45, note: 'Professional services — higher margin' },
-  { dealType: 'Pricing',                      winRate: 0.75, margin: 0.40, note: 'Margin should come from the pricing module' },
-  { dealType: 'Paper Process / Contracting',  winRate: 0.90, margin: 0.42, note: 'Contract in flight — SO margin' },
-  { dealType: 'Closed Won',                   winRate: 1.00, margin: 0.42, note: 'Booked' },
-  { dealType: 'Aureum / Super-Deal',          winRate: 0.50, margin: 0.40, note: 'Applied when the Super-Deal checkbox is on' },
+  { dealType: 'Pricing',                      winRate: 0.75, margin: 0.35, note: 'Priced and quoting' },
+  { dealType: 'Paper Process / Contracting',  winRate: 0.95, margin: 0.35, note: 'Contract in flight' },
+  { dealType: 'Closed Won',                   winRate: 1.00, margin: 0.35, note: 'Booked' },
+  { dealType: 'Aureum / Super-Deal',          winRate: 0.35, margin: 0.25, note: 'Big/complex programs — priced aggressively' },
   { dealType: 'Default',                      winRate: 0.30, margin: 0.35, note: 'Fallback when no other rule matches' }
 ];
 // Stages where a real commercial-design target margin is expected. If absent, we flag it.
@@ -831,6 +839,8 @@ function fbInitDataSync() {
       fbReady = true;
       setFbPill('on', 'Sync · Live');
       autoApplySeedOnce();   // now sees latest Firestore data; setDeals triggers push if changed
+      migrateStageRules20260625();
+      purgeSeededHcOnce();
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
       renderTab();
@@ -838,6 +848,8 @@ function fbInitDataSync() {
       fbReady = true;
       setFbPill('on', 'Sync · Live (first push)');
       autoApplySeedOnce();   // populates ghosts before first push
+      migrateStageRules20260625();
+      purgeSeededHcOnce();
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
       fbPushNow();
@@ -1144,6 +1156,19 @@ function syncZohoDeals() {
         activationMonth:       r.Closing_Date || p.activationMonth || (seed && seed.activationMonth) || '',
         closingDate:           r.Closing_Date || p.closingDate || '',
         createdAt:             r.Created_Time || p.createdAt || '',
+        // Close-date "push" tracking (Don's ask): each time Zoho's close date moves LATER than
+        // what we had, bump the counter and log the move. Surfaced as a badge + a pushed-deals
+        // report so Don can work the BDEs on deals that keep slipping.
+        closeDatePushes:       (function(){
+          var base = p.closeDatePushes || 0, prevC = p.closingDate, newC = r.Closing_Date;
+          if (prevC && newC) { var pv = new Date(prevC), nv = new Date(newC); if (!isNaN(pv.getTime()) && !isNaN(nv.getTime()) && nv.getTime() > pv.getTime()) return base + 1; }
+          return base;
+        })(),
+        closeDateHistory:      (function(){
+          var hist = (p.closeDateHistory || []).slice(), prevC = p.closingDate, newC = r.Closing_Date;
+          if (prevC && newC && prevC !== newC) { var pv = new Date(prevC), nv = new Date(newC); if (!isNaN(pv.getTime()) && !isNaN(nv.getTime()) && nv.getTime() > pv.getTime()) hist.push({ from: prevC, to: newC }); }
+          return hist.slice(-12);
+        })(),
         // Deal-summary fields from Zoho (Pricing Framework). Depend on the API names configured above.
         arr:                   zohoNum(r[ZOHO_ARR_FIELD],      p.arr),
         tcv:                   zohoNum(r[ZOHO_TCV_FIELD],      p.tcv),
@@ -1288,6 +1313,27 @@ function fmtPct(n)  { if (n === null || n === undefined || isNaN(n)) return '—
 function fmtPct1(n) { if (n === null || n === undefined || isNaN(n)) return '—'; return (n * 100).toFixed(1) + '%'; }
 function esc(s)     { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 function fmtDate(s) { if (!s) return '—'; var d = new Date(s); if (isNaN(d.getTime())) return String(s); return d.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: '2-digit' }); }
+// Month key (YYYY-MM) derived from a deal's Zoho close date (or start / first-billable
+// fallback). Used to default the Spread tool's start month to a month AFTER close —
+// Michael's conservative cash-flow rule: people start billing ~a month after we sign.
+function dealCloseMonthKey(d) {
+  var raw = (d && (d.closingDate || d.startDate || d.firstBillableMonth)) || '';
+  var m = String(raw).match(/(\d{4})-(\d{2})/);
+  if (m) return m[1] + '-' + m[2];
+  var dt = new Date(raw);
+  if (!isNaN(dt.getTime())) return dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2);
+  return null;
+}
+// Display a date snapped to the 30th of its month — Don's corporate-standard close date
+// ("if it goes into August it's August 30th"). VISUAL ONLY: what we push to Zoho is unchanged.
+function fmtDate30(s) {
+  if (!s) return '—';
+  var mk = (String(s).match(/(\d{4})-(\d{2})/) || [])[0];
+  var dt;
+  if (mk) dt = new Date(parseInt(mk.slice(0,4)), parseInt(mk.slice(5,7)) - 1, 30);
+  else { dt = new Date(s); if (isNaN(dt.getTime())) return String(s); dt = new Date(dt.getFullYear(), dt.getMonth(), 30); }
+  return dt.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: '2-digit' });
+}
 // Super-Deal is AUTOMATIC (Michael's rule): any deal with 100+ total headcount on the
 // project is a Super-Deal — no manual checkbox. Total HC = Zoho deal-level headcount,
 // else the sum of the monthly build, else the seed total. The stored d.isSuperDeal flag
@@ -1522,6 +1568,33 @@ function autoApplySeedOnce() {
   setDeals(zohoOnly);
   save('zoho_only_v1', true);
   console.log('Zoho-only migration: removed ' + (before - zohoOnly.length) + ' non-Zoho (Excel) deals; ' + zohoOnly.length + ' Zoho deals kept.');
+}
+// One-time: adopt the Win %/Margin % set with Don & Michael on 2026-06-25. The live state
+// still holds the old saved defaults, so overwrite them once (runs before anyone edits the
+// Settings table — once the flag is set we never clobber a manager's later edits).
+function migrateStageRules20260625() {
+  if (load('stage_rules_20260625', false)) return;
+  setMarginRules(DEFAULT_MARGIN_RULES);
+  save('stage_rules_20260625', true);
+  console.log('Stage Rules migrated to the 2026-06-25 Win %/Margin % set.');
+}
+// One-time: "forget the spreadsheet" (Don & Michael). Several deals still carried the old
+// Excel-seeded monthly build (the 257, the 50, the blue super-deal). Clear every deal's
+// monthly build so the forecast starts 100% from Zoho — Fcst HC defaults to the Zoho
+// headcount (totalHC = zoho_totalHC), and Don rebuilds the months with ⇶ Spread.
+function purgeSeededHcOnce() {
+  if (load('purge_seeded_hc_v1', false)) return;
+  var deals = getDeals();
+  var touched = 0;
+  deals.forEach(function(d) {
+    var hadBuild = d.monthlyHC && Object.keys(d.monthlyHC).length > 0;
+    d.monthlyHC = {};
+    d.totalHC = (d.zoho_totalHC && d.zoho_totalHC > 0) ? d.zoho_totalHC : 0;
+    if (hadBuild) touched++;
+  });
+  setDeals(deals);
+  save('purge_seeded_hc_v1', true);
+  console.log('Purged seeded monthly HC from ' + touched + ' deals — forecast now starts from Zoho HC.');
 }
 function sumMonths(hc) { return Object.values(hc || {}).reduce(function(s, v) { return s + (v || 0); }, 0); }
 // Margin resolution (Michael's model):
@@ -1837,8 +1910,30 @@ function renderTopNav() {
     return '<button class="topnav-btn' + (currentTab === t.id ? ' active' : '') + '" onclick="selectTab(\'' + t.id + '\')">' + esc(t.label) + '</button>';
   }).join('');
 }
-function selectTab(id) { currentTab = id; renderTopNav(); renderTab(); window.scrollTo(0, 0); }
+function selectTab(id) {
+  currentTab = id; renderTopNav(); _suppressScrollRestore = true; renderTab(); _suppressScrollRestore = false;
+  var m = document.querySelector('.main'); if (m) m.scrollTop = 0;
+  window.scrollTo(0, 0);
+}
+// Re-rendering a tab replaces mainContent.innerHTML, which resets the grid's own
+// scroll (.scroll-x) and the page scroll (.main) back to the top — that was the
+// "every click jumps" complaint from Don's review. We capture the scroll positions
+// before the re-render and restore them after, so editing a cell deep in the grid
+// keeps Don exactly where he was. Tab switches set _suppressScrollRestore to skip this.
+var _suppressScrollRestore = false;
 function renderTab() {
+  var main = document.querySelector('.main');
+  var sx   = document.querySelector('.scroll-x');
+  var mainTop = main ? main.scrollTop : 0;
+  var sxTop   = sx ? sx.scrollTop : 0, sxLeft = sx ? sx.scrollLeft : 0;
+  _renderTabDispatch();
+  if (_suppressScrollRestore) return;
+  var main2 = document.querySelector('.main');
+  if (main2) main2.scrollTop = mainTop;
+  var sx2 = document.querySelector('.scroll-x');
+  if (sx2) { sx2.scrollTop = sxTop; sx2.scrollLeft = sxLeft; }
+}
+function _renderTabDispatch() {
   if (currentTab === 'overview')    return renderOverview();
   if (currentTab === 'pipeline')    return renderPipelineOverview();
   if (currentTab === 'aureum')      return renderAureumGrid();
@@ -2405,7 +2500,7 @@ function renderAureumGrid() {
   html += msDropdown('aureum', 'stage',  'Stage',  ALLOWED_STAGES);
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.forecastOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').forecastOnly=this.checked; renderAureumGrid()"> Forecast only</label>';
   html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px"><input type="checkbox"' + (f.superOnly ? ' checked' : '') + ' onchange="filterScope(\'aureum\').superOnly=this.checked; renderAureumGrid()"> Super-deals only</label>';
-  if (canGovern()) html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px" title="Default annual growth % for ' + Y3 + ' — applies to any deal with no per-deal % set"><b style="color:var(--navy)">' + Y3 + ' default growth</b> <input type="number" step="0.5" value="' + defGrowth + '" onchange="setDefaultGrowthPct(this.value)" style="width:54px"> %</label>';
+  if (canGovern()) html += '<label style="font-size:11.5px;color:var(--muted);display:flex;align-items:center;gap:5px" title="Default annual MRR growth % for ' + Y3 + ' — applies to any deal with no per-deal % set"><b style="color:var(--navy)">' + Y3 + ' default MRR growth</b> <input type="number" step="0.5" value="' + defGrowth + '" onchange="setDefaultGrowthPct(this.value)" style="width:54px"> %</label>';
   html += '<span class="spacer"></span>';
   html += '<span style="font-size:11px;color:var(--muted)">Showing ' + filtered.length + ' / ' + deals.length + ' deals</span>';
   html += '</div>';
@@ -2424,12 +2519,12 @@ function renderAureumGrid() {
   html += '<th rowspan="2" class="num" style="border-left:2px solid var(--gold)" title="Spread the total headcount across the months automatically">Spread</th>';
   html += '<th colspan="' + (N1 + 1) + '" style="text-align:center;background:#0A1928;color:white;border-left:2px solid var(--gold)">' + Y1 + ' — Headcount by Month</th>';
   html += '<th colspan="13" style="text-align:center;background:#0A1928;color:white;border-left:2px solid var(--gold)">' + Y2 + ' — Headcount by Month</th>';
-  html += '<th colspan="2" style="text-align:center;background:#0A1928;color:white;border-left:2px solid var(--gold)">' + Y3 + ' — Growth</th>';
+  html += '<th colspan="2" style="text-align:center;background:#0A1928;color:white;border-left:2px solid var(--gold)">' + Y3 + ' — MRR Growth</th>';
   html += '<th rowspan="2"></th>';
   html += '</tr>';
   // Row 2 — sub-columns. First 3 months tinted (precise).
   html += '<tr>';
-  html += '<th style="border-left:2px solid var(--gold)" title="Expected start date (Zoho)">Start Date</th>';
+  html += '<th style="border-left:2px solid var(--gold)" title="Close date from Zoho — shown on the 30th (reporting standard). Billing start is set by the ⇶ Spread (one month later by default).">Close Date</th>';
   html += '<th class="num" title="Contract length in months (Zoho)">Contract Terms</th>';
   html += '<th class="num" title="Headcount mapped on the Zoho deal (Zoho Headcounts field) — read-only">Zoho HC</th>';
   html += '<th class="num" title="Headcount Don is forecasting — the SUM of the monthly build below. Set it by typing here or with the ⇶ Spread tool.">Fcst HC</th>';
@@ -2458,7 +2553,7 @@ function renderAureumGrid() {
   });
   html += '<th class="num" style="' + totCss + '" title="Total forecast revenue for calendar year ' + Y2 + '">' + Y2 + ' Total</th>';
   // Y3 growth % + projected total
-  html += '<th class="num" style="border-left:2px solid var(--gold)" title="Annual growth % applied to ' + Y2 + ' to project ' + Y3 + '. Blank = the default % at the top.">' + Y3 + ' Growth %</th>';
+  html += '<th class="num" style="border-left:2px solid var(--gold)" title="Annual MRR growth % applied to ' + Y2 + ' to project ' + Y3 + '. Blank = the default % at the top.">' + Y3 + ' MRR Growth %</th>';
   html += '<th class="num" style="' + totCss + '" title="Projected revenue for ' + Y3 + ' = ' + Y2 + ' total × (1 + growth%)">' + Y3 + ' Total</th>';
   html += '</tr></thead><tbody>';
 
@@ -2494,10 +2589,12 @@ function renderAureumGrid() {
     html += '<td>' + stagePill(d.stage) + '</td>';
     html += '<td>' + phasePill(phaseForDeal(d)) + '</td>';
     // ── Deal Summary ──
-    html += '<td style="color:var(--muted);border-left:2px solid var(--gold);white-space:nowrap">' + esc(fmtDate(d.startDate || d.closingDate || d.firstBillableMonth)) + '</td>';
+    var pushes = d.closeDatePushes || 0;
+    var pushBadge = pushes > 0 ? ' <span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;background:' + (pushes >= 3 ? '#c62828' : '#f0a202') + ';color:white" title="Close date pushed out ' + pushes + ' time' + (pushes === 1 ? '' : 's') + (pushes >= 3 ? ' — work this deal with the BDE' : '') + '">↗' + pushes + '</span>' : '';
+    html += '<td style="color:var(--muted);border-left:2px solid var(--gold);white-space:nowrap" title="Close date — standardized to the 30th for reporting (display only; Zoho value unchanged)">' + esc(fmtDate30(d.closingDate || d.startDate || d.firstBillableMonth)) + pushBadge + '</td>';
     html += '<td class="num" style="color:var(--muted)">' + (d.contractMonths ? d.contractMonths + ' mo' : '—') + '</td>';
     html += '<td class="num" style="color:var(--muted)" title="Headcount mapped on the Zoho deal (read-only)">' + (zohoHC || '—') + '</td>';
-    html += '<td class="num"><input class="margin" type="number" min="0" value="' + (fcstHC || '') + '" onchange="updateForecastHC(' + dealIdx + ', this.value)" placeholder="0" title="Total headcount Don forecasts for this deal. Type it here, then click ⇶ Spread to distribute it across the months."></td>';
+    html += '<td class="num"><input class="margin" type="number" min="0" value="' + (fcstHC || '') + '" onchange="updateForecastHC(' + dealIdx + ', this.value)" placeholder="' + (zohoHC || 0) + '" title="Total headcount forecast for this deal. Blank defaults to the Zoho headcount (' + (zohoHC || 0) + '). Type to override, then click ⇶ Spread to distribute it across the months."></td>';
     // Zoho $/head — read-only original (revert reference)
     html += '<td class="num" style="color:var(--muted)" title="Zoho rate = MRR ÷ Zoho HC (read-only — the original is never overwritten)">' + (zohoRate !== null ? fmt$k(zohoRate) : '—') + '</td>';
     // Forecast $/head — editable (override). Green when Don has confirmed a rate.
@@ -2530,18 +2627,28 @@ function renderAureumGrid() {
   // Totals row (37 + N1 columns): 7 ids + Deal Summary (12) + Spread (1) + [Y1 months + Y1 total]
   // + [Y2 months + Y2 total] + [Y3 growth + Y3 total] + actions.
   var tot = { mrr:0, arr:0, totHC:0, zohoHC:0, fcstMRR:0, y1:0, y2:0, y3:0,
-              hcY1: monthsY1.map(function(){ return 0; }), hcY2: monthsY2.map(function(){ return 0; }) };
+              hcY1: monthsY1.map(function(){ return 0; }), hcY2: monthsY2.map(function(){ return 0; }),
+              // monthly forecast MRR (Σ HC×$/head) — Michael: "total MRR by month at the bottom"
+              mrrY1: monthsY1.map(function(){ return 0; }), mrrY2: monthsY2.map(function(){ return 0; }),
+              // Probability-weighted view (summary only — deal rows stay pure):
+              //   weighted $ = Σ year$ × win% ; contribution $ = Σ year$ × win% × margin ; weighted HC = Σ HC × win%
+              wHC:0, y1w:0, y2w:0, y3w:0, y1c:0, y2c:0, y3c:0 };
   filtered.forEach(function(d){
     var pph = pricePerHead(d);
     var built = d.totalHC || sumMonths(d.monthlyHC) || 0;
+    var win = getWinRateFor(d), mgn = getMarginFor(d);
     tot.mrr += (d.pricing || 0); tot.arr += (d.arr || 0);
     tot.totHC  += built;
+    tot.wHC    += built * win;
     tot.zohoHC += ((d.zoho_totalHC && d.zoho_totalHC > 0) ? d.zoho_totalHC : 0);
     tot.fcstMRR += built * pph;
     var y1 = yearDollars(d, monthsY1, pph), y2 = yearDollars(d, monthsY2, pph);
-    tot.y1 += y1; tot.y2 += y2; tot.y3 += y2 * (1 + effectiveGrowthPct(d) / 100);
-    monthsY1.forEach(function(m, i){ tot.hcY1[i] += (d.monthlyHC || {})[m] || 0; });
-    monthsY2.forEach(function(m, i){ tot.hcY2[i] += (d.monthlyHC || {})[m] || 0; });
+    var y3 = y2 * (1 + effectiveGrowthPct(d) / 100);
+    tot.y1 += y1; tot.y2 += y2; tot.y3 += y3;
+    tot.y1w += y1 * win;       tot.y2w += y2 * win;       tot.y3w += y3 * win;
+    tot.y1c += y1 * win * mgn; tot.y2c += y2 * win * mgn; tot.y3c += y3 * win * mgn;
+    monthsY1.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY1[i] += hc; tot.mrrY1[i] += hc * pph; });
+    monthsY2.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY2[i] += hc; tot.mrrY2[i] += hc * pph; });
   });
   var yTotCss = 'color:var(--gold);border-left:1px solid var(--gold)';
   html += '<tr class="totals-row" style="background:var(--navy);color:white;font-weight:700">';
@@ -2565,6 +2672,21 @@ function renderAureumGrid() {
   html += '<td class="num" style="color:var(--gold)">' + fmt$k(tot.y3) + '</td>';      // Y3 total $
   html += '<td></td></tr>';
 
+  // MRR / month totals row — the dollars behind each month's headcount (Σ HC × $/head).
+  html += '<tr class="totals-row" style="background:#13233b;color:var(--gold);font-weight:700">';
+  html += '<td colspan="7" style="color:var(--gold)">MRR / month (forecast)</td>';
+  html += '<td colspan="2" style="border-left:2px solid var(--gold)"></td>';          // Start Date + Contract
+  html += '<td colspan="10"></td>';                                                   // Zoho HC → Actual MG (10 cols)
+  html += '<td></td>';                                                                // Revert
+  html += '<td style="border-left:2px solid var(--gold)"></td>';                      // Spread
+  tot.mrrY1.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:var(--gold);' + bl + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
+  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';        // Y1 total $
+  tot.mrrY2.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:var(--gold);' + bl + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
+  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y2) + '</td>';        // Y2 total $
+  html += '<td style="border-left:2px solid var(--gold)"></td>';                      // Y3 growth %
+  html += '<td class="num" style="color:var(--gold)">' + fmt$k(tot.y3) + '</td>';      // Y3 total $
+  html += '<td></td></tr>';
+
   html += '</tbody></table></div></div>';
 
   html += '<div class="legend">';
@@ -2573,7 +2695,39 @@ function renderAureumGrid() {
   html += '<span><span class="sw" style="background:#FDECEA"></span>&lt; $10K per head</span>';
   html += '<span><span class="sw" style="background:#eef4fb"></span>Precise months</span>';
   html += '<span><span class="sw" style="background:#E8F5E9;border:1px solid var(--success)"></span>Fcst $/head confirmed by Don (green)</span>';
+  html += '<span><span class="sw" style="background:#fffbea;border:1px solid var(--border)"></span>Editable field (you fill)</span>';
+  html += '<span><span class="sw" style="background:#f5f5f5;border:1px solid var(--border)"></span>Zoho input / read-only</span>';
   html += '<span style="margin-left:auto;font-style:italic">Single input — spread ' + Y1 + ' &amp; ' + Y2 + ' month-by-month; ' + Y3 + ' is a growth %. Year totals = Σ HC × $/head.</span>';
+  html += '</div>';
+
+  // ── Probability-weighted summary (Michael's model) ──
+  // The deal rows stay PURE — the headcount and dollars are exactly what Don thinks will happen
+  // (a 3-person deal is 3 people, never 1.5). The haircut lives ONLY here at the portfolio level:
+  //   Weighted $    = Σ (year $ × stage win %)            — probability-weighted revenue
+  //   Contribution $ = Σ (year $ × stage win % × margin)  — likely margin dollars
+  //   Weighted HC   = Σ (Fcst HC × stage win %)
+  // Finance (John) can take the pure forecast OR this weighted figure; he doesn't edit deals.
+  function _wRow(label, pure, w, c, sub) {
+    return '<tr><td style="padding:7px 12px;font-weight:600;color:var(--navy)">' + label + '<div style="font-size:10px;color:var(--muted);font-weight:400">' + sub + '</div></td>'
+      + '<td class="num" style="padding:7px 12px;font-weight:700">' + fmt$k(pure) + '</td>'
+      + '<td class="num" style="padding:7px 12px;color:#1d4a86;font-weight:700">' + fmt$k(w) + '</td>'
+      + '<td class="num" style="padding:7px 12px;color:#2e7d32;font-weight:700">' + fmt$k(c) + '</td></tr>';
+  }
+  html += '<div class="card" style="margin-top:16px;padding:0;overflow:hidden">';
+  html += '<div style="padding:10px 16px;border-bottom:1px solid var(--border);background:#f6f9fc;display:flex;align-items:center;gap:10px">';
+  html += '<b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Probability-weighted summary</b>';
+  html += '<span style="font-size:11px;color:var(--muted)">Deals stay pure above. Here we apply each deal\'s stage win % (and margin) — a portfolio haircut for Finance, never per deal.</span></div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:#fff;border-bottom:2px solid var(--border)">';
+  html += '<th style="text-align:left;padding:7px 12px">Horizon</th>';
+  html += '<th class="num" style="padding:7px 12px">Pure forecast<div style="font-size:10px;color:var(--muted);font-weight:400">what Don commits</div></th>';
+  html += '<th class="num" style="padding:7px 12px;color:#1d4a86">Weighted (× win %)<div style="font-size:10px;color:var(--muted);font-weight:400">probability-weighted MRR</div></th>';
+  html += '<th class="num" style="padding:7px 12px;color:#2e7d32">Contribution (× margin)<div style="font-size:10px;color:var(--muted);font-weight:400">likely margin $</div></th>';
+  html += '</tr></thead><tbody>';
+  html += _wRow(Y1 + ' total', tot.y1, tot.y1w, tot.y1c, 'calendar year ' + Y1);
+  html += _wRow(Y2 + ' total', tot.y2, tot.y2w, tot.y2c, 'calendar year ' + Y2);
+  html += _wRow(Y3 + ' total', tot.y3, tot.y3w, tot.y3c, 'calendar year ' + Y3 + ' (growth %)');
+  html += '</tbody></table>';
+  html += '<div style="padding:8px 16px;border-top:1px solid var(--border);background:#fbfdff;font-size:11.5px;color:var(--muted)">Forecast HC <b style="color:var(--navy)">' + tot.totHC + '</b> · Probability-weighted HC <b style="color:#1d4a86">' + Math.round(tot.wHC) + '</b></div>';
   html += '</div>';
 
   // ── Bottom action bar (sticky): bottom-line numbers + Lock + Push, so the whole flow stays on
@@ -2586,6 +2740,8 @@ function renderAureumGrid() {
   html += '<span style="color:#cdd7e3;font-size:12.5px">' + Y1 + ' <b style="color:var(--gold)">' + fmt$k(tot.y1) + '</b></span>';
   html += '<span style="color:#cdd7e3;font-size:12.5px">' + Y2 + ' <b style="color:var(--gold)">' + fmt$k(tot.y2) + '</b></span>';
   html += '<span style="color:#cdd7e3;font-size:12.5px">' + Y3 + ' <b style="color:var(--gold)">' + fmt$k(tot.y3) + '</b></span>';
+  html += '<span style="color:#7fa8d8;font-size:12.5px;border-left:1px solid #34506e;padding-left:14px" title="' + Y1 + ' revenue × stage win %">Weighted ' + Y1 + ' <b style="color:#9ecbff">' + fmt$k(tot.y1w) + '</b></span>';
+  html += '<span style="color:#7fc98a;font-size:12.5px" title="' + Y1 + ' weighted revenue × margin">Contribution ' + Y1 + ' <b style="color:#aef0bd">' + fmt$k(tot.y1c) + '</b></span>';
   html += '<span style="flex:1"></span>';
   html += '<button class="btn ' + (aLocked ? 'btn-ghost' : 'btn-gold') + ' btn-sm" onclick="aureumLockForecast()" title="Lock the 3-month window for accuracy tracking, then push changes to Zoho">' + (aLocked ? '🔒 Locked · Re-lock ' + monthLabel(anchor) : '🔒 Lock ' + monthLabel(anchor) + ' forecast') + '</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="aureumPushToZoho()" title="Push changed deals to Zoho (lock first). Requires Zoho WRITE scope.">↗ Push changes to Zoho</button>';
@@ -2731,10 +2887,16 @@ function openSpreadModal(idx) {
   var anchor = getAnchorMonth();
   // Default to the Fcst HC Don typed (d.totalHC) — Spread distributes exactly that across the months.
   var totalDefault = (d.totalHC || sumMonths(d.monthlyHC) || d.zoho_totalHC || 0) || '';
-  var monthOpts = rollingMonths(anchor, 24).map(function(m){ return '<option value="' + m + '"' + (m === anchor ? ' selected' : '') + '>' + monthLabel(m) + '</option>'; }).join('');
+  // Default start month = one month AFTER the deal's close date (Michael's conservative
+  // cash-flow rule). Falls back to the anchor if there's no usable close date / it's out of range.
+  var optMonths = rollingMonths(anchor, 24);
+  var closeM = dealCloseMonthKey(d);
+  var defaultStart = closeM ? monthKeyAfter(closeM, 1) : anchor;
+  if (optMonths.indexOf(defaultStart) < 0) defaultStart = anchor;
+  var monthOpts = optMonths.map(function(m){ return '<option value="' + m + '"' + (m === defaultStart ? ' selected' : '') + '>' + monthLabel(m) + '</option>'; }).join('');
   var html = '';
   html += '<h3>Spread headcount — ' + esc(d.dealName) + '</h3>';
-  html += '<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Enter the total headcount and how it ramps. The tool fills the monthly build for you — it <b>overwrites</b> this deal\'s current build.</p>';
+  html += '<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Enter the total headcount and how it ramps. The tool fills the monthly build for you — it <b>overwrites</b> this deal\'s current build. Start month defaults to <b>one month after the close date</b>' + (closeM ? ' (' + monthLabel(defaultStart) + ')' : '') + '.</p>';
   html += '<div class="form-row"><div class="form-group"><label>Total headcount</label><input type="number" id="sp_total" min="0" value="' + totalDefault + '"></div>';
   html += '<div class="form-group"><label>Start month</label><select id="sp_start">' + monthOpts + '</select></div></div>';
   html += '<div class="form-row"><div class="form-group"><label>First wave at start (HC you know now)</label><input type="number" id="sp_first" min="0" value="0" placeholder="0 = even spread"></div>';
@@ -3232,6 +3394,53 @@ function weekOverWeekCardHtml() {
   h += '</tbody></table></div>';
   return h;
 }
+// Reconciliation by deal (Don's ask): for the most recent LOCKED month, show — at the top —
+// the deals he forecast to close that did NOT close, then the ones that did, then the deals
+// Zoho had closing that month that he did NOT forecast (so he can chase RevMax / the BDEs).
+function reconciliationCardHtml() {
+  var locked = getSnapshots().filter(function(s){ return s.locked; }).sort(function(a,b){ return a.snapshotMonth < b.snapshotMonth ? -1 : 1; });
+  var h = '<div class="card"><div class="card-header"><span class="card-title">Reconciliation by Deal</span><span class="card-sub">' + (locked.length ? 'Locked ' + monthLabel(locked[locked.length-1].snapshotMonth) + ' forecast vs. what actually closed' : 'Lock a month\'s forecast to reconcile it deal by deal') + '</span></div>';
+  if (!locked.length) {
+    h += '<div class="empty">Once you 🔒 lock a month\'s forecast, this shows — at the top — the deals you forecast that did <b>NOT</b> close, then the ones that did, plus deals Zoho had closing that month that you did not forecast.</div></div>';
+    return h;
+  }
+  var snap = locked[locked.length - 1], mk = snap.snapshotMonth;
+  var deals = getDeals(), byName = {}; deals.forEach(function(d){ byName[d.dealName] = d; });
+  var missed = [], closed = [];
+  Object.keys(snap.perDeal).forEach(function(name){
+    var d = byName[name], rec = { name: name, bde: (snap.perDeal[name].bde || ''), d: d };
+    if (d && d.stage === 'Closed Won') closed.push(rec); else missed.push(rec);
+  });
+  // Deals with a Zoho close date in the locked month that were NOT in the forecast.
+  var notFc = deals.filter(function(d){ return !snap.perDeal[d.dealName] && dealCloseMonthKey(d) === mk; });
+  h += '<table><thead><tr><th>Status</th><th>Deal</th><th>Client</th><th>BDE</th><th>Stage now</th></tr></thead><tbody>';
+  if (missed.length) {
+    missed.forEach(function(r){ h += '<tr><td><span class="pill pill-red" style="font-size:10px">✗ Did NOT close</span></td><td><b>' + esc(r.name) + '</b></td><td style="color:var(--muted)">' + esc(r.d ? r.d.client : '') + '</td><td style="color:var(--muted)">' + esc(r.bde) + '</td><td>' + (r.d ? stagePill(r.d.stage) : '<span style="color:var(--muted)">—</span>') + '</td></tr>'; });
+  }
+  closed.forEach(function(r){ h += '<tr><td><span class="pill pill-green" style="font-size:10px">✓ Closed</span></td><td><b>' + esc(r.name) + '</b></td><td style="color:var(--muted)">' + esc(r.d ? r.d.client : '') + '</td><td style="color:var(--muted)">' + esc(r.bde) + '</td><td>' + (r.d ? stagePill(r.d.stage) : '') + '</td></tr>'; });
+  if (notFc.length) {
+    h += '<tr><td colspan="5" style="background:#fff8e1;font-weight:700;color:var(--navy);font-size:11.5px">Had a ' + monthLabel(mk) + ' close date in Zoho but was NOT forecasted (' + notFc.length + ') — chase these</td></tr>';
+    notFc.forEach(function(d){ var won = d.stage === 'Closed Won'; h += '<tr><td><span class="pill ' + (won ? 'pill-green' : 'pill-gold') + '" style="font-size:10px">' + (won ? '✓ Closed (unforecast)' : '○ Not forecast') + '</span></td><td><b>' + esc(d.dealName) + '</b></td><td style="color:var(--muted)">' + esc(d.client) + '</td><td style="color:var(--muted)">' + esc(d.bde || '') + '</td><td>' + stagePill(d.stage) + '</td></tr>'; });
+  }
+  h += '</tbody></table>';
+  h += '<div style="padding:8px 14px;font-size:11.5px;color:var(--muted);background:#f6f9fc;border-top:1px solid var(--border)">Forecast: <b style="color:var(--navy)">' + Object.keys(snap.perDeal).length + '</b> deals · Closed <b style="color:#2e7d32">' + closed.length + '</b> · Missed <b style="color:#c62828">' + missed.length + '</b> · Closing in Zoho but unforecast <b style="color:var(--amber)">' + notFc.length + '</b></div></div>';
+  return h;
+}
+// Deals whose close date keeps slipping (Don's ask) — by count, so he can sit with each BDE.
+function pushedDealsCardHtml() {
+  var pushed = getDeals().filter(function(d){ return (d.closeDatePushes || 0) > 0; }).sort(function(a,b){ return (b.closeDatePushes || 0) - (a.closeDatePushes || 0); });
+  var h = '<div class="card"><div class="card-header"><span class="card-title">Deals Pushing — Close Date Slipping</span><span class="card-sub">' + (pushed.length ? pushed.length + ' deal' + (pushed.length === 1 ? '' : 's') + ' moved their close date · 3+ is a red flag' : 'Counted automatically on each Zoho sync') + '</span></div>';
+  if (!pushed.length) {
+    h += '<div class="empty">When a deal\'s Zoho close date moves to a later date between syncs, it\'s counted here and badged on the Aureum grid. Work the BDE on anything that keeps slipping.</div></div>';
+    return h;
+  }
+  h += '<table><thead><tr><th>Deal</th><th>Client</th><th>BDE</th><th class="num">Pushes</th><th>Latest move</th></tr></thead><tbody>';
+  pushed.forEach(function(d){ var n = d.closeDatePushes || 0; var last = (d.closeDateHistory || []).slice(-1)[0]; var col = n >= 3 ? 'var(--danger)' : 'var(--amber)';
+    h += '<tr><td><b>' + esc(d.dealName) + '</b></td><td style="color:var(--muted)">' + esc(d.client) + '</td><td style="color:var(--muted)">' + esc(d.bde || '') + '</td><td class="num" style="color:' + col + ';font-weight:700">↗ ' + n + '</td><td style="color:var(--muted);font-size:11px">' + (last ? fmtDate(last.from) + ' → ' + fmtDate(last.to) : '—') + '</td></tr>';
+  });
+  h += '</tbody></table></div>';
+  return h;
+}
 function renderForecastAccuracy() {
   var snaps    = getSnapshots();
   var actuals  = getActuals();
@@ -3257,6 +3466,10 @@ function renderForecastAccuracy() {
 
   // Week-over-week forecast changes (Don's ask).
   html += weekOverWeekCardHtml();
+
+  // Reconciliation by deal + deals pushing (Don's asks from the 2026-06-25 review).
+  html += reconciliationCardHtml();
+  html += pushedDealsCardHtml();
 
   // ── Per-BDE accuracy table ──
   if (bdes.length) {
@@ -4255,30 +4468,50 @@ function renderActiveCustomers() {
   html += '</div>';
   html += '<div class="toolbar">' + searchBox('active', 'Search deal, client, BDE…') + msDropdown('active', 'bde', 'BDE', bdes) + msDropdown('active', 'status', 'Status', ['Aureum Active Account','Active Client','Expanding']) + '</div>';
   html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#f6f9fc;border-radius:4px;border-left:3px solid var(--gold)"><b>HC legend:</b> a plain number is the manually-planned monthly HC for the anchor month · <b style="color:var(--navy)">·z</b> next to a number means the value came from the Zoho <code>Headcounts</code> field (used when no monthly HC has been entered yet — typical for Closed Won deals already in operation).</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#fff8e1;border-radius:4px;border-left:3px solid var(--gold)">Deals are grouped by <b>client</b>, each with a subtotal row (Don\'s ask: see one customer\'s total headcount and MRR at a glance — search a client name to isolate it).</div>';
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
   html += '<th>Status</th><th>Client</th><th>Deal</th><th>Stage</th><th class="num">HC (current)</th><th class="num">MRR/Head</th><th class="num">Monthly $</th><th class="num">Margin %</th>';
   html += '</tr></thead><tbody>';
   var anchor = getAnchorMonth();
-  deals.forEach(function(d) {
-    // HC fallback chain: user's planned HC for the anchor month → Zoho's Headcounts
-    // field → Excel seed totalHC → 0. Closed Won deals usually have no monthlyHC
-    // populated (they came from the seed as totals), so without the Zoho fallback
-    // they all rendered as 0.
+  // Per-deal HC + monthly $ (shared logic), reused for both rows and subtotals.
+  function _row(d) {
+    // HC fallback chain: planned HC for the anchor month → Zoho Headcounts → totalHC → 0.
     var monthHC = (d.monthlyHC || {})[anchor] || 0;
     var hc = monthHC || d.zoho_totalHC || d.totalHC || 0;
     var pricing = effectivePricing(d);
-    // MRR/Head: real per-head when we have HC; otherwise show the deal's total MRR.
     var pph = hc > 0 ? (pricing / hc) : pricing;
-    // Monthly $: for actively billing deals, the deal MRR is the monthly $ if HC > 0.
     var monthly$ = hc > 0 ? pricing : 0;
-    var hcLabel  = hc + (monthHC === 0 && d.zoho_totalHC ? ' <span style="color:var(--muted);font-size:10px" title="From Zoho Headcounts (no monthly HC planned for this month)">·z</span>' : '');
-    html += '<tr><td>' + statusPill(d.status) + '</td><td>' + esc(d.client) + '</td><td><b>' + esc(d.dealName) + '</b></td>';
-    html += '<td>' + stagePill(d.stage) + '</td>';
-    html += '<td class="num">' + hcLabel + '</td>';
-    html += '<td class="num">' + fmt$k(pph) + '</td>';
-    html += '<td class="num num-bold">' + fmt$k(monthly$) + '</td>';
-    html += '<td class="num">' + fmtPct(getMarginFor(d)) + '</td></tr>';
+    return { hc: hc, fromZoho: (monthHC === 0 && d.zoho_totalHC), pph: pph, monthly$: monthly$ };
+  }
+  // Group by client, then sort deals within each client by name.
+  var byClient = {};
+  deals.forEach(function(d){ var c = d.client || '—'; (byClient[c] = byClient[c] || []).push(d); });
+  var clients = Object.keys(byClient).sort(function(a,b){ return a.toLowerCase() < b.toLowerCase() ? -1 : 1; });
+  var grand = { hc: 0, monthly$: 0 };
+  clients.forEach(function(c) {
+    var list = byClient[c].slice().sort(function(a,b){ return (a.dealName||'').toLowerCase() < (b.dealName||'').toLowerCase() ? -1 : 1; });
+    var cHC = 0, cMonthly = 0;
+    list.forEach(function(d) {
+      var r = _row(d);
+      cHC += r.hc; cMonthly += r.monthly$;
+      var hcLabel = r.hc + (r.fromZoho ? ' <span style="color:var(--muted);font-size:10px" title="From Zoho Headcounts (no monthly HC planned for this month)">·z</span>' : '');
+      html += '<tr><td>' + statusPill(d.status) + '</td><td style="color:var(--muted)">' + esc(d.client) + '</td><td><b>' + esc(d.dealName) + '</b></td>';
+      html += '<td>' + stagePill(d.stage) + '</td>';
+      html += '<td class="num">' + hcLabel + '</td>';
+      html += '<td class="num">' + fmt$k(r.pph) + '</td>';
+      html += '<td class="num num-bold">' + fmt$k(r.monthly$) + '</td>';
+      html += '<td class="num">' + fmtPct(getMarginFor(d)) + '</td></tr>';
+    });
+    grand.hc += cHC; grand.monthly$ += cMonthly;
+    // Client subtotal row
+    html += '<tr style="background:#eef4fb;font-weight:700"><td></td><td colspan="3" style="color:var(--navy)">' + esc(c) + ' — subtotal (' + list.length + ' deal' + (list.length === 1 ? '' : 's') + ')</td>';
+    html += '<td class="num" style="color:var(--navy)">' + cHC + '</td><td></td>';
+    html += '<td class="num" style="color:var(--navy)">' + fmt$k(cMonthly) + '</td><td></td></tr>';
   });
+  // Grand total
+  html += '<tr style="background:var(--navy);color:white;font-weight:700"><td colspan="4" style="color:white">TOTAL (' + clients.length + ' clients · ' + deals.length + ' deals)</td>';
+  html += '<td class="num" style="color:white">' + grand.hc + '</td><td></td>';
+  html += '<td class="num" style="color:var(--gold)">' + fmt$k(grand.monthly$) + '</td><td></td></tr>';
   html += '</tbody></table></div></div>';
   document.getElementById('mainContent').innerHTML = html;
 }
