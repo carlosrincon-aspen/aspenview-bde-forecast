@@ -2564,7 +2564,7 @@ function renderAureumGrid() {
   html += '<th class="num" title="Forecast rate Don bills per head. Blank = use the Zoho rate; type to override (turns green).">Fcst $/head</th>';
   html += '<th class="num" title="MRR from Zoho — based on the full mapped headcount">MRR</th>';
   html += '<th class="num" title="Forecast MRR = Fcst HC × Fcst $/head — what Don is actually forecasting">Fcst MRR</th>';
-  html += '<th class="num" title="Annual recurring revenue (Zoho)">ARR</th>';
+  html += '<th class="num" title="Forecast ARR = Fcst MRR × 12 — follows Don\'s forecast $/head">Fcst ARR</th>';
   html += '<th class="num" title="Win % — from Zoho Probability, editable per deal">Win %</th>';
   html += '<th class="num" title="Target Margin — default from Stage Rules (edit in Settings)">Target MG</th>';
   html += '<th class="num" title="Actual Margin — once the deal is priced/closed (blank until known)">Actual MG</th>';
@@ -2636,7 +2636,8 @@ function renderAureumGrid() {
     html += '<td class="num"><input class="price" type="number" min="0" value="' + (d.dollarPerHead || '') + '" onchange="updateDealField(' + dealIdx + ', \'dollarPerHead\', this.value)" placeholder="' + Math.round(pricePerH) + '"' + (rateConfirmed ? ' style="border-color:var(--success);background:#E8F5E9"' : '') + ' title="' + rateTitle + '"></td>';
     html += '<td class="num" title="MRR from Zoho — full mapped headcount">' + (zohoMRR ? fmt$k(zohoMRR) : '—') + '</td>';
     html += '<td class="num num-bold" title="Forecast MRR = Fcst HC × Fcst $/head">' + (fcstMRR ? fmt$k(fcstMRR) : '—') + '</td>';
-    html += '<td class="num">' + (d.arr ? fmt$k(d.arr) : '—') + '</td>';
+    var fcstARR = fcstMRR * 12;
+    html += '<td class="num" title="Forecast ARR = Fcst MRR × 12 (follows the forecast $/head, not the Zoho ARR)">' + (fcstARR ? fmt$k(fcstARR) : '—') + '</td>';
     html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
     html += '<td class="num"><input class="margin" type="number" value="' + Math.round(targetMarginFor(d) * 100) + '" readonly style="background:#f5f5f5;color:var(--muted)" title="Target margin from Stage Rules — edit it in Settings"></td>';
     html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + (aMar !== null ? Math.round(aMar * 100) : '') + '" onchange="updateDealField(' + dealIdx + ', \'actualMargin\', this.value === \'\' ? \'\' : this.value/100)" placeholder="—" title="Actual margin once priced/closed"' + (aMar !== null ? ' style="border-color:var(--success);background:#E8F5E9"' : '') + '></td>';
@@ -2692,7 +2693,7 @@ function renderAureumGrid() {
   html += '<td></td>';                                                               // Fcst $/head
   html += '<td class="num" style="color:white">' + fmt$k(tot.mrr) + '</td>';          // MRR (Zoho)
   html += '<td class="num" style="color:white">' + fmt$k(tot.fcstMRR) + '</td>';      // Fcst MRR
-  html += '<td class="num" style="color:white">' + fmt$k(tot.arr) + '</td>';          // ARR
+  html += '<td class="num" style="color:white">' + fmt$k(tot.fcstMRR * 12) + '</td>'; // Fcst ARR = Fcst MRR × 12
   html += '<td colspan="3"></td>';                                                   // Win, TM, AM
   html += '<td></td>';                                                               // Revert
   html += '<td style="border-left:2px solid var(--gold)"></td>';                     // Spread
@@ -2838,6 +2839,11 @@ function updateDealField(idx, field, value) {
     return v;
   };
   logActivity('Forecast', 'Edit ' + label, d.dealName + ': ' + fmtVal(oldV) + ' → ' + fmtVal(d[field]));
+  // Re-render so the computed columns that depend on this field update immediately —
+  // changing Fcst $/head must move Fcst MRR / Fcst ARR / year totals / the weighted summary
+  // (Michael in the review: "the forecast should have changed the MR ... and it didn't").
+  // Scroll position is preserved by renderTab(), so this no longer "jumps".
+  renderTab();
 }
 function openDealModal(idx) {
   var deals = getDeals();
