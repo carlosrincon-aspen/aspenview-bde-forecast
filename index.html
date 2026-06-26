@@ -1658,10 +1658,21 @@ function actualMarginFor(deal) {
   if (deal.marginOverride !== undefined && deal.marginOverride !== null && deal.marginOverride !== '') return parseFloat(deal.marginOverride);
   return null;
 }
-// Effective margin used in the forecast: actual if known, otherwise target.
+// FORECAST margin — Don's working margin per deal (Michael's ask: default to the stage standard,
+// but let Don adjust it up/down per deal — e.g. OneMain 50%, CGI 20% — and have it drive the
+// adjusted MRR / contribution at the bottom). Returns null when Don hasn't set one.
+function forecastMarginFor(deal) {
+  if (deal.forecastMargin !== undefined && deal.forecastMargin !== null && deal.forecastMargin !== '') return parseFloat(deal.forecastMargin);
+  return null;
+}
+// Effective margin used in the forecast: actual (once priced/closed) → Don's forecast margin →
+// stage target. So the contribution math follows whatever Don sets per deal.
 function getMarginFor(deal) {
   var a = actualMarginFor(deal);
-  return (a !== null && !isNaN(a)) ? a : targetMarginFor(deal);
+  if (a !== null && !isNaN(a)) return a;
+  var f = forecastMarginFor(deal);
+  if (f !== null && !isNaN(f)) return f;
+  return targetMarginFor(deal);
 }
 // True when a deal that SHOULD have a real target margin (Commercial Design+) is falling
 // back to a stage default — i.e. neither a manual override nor a Zoho target margin is set.
@@ -2747,6 +2758,57 @@ function aureumPushToZoho() {
   if (!snap || !snap.locked) { alert('Lock the forecast first — click “🔒 Lock ' + monthLabel(anchor) + ' forecast”, then push changes to Zoho.'); return; }
   pushApprovedToZoho();   // existing push (handles Zoho token + WRITE scope; messages if not enabled)
 }
+// Download the forecast to a spreadsheet (CSV → opens in Excel) for Finance/John. READ-ONLY:
+// builds a file from the current data, never changes anything. Deal rows + monthly build +
+// the gross and adjusted (×win, ×margin) summary rows.
+function downloadAureumCsv() {
+  var deals = getDeals();
+  var anchor = getAnchorMonth();
+  var aYear = parseInt(anchor.split('-')[0]), aMon = parseInt(anchor.split('-')[1]);
+  var monthsY1 = [], monthsY2 = [], k;
+  for (k = aMon; k <= 12; k++) monthsY1.push(aYear + '-' + ('0' + k).slice(-2));
+  for (k = 1; k <= 12; k++) monthsY2.push((aYear + 1) + '-' + ('0' + k).slice(-2));
+  var months = monthsY1.concat(monthsY2);
+  function c(s){ s = (s == null ? '' : String(s)); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  var header = ['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho $/head','Fcst $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Margin %','Target Margin %','In Forecast','Super']
+    .concat(months.map(monthLabel)).concat([aYear + ' Total MRR', (aYear + 1) + ' Total MRR']);
+  var lines = [header.map(c).join(',')];
+  deals.forEach(function(d){
+    var pph = pricePerHead(d), built = d.totalHC || sumMonths(d.monthlyHC) || 0, fcstMRR = built * pph;
+    var row = [d.client, d.dealName, d.bde || '', d.stage || '', (phaseById(phaseForDeal(d)) || {}).short || '',
+      fmtDate30(d.closingDate || d.startDate || d.firstBillableMonth), d.forecastClosingDate || '',
+      (d.zoho_totalHC || 0), built, Math.round(zohoPricePerHead(d) || 0), Math.round(pph),
+      Math.round(d.pricing || 0), Math.round(fcstMRR), Math.round(fcstMRR * 12),
+      Math.round(getWinRateFor(d) * 100), Math.round(getMarginFor(d) * 100), Math.round(targetMarginFor(d) * 100),
+      d.inForecast ? 'Y' : 'N', isSuperDeal(d) ? 'Y' : 'N'];
+    months.forEach(function(mk){ row.push((d.monthlyHC || {})[mk] || 0); });
+    row.push(Math.round(yearDollars(d, monthsY1, pph)), Math.round(yearDollars(d, monthsY2, pph)));
+    lines.push(row.map(c).join(','));
+  });
+  // Summary rows (forecast set: inForecast, non-Closed-Won), gross + adjusted by month.
+  var fd = forecastDeals();
+  function monthAgg(mk, mode){ return fd.reduce(function(s,d){ var hc=(d.monthlyHC||{})[mk]||0, pph=pricePerHead(d), w=getWinRateFor(d), m=getMarginFor(d);
+    return s + (mode==='hc'?hc : mode==='mrr'?hc*pph : mode==='ahc'?hc*w : mode==='amrr'?hc*pph*w : hc*pph*w*m); }, 0); }
+  function sumRow(label, mode, money){
+    var pre = [label].concat(['','','','','','','','','','','','','','','','','','']);  // align to first month col (19 lead cols)
+    var vals = months.map(function(mk){ return Math.round(monthAgg(mk, mode)); });
+    var y1 = vals.slice(0, monthsY1.length).reduce(function(a,b){return a+b;},0);
+    var y2 = vals.slice(monthsY1.length).reduce(function(a,b){return a+b;},0);
+    return pre.concat(vals).concat([y1, y2]).map(c).join(',');
+  }
+  lines.push('');
+  lines.push(sumRow('TOTAL — Gross HC / month', 'hc'));
+  lines.push(sumRow('TOTAL — Gross MRR / month', 'mrr'));
+  lines.push(sumRow('TOTAL — Adjusted HC / month (×win)', 'ahc'));
+  lines.push(sumRow('TOTAL — Adjusted MRR / month (×win)', 'amrr'));
+  lines.push(sumRow('TOTAL — Contribution $ / month (×win×margin)', 'amgn'));
+  var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'aspenview-forecast-' + new Date().toISOString().slice(0, 10) + '.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  logActivity('Forecast', 'Download CSV', deals.length + ' deals exported');
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: AUREUM DEMAND FORECAST (main grid)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2795,6 +2857,7 @@ function renderAureumGrid() {
   var html = '';
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">The single input — one screen for <b>' + Y1 + ', ' + Y2 + ' &amp; ' + Y3 + '</b>. Spread ' + Y1 + '/' + Y2 + ' by month; ' + Y3 + ' by growth %. Lock &amp; push to Zoho at the bottom.</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="downloadAureumCsv()" title="Download the forecast to a spreadsheet (CSV → Excel) for Finance — deal rows + monthly build + gross & adjusted summary. Read-only, changes nothing.">⬇ Download spreadsheet</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="newDealInZoho()">+ New Deal (in Zoho)</button></div></div>';
 
   // "Build & Invoice, not Close" reminder — Michael's framing for the whole model.
@@ -2854,7 +2917,7 @@ function renderAureumGrid() {
   html += '<th rowspan="2" title="Include this deal in the 3 mo. revenue tab">Fcst</th>';
   html += '<th rowspan="2" title="Automatic — a deal with 100+ total headcount is a Super-Deal">Super</th>';
   html += '<th rowspan="2">BDE</th><th rowspan="2">Stage</th><th rowspan="2" title="5-phase sales model">Phase</th>';
-  html += '<th colspan="12" style="text-align:center;background:#1c3250;color:white;border-left:2px solid var(--gold)">Deal Summary</th>';
+  html += '<th colspan="13" style="text-align:center;background:#1c3250;color:white;border-left:2px solid var(--gold)">Deal Summary</th>';
   html += '<th rowspan="2" class="num" title="Revert this deal to its original Zoho values (undo manual changes)">Revert</th>';
   html += '<th rowspan="2" class="num" style="border-left:2px solid var(--gold)" title="Spread the total headcount across the months automatically">Spread</th>';
   html += '<th colspan="' + (N1 + 1) + '" style="text-align:center;background:#0A1928;color:white;border-left:2px solid var(--gold)">' + Y1 + ' — Headcount by Month</th>';
@@ -2874,6 +2937,7 @@ function renderAureumGrid() {
   html += '<th class="num" title="Forecast MRR = Fcst HC × Fcst $/head — what Don is actually forecasting">Fcst MRR</th>';
   html += '<th class="num" title="Forecast ARR = Fcst MRR × 12 — follows Don\'s forecast $/head">Fcst ARR</th>';
   html += '<th class="num" title="Win % — from Zoho Probability, editable per deal">Win %</th>';
+  html += '<th class="num" title="Forecast Margin — Don\'s working margin (defaults to the stage standard; edit up/down per deal). Drives the adjusted MRR / contribution at the bottom.">Fcst MG</th>';
   html += '<th class="num" title="Target Margin — default from Stage Rules (edit in Settings)">Target MG</th>';
   html += '<th class="num" title="Actual Margin — once the deal is priced/closed (blank until known)">Actual MG</th>';
   // Y1 months + calendar-year total
@@ -2931,7 +2995,13 @@ function renderAureumGrid() {
     // ── Deal Summary ──
     var pushes = d.closeDatePushes || 0;
     var pushBadge = pushes > 0 ? ' <span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;background:' + (pushes >= 3 ? '#c62828' : '#f0a202') + ';color:white" title="Close date pushed out ' + pushes + ' time' + (pushes === 1 ? '' : 's') + (pushes >= 3 ? ' — work this deal with the BDE' : '') + '">↗' + pushes + '</span>' : '';
-    html += '<td style="color:var(--muted);border-left:2px solid var(--gold);white-space:nowrap" title="Close date — standardized to the 30th for reporting (display only; Zoho value unchanged)">' + esc(fmtDate30(d.closingDate || d.startDate || d.firstBillableMonth)) + pushBadge + '</td>';
+    // Close date cell: editable FORECAST close date (fixes erroneous Zoho dates like 2030) with the
+    // Zoho date shown underneath as the reference. Does NOT change the Spread. Pushes to Zoho on lock.
+    var zClose = fmtDate30(d.closingDate || d.startDate || d.firstBillableMonth);
+    var fClose = d.forecastClosingDate || '';
+    html += '<td style="border-left:2px solid var(--gold);white-space:nowrap">'
+      + '<input type="date" value="' + esc(fClose) + '" onchange="updateDealStr(' + dealIdx + ', \'forecastClosingDate\', this.value)" title="Forecast close date — set it to fix an erroneous Zoho date (e.g. 2030). Blank = use the Zoho date (' + esc(zClose) + '). Pushes to Zoho on lock; does NOT change the Spread." style="font-size:10px;width:112px;text-align:left;' + (fClose ? 'border-color:var(--success);background:#E8F5E9' : '') + '">'
+      + '<div style="font-size:9px;color:var(--muted)">Zoho: ' + esc(zClose) + pushBadge + '</div></td>';
     html += '<td class="num" style="color:var(--muted)">' + (d.contractMonths ? d.contractMonths + ' mo' : '—') + '</td>';
     html += '<td class="num" style="color:var(--muted)" title="Headcount mapped on the Zoho deal (read-only)">' + (zohoHC || '—') + '</td>';
     html += '<td class="num"><input class="margin" type="number" min="0" value="' + (fcstHC || '') + '" onchange="updateForecastHC(' + dealIdx + ', this.value)" placeholder="' + (zohoHC || 0) + '" title="Total headcount forecast for this deal. Blank defaults to the Zoho headcount (' + (zohoHC || 0) + '). Type to override, then click ⇶ Spread to distribute it across the months."></td>';
@@ -2947,6 +3017,9 @@ function renderAureumGrid() {
     var fcstARR = fcstMRR * 12;
     html += '<td class="num" title="Forecast ARR = Fcst MRR × 12 (follows the forecast $/head, not the Zoho ARR)">' + (fcstARR ? fmt$k(fcstARR) : '—') + '</td>';
     html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + Math.round(getWinRateFor(d) * 100) + '" onchange="updateDealField(' + dealIdx + ', \'winRateAdj\', this.value/100)"></td>';
+    // Forecast margin — editable; defaults (placeholder) to the stage target. Green when Don set one. Drives the adjusted/contribution rows.
+    var fMar = forecastMarginFor(d);
+    html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + (fMar !== null ? Math.round(fMar * 100) : '') + '" onchange="updateDealField(' + dealIdx + ', \'forecastMargin\', this.value === \'\' ? \'\' : this.value/100)" placeholder="' + Math.round(targetMarginFor(d) * 100) + '" title="Forecast margin — defaults to the stage target (' + Math.round(targetMarginFor(d) * 100) + '%); type to adjust up/down. Drives the adjusted MRR / contribution."' + (fMar !== null ? ' style="border-color:var(--success);background:#E8F5E9"' : '') + '></td>';
     html += '<td class="num"><input class="margin" type="number" value="' + Math.round(targetMarginFor(d) * 100) + '" readonly style="background:#f5f5f5;color:var(--muted)" title="Target margin from Stage Rules — edit it in Settings"></td>';
     html += '<td class="num"><input class="margin" type="number" min="0" max="100" step="1" value="' + (aMar !== null ? Math.round(aMar * 100) : '') + '" onchange="updateDealField(' + dealIdx + ', \'actualMargin\', this.value === \'\' ? \'\' : this.value/100)" placeholder="—" title="Actual margin once priced/closed"' + (aMar !== null ? ' style="border-color:var(--success);background:#E8F5E9"' : '') + '></td>';
     // Revert + Spread (per-row actions, grouped just before the months)
@@ -2971,6 +3044,10 @@ function renderAureumGrid() {
               hcY1: monthsY1.map(function(){ return 0; }), hcY2: monthsY2.map(function(){ return 0; }),
               // monthly forecast MRR (Σ HC×$/head) — Michael: "total MRR by month at the bottom"
               mrrY1: monthsY1.map(function(){ return 0; }), mrrY2: monthsY2.map(function(){ return 0; }),
+              // ADJUSTED by month (Eric/John ask): HC×win, MRR×win, margin$ = MRR×win×forecast-margin.
+              aHcY1: monthsY1.map(function(){ return 0; }),  aHcY2: monthsY2.map(function(){ return 0; }),
+              aMrrY1: monthsY1.map(function(){ return 0; }), aMrrY2: monthsY2.map(function(){ return 0; }),
+              aMgnY1: monthsY1.map(function(){ return 0; }), aMgnY2: monthsY2.map(function(){ return 0; }),
               // Probability-weighted view (summary only — deal rows stay pure):
               //   weighted $ = Σ year$ × win% ; contribution $ = Σ year$ × win% × margin ; weighted HC = Σ HC × win%
               wHC:0, y1w:0, y2w:0, y3w:0, y1c:0, y2c:0, y3c:0 };
@@ -2988,8 +3065,8 @@ function renderAureumGrid() {
     tot.y1 += y1; tot.y2 += y2; tot.y3 += y3;
     tot.y1w += y1 * win;       tot.y2w += y2 * win;       tot.y3w += y3 * win;
     tot.y1c += y1 * win * mgn; tot.y2c += y2 * win * mgn; tot.y3c += y3 * win * mgn;
-    monthsY1.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY1[i] += hc; tot.mrrY1[i] += hc * pph; });
-    monthsY2.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY2[i] += hc; tot.mrrY2[i] += hc * pph; });
+    monthsY1.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY1[i] += hc; tot.mrrY1[i] += hc * pph; tot.aHcY1[i] += hc * win; tot.aMrrY1[i] += hc * pph * win; tot.aMgnY1[i] += hc * pph * win * mgn; });
+    monthsY2.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY2[i] += hc; tot.mrrY2[i] += hc * pph; tot.aHcY2[i] += hc * win; tot.aMrrY2[i] += hc * pph * win; tot.aMgnY2[i] += hc * pph * win * mgn; });
   });
   var yTotCss = 'color:var(--gold);border-left:1px solid var(--gold)';
   html += '<tr class="totals-row" style="background:var(--navy);color:white;font-weight:700">';
@@ -3002,9 +3079,9 @@ function renderAureumGrid() {
   html += '<td class="num" style="color:white">' + fmt$k(tot.mrr) + '</td>';          // MRR (Zoho)
   html += '<td class="num" style="color:white">' + fmt$k(tot.fcstMRR) + '</td>';      // Fcst MRR
   html += '<td class="num" style="color:white">' + fmt$k(tot.fcstMRR * 12) + '</td>'; // Fcst ARR = Fcst MRR × 12
-  html += '<td colspan="3"></td>';                                                   // Win, TM, AM
+  html += '<td colspan="4"></td>';                                                   // Win, Fcst MG, TM, AM
   html += '<td></td>';                                                               // Revert
-  html += '<td style="border-left:2px solid var(--gold)"></td>';                     // Spread
+  html += '<td style="border-left:2px solid var(--gold);color:#9ecbff;font-size:10px">HC / mo (gross)</td>'; // Spread col — row label
   tot.hcY1.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:white;' + bl + '">' + v + '</td>'; });
   html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';        // Y1 total $
   tot.hcY2.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:white;' + bl + '">' + v + '</td>'; });
@@ -3015,11 +3092,11 @@ function renderAureumGrid() {
 
   // MRR / month totals row — the dollars behind each month's headcount (Σ HC × $/head).
   html += '<tr class="totals-row" style="background:#13233b;color:var(--gold);font-weight:700">';
-  html += '<td colspan="7" style="color:var(--gold)">MRR / month (forecast)</td>';
+  html += '<td colspan="7" style="color:var(--gold)">MRR / month (gross)</td>';
   html += '<td colspan="2" style="border-left:2px solid var(--gold)"></td>';          // Start Date + Contract
-  html += '<td colspan="10"></td>';                                                   // Zoho HC → Actual MG (10 cols)
+  html += '<td colspan="11"></td>';                                                   // Zoho HC → Actual MG (11 cols)
   html += '<td></td>';                                                                // Revert
-  html += '<td style="border-left:2px solid var(--gold)"></td>';                      // Spread
+  html += '<td style="border-left:2px solid var(--gold);color:var(--gold);font-size:10px">MRR / mo (gross)</td>'; // Spread col — row label
   tot.mrrY1.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:var(--gold);' + bl + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
   html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';        // Y1 total $
   tot.mrrY2.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:var(--gold);' + bl + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
@@ -3027,6 +3104,35 @@ function renderAureumGrid() {
   html += '<td style="border-left:2px solid var(--gold)"></td>';                      // Y3 growth %
   html += '<td class="num" style="color:var(--gold)">' + fmt$k(tot.y3) + '</td>';      // Y3 total $
   html += '<td></td></tr>';
+
+  // ── ADJUSTED by month (Eric/John ask): win-rate- and margin-adjusted, month by month ──
+  // Helper: emit a month-aligned totals row (label, the two month arrays, the 3 year totals).
+  function adjRow(label, sublabel, bg, fg, arrY1, arrY2, t1, t2, t3, fmtFn) {
+    var h = '<tr class="totals-row" style="background:' + bg + ';color:' + fg + ';font-weight:700">';
+    h += '<td colspan="7" style="color:' + fg + '">' + label + '</td>';
+    h += '<td colspan="2" style="border-left:2px solid var(--gold)"></td>';
+    h += '<td colspan="11"></td>';
+    h += '<td></td>';
+    h += '<td style="border-left:2px solid var(--gold);color:' + fg + ';font-size:10px">' + sublabel + '</td>';
+    arrY1.forEach(function(v, i){ var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; h += '<td class="num" style="color:' + fg + ';' + bl + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
+    h += '<td class="num" style="' + yTotCss + '">' + fmtFn(t1) + '</td>';
+    arrY2.forEach(function(v, i){ var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; h += '<td class="num" style="color:' + fg + ';' + bl + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
+    h += '<td class="num" style="' + yTotCss + '">' + fmtFn(t2) + '</td>';
+    h += '<td style="border-left:2px solid var(--gold)"></td>';
+    h += '<td class="num" style="color:var(--gold)">' + fmtFn(t3) + '</td>';
+    h += '<td></td></tr>';
+    return h;
+  }
+  function _sum(a){ return a.reduce(function(s,v){ return s + v; }, 0); }
+  var rnd = function(v){ return Math.round(v); };
+  // Section divider
+  html += '<tr class="totals-row" style="background:#0A1928;color:#7fa8d8;font-weight:700"><td colspan="7" style="color:#7fa8d8;font-size:11px;text-transform:uppercase;letter-spacing:.4px">↓ Adjusted (× Win % and Forecast Margin)</td><td colspan="13" style="border-left:2px solid var(--gold)"></td><td></td><td style="border-left:2px solid var(--gold)"></td><td colspan="' + (N1 + 1) + '"></td><td colspan="13"></td><td colspan="2" style="border-left:2px solid var(--gold)"></td><td></td></tr>';
+  // Adjusted HC by month (× win%)
+  html += adjRow('Adj. Headcount / month', 'Adj HC', '#13233b', '#9ecbff', tot.aHcY1, tot.aHcY2, _sum(tot.aHcY1), _sum(tot.aHcY2), _sum(tot.aHcY2), rnd);
+  // Adjusted MRR by month (× win%)
+  html += adjRow('Adj. MRR / month', 'Adj MRR', '#13233b', '#9ecbff', tot.aMrrY1, tot.aMrrY2, tot.y1w, tot.y2w, tot.y3w, fmt$k);
+  // Adjusted Margin $ (contribution) by month (× win% × forecast margin)
+  html += adjRow('Adj. Margin $ / month (contribution)', 'Contribution', '#13233b', '#aef0bd', tot.aMgnY1, tot.aMgnY2, tot.y1c, tot.y2c, tot.y3c, fmt$k);
 
   html += '</tbody></table></div></div>';
 
@@ -3069,6 +3175,29 @@ function renderAureumGrid() {
   html += _wRow(Y3 + ' total', tot.y3, tot.y3w, tot.y3c, 'calendar year ' + Y3 + ' (growth %)');
   html += '</tbody></table>';
   html += '<div style="padding:8px 16px;border-top:1px solid var(--border);background:#fbfdff;font-size:11.5px;color:var(--muted)">Forecast HC <b style="color:var(--navy)">' + tot.totHC + '</b> · Probability-weighted HC <b style="color:#1d4a86">' + Math.round(tot.wHC) + '</b></div>';
+  // ── CGI breakout vs All Other (Eric/John ask) — CGI on its own line with its own win %/margin;
+  //    everything else folded into "All Other" (OneMain stays in All Other, per Michael). ──
+  var cgiAgg = { hc:0, mrr:0, w:0, c:0 }, othAgg = { hc:0, mrr:0, w:0, c:0 };
+  filtered.forEach(function(d){
+    var pph = pricePerHead(d), built = d.totalHC || sumMonths(d.monthlyHC) || 0, win = getWinRateFor(d), mgn = getMarginFor(d);
+    var y = yearDollars(d, monthsY1, pph) + yearDollars(d, monthsY2, pph);   // Y1+Y2 gross MRR
+    var t = /cgi/.test((d.client || '').toLowerCase()) ? cgiAgg : othAgg;
+    t.hc += built; t.mrr += y; t.w += y * win; t.c += y * win * mgn;
+  });
+  function _segRow(label, a, strong) {
+    var lc = strong ? 'var(--navy)' : 'var(--muted)';
+    return '<tr><td style="padding:6px 12px;font-weight:700;color:' + lc + '">' + label + '</td>'
+      + '<td class="num" style="padding:6px 12px">' + Math.round(a.hc) + '</td>'
+      + '<td class="num" style="padding:6px 12px;font-weight:700">' + fmt$k(a.mrr) + '</td>'
+      + '<td class="num" style="padding:6px 12px;color:#1d4a86;font-weight:700">' + fmt$k(a.w) + '</td>'
+      + '<td class="num" style="padding:6px 12px;color:#2e7d32;font-weight:700">' + fmt$k(a.c) + '</td></tr>';
+  }
+  html += '<div style="padding:8px 16px;border-top:1px solid var(--border);background:#f6f9fc;font-size:11px;color:var(--muted)"><b style="color:var(--navy)">CGI breakout</b> — CGI on its own line (its own win % &amp; margin); everything else is “All Other”. Y1+Y2 gross MRR with the weighted &amp; contribution views.</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:#fff;border-bottom:2px solid var(--border)">';
+  html += '<th style="text-align:left;padding:6px 12px">Segment</th><th class="num" style="padding:6px 12px">Fcst HC</th><th class="num" style="padding:6px 12px">Gross MRR</th><th class="num" style="padding:6px 12px;color:#1d4a86">Weighted (×win)</th><th class="num" style="padding:6px 12px;color:#2e7d32">Contribution (×margin)</th></tr></thead><tbody>';
+  html += _segRow('CGI', cgiAgg, true);
+  html += _segRow('All Other', othAgg, true);
+  html += '</tbody></table>';
   html += '</div>';
 
   // ── Workflow note + bottom action bar (sticky). Don/Michael: save & revise freely as working
@@ -3114,6 +3243,18 @@ function updateDealHC(idx, monthKey, value) {
   d.totalHC = sumMonths(d.monthlyHC);
   setDeals(deals);
   logActivity('Forecast', 'Edit HC', d.dealName + ' · ' + monthKey + ': ' + oldV + ' → ' + (d.monthlyHC[monthKey] || 0));
+}
+// String-valued per-deal field setter (e.g. forecastClosingDate) — updateDealField parses floats,
+// so dates/text need this. Blank clears the override. Re-renders (scroll preserved).
+function updateDealStr(idx, field, value) {
+  var deals = getDeals();
+  var d = deals[idx]; if (!d) return;
+  var oldV = d[field];
+  if (value === '' || value === null || value === undefined) delete d[field];
+  else d[field] = value;
+  setDeals(deals);
+  logActivity('Forecast', 'Edit ' + field, (d.dealName || '') + ': ' + (oldV || '—') + ' → ' + (value || '—'));
+  renderTab();
 }
 // Fcst HC is an independent field: Don types the total headcount he forecasts for the deal.
 // It is NOT tied to the monthly cells — the ⇶ Spread tool is what distributes this total
