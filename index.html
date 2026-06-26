@@ -1853,7 +1853,8 @@ function unlockForecast(monthKey) {
 function recoverForecastFromSnapshot(monthKey) {
   var s = getSnapshots().find(function(x){ return x.snapshotMonth === monthKey; });
   if (!s || !s.perDeal) { alert('No snapshot found for ' + monthLabel(monthKey) + '.'); return; }
-  if (!confirm('Recover the forecast from the ' + monthLabel(monthKey) + ' snapshot' + (s.locked ? ' (LOCKED)' : '') + '?\n\nThis writes the 3-month headcount build from that snapshot back into the live forecast and re-checks Fcst for those deals. Use this to bring back work that was lost.')) return;
+  if (!confirm('Recover the forecast from the ' + monthLabel(monthKey) + ' snapshot' + (s.locked ? ' (LOCKED)' : '') + '?\n\nThis writes the 3-month headcount build from that snapshot back into the live forecast and re-checks Fcst for those deals. A safety version of the current state is saved first, so this is reversible.')) return;
+  _pushVersion('Auto-save before recovering the ' + monthLabel(monthKey) + ' snapshot');   // reversible
   var m0 = monthKey, m1 = monthKeyAfter(monthKey, 1), m2 = monthKeyAfter(monthKey, 2);
   var deals = getDeals(), byName = {}; deals.forEach(function(d){ byName[d.dealName] = d; });
   var restored = 0, missing = [];
@@ -1872,6 +1873,47 @@ function recoverForecastFromSnapshot(monthKey) {
   setDeals(deals);
   logActivity('Forecast', 'Recover from snapshot', monthLabel(monthKey) + ' · ' + restored + ' deals restored');
   alert('Recovered ' + restored + ' deals from the ' + monthLabel(monthKey) + ' snapshot.' + (missing.length ? '\n\n' + missing.length + ' deal(s) in the snapshot are no longer in the list (renamed/removed): ' + missing.slice(0,8).join(', ') + (missing.length > 8 ? '…' : '') : '') + '\n\nReview the Aureum grid, then 💾 Save a version right away so it\'s safe.');
+  renderTab();
+}
+
+// Reconstruct the forecast from the Activity log — recovers every per-month HC cell Don typed by
+// hand (ALL months, including beyond the 3-month window the snapshot keeps), plus Fcst HC totals.
+// Replays edits in order (last value per deal+month wins). NOTE: headcount entered via the ⇶ Spread
+// tool is logged only as a summary, so spread-built months can't be rebuilt this way — use the
+// snapshot recovery for those. A safety version is saved first.
+function reconstructFromActivityLog() {
+  var log = getActivityLog();
+  var hcEdits   = log.filter(function(e){ return e.action === 'Edit HC'; });
+  var fcstEdits = log.filter(function(e){ return e.action === 'Edit Fcst HC'; });
+  var spreads   = log.filter(function(e){ return e.action === 'Spread headcount'; });
+  if (!hcEdits.length && !fcstEdits.length) {
+    alert('No per-cell HC edits found in the Activity log (it keeps the last ~200 actions).' + (spreads.length ? '\n\nThere are ' + spreads.length + ' ⇶ Spread action(s), but spreads aren\'t logged per month — recover those from the Jul snapshot instead.' : '')); return;
+  }
+  if (!confirm('Reconstruct from the Activity log?\n\nReplays ' + hcEdits.length + ' per-month HC edit(s) and ' + fcstEdits.length + ' Fcst HC change(s) Don typed — across ALL months, including beyond 3. A safety version is saved first, so it\'s reversible.\n\nNote: headcount built with the ⇶ Spread tool is not logged per month and won\'t be rebuilt here' + (spreads.length ? ' (' + spreads.length + ' spread action(s) detected — use Recover from the snapshot for those)' : '') + '.')) return;
+  _pushVersion('Auto-save before Activity-log reconstruction');
+  var deals = getDeals(), byName = {}; deals.forEach(function(d){ byName[d.dealName] = d; });
+  var monthRe = /^(.+) · (\d{4}-\d{2}): .* → (\d+)\s*$/;
+  var totRe   = /^(.+): \d+ → (\d+)\s*$/;
+  var appliedHc = 0, appliedTot = 0, miss = {};
+  hcEdits.forEach(function(e){
+    var m = (e.details || '').match(monthRe); if (!m) return;
+    var d = byName[m[1]]; if (!d) { miss[m[1]] = 1; return; }
+    d.monthlyHC = d.monthlyHC || {};
+    var v = parseInt(m[3]);
+    if (v > 0) d.monthlyHC[m[2]] = v; else delete d.monthlyHC[m[2]];
+    appliedHc++;
+  });
+  deals.forEach(function(d){ if (d.monthlyHC && Object.keys(d.monthlyHC).length) d.totalHC = sumMonths(d.monthlyHC); });
+  fcstEdits.forEach(function(e){
+    var m = (e.details || '').match(totRe); if (!m) return;
+    var d = byName[m[1]]; if (!d) return;
+    if (!d.monthlyHC || Object.keys(d.monthlyHC).length === 0) { d.totalHC = parseInt(m[2]) || 0; appliedTot++; }
+  });
+  deals.forEach(function(d){ if ((d.totalHC || 0) > 0 || (d.monthlyHC && Object.keys(d.monthlyHC).length)) d.inForecast = true; });
+  setDeals(deals);
+  logActivity('Forecast', 'Reconstruct from activity log', appliedHc + ' HC edits + ' + appliedTot + ' Fcst HC');
+  var missN = Object.keys(miss).length;
+  alert('Replayed ' + appliedHc + ' monthly HC edit(s) and ' + appliedTot + ' Fcst HC total(s) across all months.' + (missN ? '\n\n' + missN + ' deal name(s) in the log no longer match the current list.' : '') + '\n\nReview Aureum and 💾 Save a version.');
   renderTab();
 }
 
@@ -1899,27 +1941,31 @@ function _captureForecastItems() {
   });
   return items;
 }
-function saveForecastVersion() {
+// Push a version without prompting — used by Save version and as an auto safety-save before any
+// recovery action (so every recover/reconstruct is reversible).
+function _pushVersion(note) {
   var versions = getForecastVersions();
   var label = 'v' + (versions.length + 1);
-  var note = prompt('Save the current forecast as a working version (' + label + ').\n\nOptional note — what changed / what to review:', '');
-  if (note === null) return;   // cancelled
-  var who = (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'anon';
-  var anchor = getAnchorMonth();
-  var t = forecastTotals(rollingMonths(anchor, 3));
   versions.push({
     id: String(new Date().getTime()),
     label: label,
     savedAt: new Date().toISOString(),
-    savedBy: who,
+    savedBy: (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'auto',
     note: (note || '').trim(),
-    anchor: anchor,
+    anchor: getAnchorMonth(),
     items: _captureForecastItems(),
     summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) }
   });
   setForecastVersions(versions);
+  return label;
+}
+function saveForecastVersion() {
+  var label = 'v' + (getForecastVersions().length + 1);
+  var note = prompt('Save the current forecast as a working version (' + label + ').\n\nOptional note — what changed / what to review:', '');
+  if (note === null) return;   // cancelled
+  _pushVersion(note);
   logActivity('Forecast', 'Save working version', label + (note ? ' · ' + note : ''));
-  alert('💾 Saved as ' + label + '. Keep revising and save again (v' + (versions.length + 1) + ', …), or restore any version from “Versions”. Nothing was locked or pushed to Zoho.');
+  alert('💾 Saved as ' + label + '. Keep revising and save again, or restore any version from “Versions”. Nothing was locked or pushed to Zoho.');
   renderTab();
 }
 function restoreForecastVersion(id) {
@@ -3688,7 +3734,8 @@ function renderForecastAccuracy() {
     html += '</tbody></table></div>';
   }
 
-  html += '<div class="card"><div class="card-header"><span class="card-title">Historical Snapshots</span><span class="card-sub">' + snaps.length + ' total · ' + lockedSnaps.length + ' locked</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Historical Snapshots</span><span class="card-sub">' + snaps.length + ' total · ' + lockedSnaps.length + ' locked · ↩ Recover restores a snapshot\'s 3-month build</span>';
+  html += '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="reconstructFromActivityLog()" title="Rebuild the forecast from the Activity log — recovers every per-month HC cell typed by hand, across all months (not spread-built months)">↩ Reconstruct from Activity log</button></div>';
   if (!snaps.length) {
     html += '<div class="empty">No snapshots yet. One will be auto-taken on your first session each month, or click "Lock current forecast" above to capture an immutable snapshot now.</div>';
   } else {
