@@ -839,8 +839,10 @@ function fbInitDataSync() {
       fbReady = true;
       setFbPill('on', 'Sync · Live');
       autoApplySeedOnce();   // now sees latest Firestore data; setDeals triggers push if changed
-      migrateStageRules20260625();
-      purgeSeededHcOnce();
+      // NOTE: the one-time stage-rules migration and the Excel purge are NOT auto-run anymore.
+      // They were gated by a LOCAL (per-browser) flag, so a fresh browser/device re-ran them and
+      // wiped live forecast work others had saved. They are now MANUAL-ONLY (Settings → "Reset
+      // deals to Zoho"), so opening the app never destroys saved data.
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
       renderTab();
@@ -848,8 +850,10 @@ function fbInitDataSync() {
       fbReady = true;
       setFbPill('on', 'Sync · Live (first push)');
       autoApplySeedOnce();   // populates ghosts before first push
-      migrateStageRules20260625();
-      purgeSeededHcOnce();
+      // NOTE: the one-time stage-rules migration and the Excel purge are NOT auto-run anymore.
+      // They were gated by a LOCAL (per-browser) flag, so a fresh browser/device re-ran them and
+      // wiped live forecast work others had saved. They are now MANUAL-ONLY (Settings → "Reset
+      // deals to Zoho"), so opening the app never destroys saved data.
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
       fbPushNow();
@@ -1841,6 +1845,33 @@ function unlockForecast(monthKey) {
   s.unlockedAt = new Date().toISOString();
   setSnapshots(snaps);
   logActivity('Forecast', 'Unlock month forecast', monthKey + ' · by ' + s.unlockedBy);
+  renderTab();
+}
+// Recover the live forecast from a saved snapshot (locked or auto). Snapshots live in their own
+// `snapshots` key (untouched by the purge), so a locked forecast survives even if the live deals
+// were wiped. Restores the 3-month headcount build (m0/m1/m2) per deal and re-flags Fcst.
+function recoverForecastFromSnapshot(monthKey) {
+  var s = getSnapshots().find(function(x){ return x.snapshotMonth === monthKey; });
+  if (!s || !s.perDeal) { alert('No snapshot found for ' + monthLabel(monthKey) + '.'); return; }
+  if (!confirm('Recover the forecast from the ' + monthLabel(monthKey) + ' snapshot' + (s.locked ? ' (LOCKED)' : '') + '?\n\nThis writes the 3-month headcount build from that snapshot back into the live forecast and re-checks Fcst for those deals. Use this to bring back work that was lost.')) return;
+  var m0 = monthKey, m1 = monthKeyAfter(monthKey, 1), m2 = monthKeyAfter(monthKey, 2);
+  var deals = getDeals(), byName = {}; deals.forEach(function(d){ byName[d.dealName] = d; });
+  var restored = 0, missing = [];
+  Object.keys(s.perDeal).forEach(function(name){
+    var d = byName[name];
+    var p = s.perDeal[name] || {};
+    var hc = p.hc || {};
+    if (!d) { if ((hc.m0 || hc.m1 || hc.m2)) missing.push(name); return; }
+    d.monthlyHC = d.monthlyHC || {};
+    if (hc.m0) d.monthlyHC[m0] = hc.m0;
+    if (hc.m1) d.monthlyHC[m1] = hc.m1;
+    if (hc.m2) d.monthlyHC[m2] = hc.m2;
+    d.totalHC = sumMonths(d.monthlyHC);
+    if (d.totalHC > 0) { d.inForecast = true; restored++; }
+  });
+  setDeals(deals);
+  logActivity('Forecast', 'Recover from snapshot', monthLabel(monthKey) + ' · ' + restored + ' deals restored');
+  alert('Recovered ' + restored + ' deals from the ' + monthLabel(monthKey) + ' snapshot.' + (missing.length ? '\n\n' + missing.length + ' deal(s) in the snapshot are no longer in the list (renamed/removed): ' + missing.slice(0,8).join(', ') + (missing.length > 8 ? '…' : '') : '') + '\n\nReview the Aureum grid, then 💾 Save a version right away so it\'s safe.');
   renderTab();
 }
 
@@ -3661,10 +3692,10 @@ function renderForecastAccuracy() {
   if (!snaps.length) {
     html += '<div class="empty">No snapshots yet. One will be auto-taken on your first session each month, or click "Lock current forecast" above to capture an immutable snapshot now.</div>';
   } else {
-    html += '<table><thead><tr><th>Snapshot Month</th><th>Status</th><th>Taken At</th><th>Deals</th><th class="num">M0 Forecast Adj.</th><th class="num">M+1 Forecast Adj.</th><th class="num">M+2 Forecast Adj.</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>Snapshot Month</th><th>Status</th><th>Taken At</th><th>Deals</th><th class="num">M0 Forecast Adj.</th><th class="num">M+1 Forecast Adj.</th><th class="num">M+2 Forecast Adj.</th><th>Recover</th></tr></thead><tbody>';
     snaps.slice().reverse().forEach(function(s) {
       var sum = ['m0','m1','m2'].map(function(h) {
-        return Object.values(s.perDeal).reduce(function(t,p){ return t + (p.adjRev[h] || 0); }, 0);
+        return Object.values(s.perDeal).reduce(function(t,p){ return t + ((p.adjRev && p.adjRev[h]) || 0); }, 0);
       });
       var statusBadge = s.locked
         ? '<span class="pill pill-green" style="font-size:10px" title="Locked by ' + esc(s.lockedBy || '—') + ' on ' + new Date(s.lockedAt || s.takenAt).toLocaleString() + '">🔒 LOCKED</span>'
@@ -3676,6 +3707,7 @@ function renderForecastAccuracy() {
       html += '<td class="num">' + fmt$k(sum[0]) + '</td>';
       html += '<td class="num">' + fmt$k(sum[1]) + '</td>';
       html += '<td class="num">' + fmt$k(sum[2]) + '</td>';
+      html += '<td><button class="btn btn-gold btn-sm" onclick="recoverForecastFromSnapshot(\'' + s.snapshotMonth + '\')" title="Restore this snapshot\'s 3-month headcount build back into the live forecast — use to bring back lost work">↩ Recover</button></td>';
       html += '</tr>';
     });
     html += '</tbody></table>';
