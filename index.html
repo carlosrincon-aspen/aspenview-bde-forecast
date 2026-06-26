@@ -2761,7 +2761,9 @@ function aureumPushToZoho() {
 // Download the forecast to a spreadsheet (CSV → opens in Excel) for Finance/John. READ-ONLY:
 // builds a file from the current data, never changes anything. Deal rows + monthly build +
 // the gross and adjusted (×win, ×margin) summary rows.
-function downloadAureumCsv() {
+// Build the export as a matrix (array of rows of raw values) — shared by the CSV download and the
+// "Copy for Google Sheets" (TSV → paste) button. READ-ONLY; builds from current data.
+function _aureumExportMatrix() {
   var deals = getDeals();
   var anchor = getAnchorMonth();
   var aYear = parseInt(anchor.split('-')[0]), aMon = parseInt(anchor.split('-')[1]);
@@ -2769,10 +2771,9 @@ function downloadAureumCsv() {
   for (k = aMon; k <= 12; k++) monthsY1.push(aYear + '-' + ('0' + k).slice(-2));
   for (k = 1; k <= 12; k++) monthsY2.push((aYear + 1) + '-' + ('0' + k).slice(-2));
   var months = monthsY1.concat(monthsY2);
-  function c(s){ s = (s == null ? '' : String(s)); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
-  var header = ['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho $/head','Fcst $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Margin %','Target Margin %','In Forecast','Super']
-    .concat(months.map(monthLabel)).concat([aYear + ' Total MRR', (aYear + 1) + ' Total MRR']);
-  var lines = [header.map(c).join(',')];
+  var rows = [];
+  rows.push(['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho $/head','Fcst $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Margin %','Target Margin %','In Forecast','Super']
+    .concat(months.map(monthLabel)).concat([aYear + ' Total MRR', (aYear + 1) + ' Total MRR']));
   deals.forEach(function(d){
     var pph = pricePerHead(d), built = d.totalHC || sumMonths(d.monthlyHC) || 0, fcstMRR = built * pph;
     var row = [d.client, d.dealName, d.bde || '', d.stage || '', (phaseById(phaseForDeal(d)) || {}).short || '',
@@ -2783,31 +2784,47 @@ function downloadAureumCsv() {
       d.inForecast ? 'Y' : 'N', isSuperDeal(d) ? 'Y' : 'N'];
     months.forEach(function(mk){ row.push((d.monthlyHC || {})[mk] || 0); });
     row.push(Math.round(yearDollars(d, monthsY1, pph)), Math.round(yearDollars(d, monthsY2, pph)));
-    lines.push(row.map(c).join(','));
+    rows.push(row);
   });
   // Summary rows (forecast set: inForecast, non-Closed-Won), gross + adjusted by month.
   var fd = forecastDeals();
   function monthAgg(mk, mode){ return fd.reduce(function(s,d){ var hc=(d.monthlyHC||{})[mk]||0, pph=pricePerHead(d), w=getWinRateFor(d), m=getMarginFor(d);
     return s + (mode==='hc'?hc : mode==='mrr'?hc*pph : mode==='ahc'?hc*w : mode==='amrr'?hc*pph*w : hc*pph*w*m); }, 0); }
-  function sumRow(label, mode, money){
-    var pre = [label].concat(['','','','','','','','','','','','','','','','','','']);  // align to first month col (19 lead cols)
+  function sumRow(label, mode){
+    var pre = [label]; for (var i = 0; i < 18; i++) pre.push('');   // align to first month col (19 lead cols)
     var vals = months.map(function(mk){ return Math.round(monthAgg(mk, mode)); });
     var y1 = vals.slice(0, monthsY1.length).reduce(function(a,b){return a+b;},0);
     var y2 = vals.slice(monthsY1.length).reduce(function(a,b){return a+b;},0);
-    return pre.concat(vals).concat([y1, y2]).map(c).join(',');
+    return pre.concat(vals).concat([y1, y2]);
   }
-  lines.push('');
-  lines.push(sumRow('TOTAL — Gross HC / month', 'hc'));
-  lines.push(sumRow('TOTAL — Gross MRR / month', 'mrr'));
-  lines.push(sumRow('TOTAL — Adjusted HC / month (×win)', 'ahc'));
-  lines.push(sumRow('TOTAL — Adjusted MRR / month (×win)', 'amrr'));
-  lines.push(sumRow('TOTAL — Contribution $ / month (×win×margin)', 'amgn'));
-  var blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  rows.push([]);
+  rows.push(sumRow('TOTAL - Gross HC / month', 'hc'));
+  rows.push(sumRow('TOTAL - Gross MRR / month', 'mrr'));
+  rows.push(sumRow('TOTAL - Adjusted HC / month (x win)', 'ahc'));
+  rows.push(sumRow('TOTAL - Adjusted MRR / month (x win)', 'amrr'));
+  rows.push(sumRow('TOTAL - Contribution $ / month (x win x margin)', 'amgn'));
+  return rows;
+}
+function downloadAureumCsv() {
+  var rows = _aureumExportMatrix();
+  function c(s){ s = (s == null ? '' : String(s)); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+  var csv = rows.map(function(r){ return r.map(c).join(','); }).join('\n');
+  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'aspenview-forecast-' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  logActivity('Forecast', 'Download CSV', deals.length + ' deals exported');
+  logActivity('Forecast', 'Download CSV', Math.max(0, rows.length - 7) + ' deals exported');
+}
+// Copy as tab-separated text — paste straight into a blank Google Sheet (Ctrl+V) and it fills the
+// columns. Smoothest path for Google Workspace (no file handling). READ-ONLY.
+function copyAureumForSheets() {
+  var rows = _aureumExportMatrix();
+  var tsv = rows.map(function(r){ return r.map(function(s){ return (s == null ? '' : String(s)).replace(/[\t\n]/g, ' '); }).join('\t'); }).join('\n');
+  function done(){ logActivity('Forecast', 'Copy for Sheets', Math.max(0, rows.length - 7) + ' deals'); alert('Copied ✓\n\nOpen a blank Google Sheet and paste (Ctrl+V) — it fills the columns automatically.'); }
+  function fallback(){ var ta = document.createElement('textarea'); ta.value = tsv; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.focus(); ta.select(); try { document.execCommand('copy'); } catch(e) {} document.body.removeChild(ta); done(); }
+  if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(tsv).then(done, fallback); }
+  else fallback();
 }
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: AUREUM DEMAND FORECAST (main grid)
@@ -2857,7 +2874,8 @@ function renderAureumGrid() {
   var html = '';
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">The single input — one screen for <b>' + Y1 + ', ' + Y2 + ' &amp; ' + Y3 + '</b>. Spread ' + Y1 + '/' + Y2 + ' by month; ' + Y3 + ' by growth %. Lock &amp; push to Zoho at the bottom.</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
-  html += '<button class="btn btn-ghost btn-sm" onclick="downloadAureumCsv()" title="Download the forecast to a spreadsheet (CSV → Excel) for Finance — deal rows + monthly build + gross & adjusted summary. Read-only, changes nothing.">⬇ Download spreadsheet</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="downloadAureumCsv()" title="Download the forecast as a CSV (opens in Excel or Google Sheets). Deal rows + monthly build + gross & adjusted summary. Read-only.">⬇ Download (CSV/Sheets)</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="copyAureumForSheets()" title="Copy the forecast to the clipboard, then paste (Ctrl+V) into a blank Google Sheet — fills the columns automatically. Read-only.">📋 Copy for Google Sheets</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="newDealInZoho()">+ New Deal (in Zoho)</button></div></div>';
 
   // "Build & Invoice, not Close" reminder — Michael's framing for the whole model.
