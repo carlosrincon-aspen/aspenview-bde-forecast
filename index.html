@@ -2813,12 +2813,18 @@ function downloadAureumCsv() {
   var rows = _aureumExportMatrix();
   function c(s){ s = (s == null ? '' : String(s)); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
   var csv = rows.map(function(r){ return r.map(c).join(','); }).join('\n');
-  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  var fname = 'aspenview-forecast-' + new Date().toISOString().slice(0, 10) + '.csv';
+  // ﻿ BOM so Excel/Sheets read UTF-8 correctly. Cleanup is DEFERRED — removing the link
+  // synchronously after click() cancels the download in some browsers.
+  var blob = new Blob(["﻿" + csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'aspenview-forecast-' + new Date().toISOString().slice(0, 10) + '.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  a.href = url; a.download = fname; a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ try { document.body.removeChild(a); } catch(e) {} URL.revokeObjectURL(url); }, 1500);
   logActivity('Forecast', 'Download CSV', Math.max(0, rows.length - 7) + ' deals exported');
+  alert('Downloaded "' + fname + '" — check your Downloads folder. Open it in Excel or Google Sheets (or use 📋 Copy for Google Sheets to paste directly).');
 }
 // Copy as tab-separated text — paste straight into a blank Google Sheet (Ctrl+V) and it fills the
 // columns. Smoothest path for Google Workspace (no file handling). READ-ONLY.
