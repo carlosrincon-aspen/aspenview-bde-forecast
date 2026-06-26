@@ -1942,6 +1942,11 @@ function rebuildFromActivityLog() {
     if (e.action === 'Spread headcount' && (s = (e.details || '').match(spreadRe))) {
       var d = ensureClean(s[1]); if (!d) return;
       var closeM = dealCloseMonthKey(d), start = closeM ? monthKeyAfter(closeM, 1) : anchor;
+      // Clamp into the rolling forecast window. Many deals carry a placeholder close date (e.g.
+      // Jan 2030), and close+1 would push the spread to 2030 — off-screen and out of the totals.
+      // Don was forecasting the near-term window, so anything outside [anchor … anchor+24] starts
+      // at the anchor instead. This is what put the big spreads back into 2026/2027.
+      if (!start || start < anchor || start > monthKeyAfter(anchor, 24)) start = anchor;
       d.monthlyHC = computeSpreadPlan(parseInt(s[2]), start, 0, parseInt(s[3]), parseInt(s[4]));
       d.totalHC = sumMonths(d.monthlyHC); spreads++;
     } else if (e.action === 'Edit HC' && (s = (e.details || '').match(hcRe))) {
@@ -3242,6 +3247,9 @@ function openSpreadModal(idx) {
   // cash-flow rule). Falls back to the anchor if there's no usable close date / it's out of range.
   var closeM = dealCloseMonthKey(d);
   var defaultStart = closeM ? monthKeyAfter(closeM, 1) : anchor;
+  // Guard against placeholder close dates (e.g. Jan 2030): if close+1 falls outside the rolling
+  // forecast window, default to the anchor so HC never lands in a far-off, off-screen year.
+  if (!defaultStart || defaultStart < anchor || defaultStart > monthKeyAfter(anchor, 24)) defaultStart = anchor;
   // Build the dropdown around THIS deal's close date so the default follows the deal — not the
   // current month (Don's ask). Start the list at the earlier of the anchor and the default so the
   // close-date-driven default is always selectable; span 36 months to cover Y1+Y2+.
