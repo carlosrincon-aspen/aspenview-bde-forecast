@@ -5636,9 +5636,11 @@ function adminActivitySection(activity) {
   var html = '';
   html += '<div class="card"><div class="card-header"><span class="card-title"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2e7d32;animation:pulse 1.6s infinite;vertical-align:middle;margin-right:6px"></span>Activity Stream</span><span class="card-sub">Last ' + Math.min(activity.length, 50) + ' events · live view</span>';
   html += ' <button class="btn btn-ghost btn-sm" style="margin-left:10px" onclick="loadFullActivityHistory()" title="Load the complete, uncapped audit trail from Firestore (the permanent record — beyond the last 200 shown here)">📜 Load full history</button></div>';
+  // Results render here, directly under the header/button (NOT below the 50-row table, where it
+  // would be off-screen). Empty until the button is clicked.
+  html += '<div id="fullActivityHistory"></div>';
   if (!activity.length) {
-    html += '<div class="empty">No activity recorded yet. Try syncing Zoho or taking a snapshot.</div>';
-    html += '<div id="fullActivityHistory" style="margin-top:14px"></div></div>';
+    html += '<div class="empty">No activity recorded yet. Try syncing Zoho or taking a snapshot.</div></div>';
     return html;
   }
   html += '<table><thead><tr><th>Source</th><th>Action</th><th>Details</th><th>Actor</th><th>When</th></tr></thead><tbody>';
@@ -5651,8 +5653,7 @@ function adminActivitySection(activity) {
     html += '<td style="font-size:11px;color:var(--muted);white-space:nowrap" title="' + esc(ev.ts) + '">' + timeAgo(ev.ts) + '</td>';
     html += '</tr>';
   });
-  html += '</tbody></table>';
-  html += '<div id="fullActivityHistory" style="margin-top:14px"></div></div>';
+  html += '</tbody></table></div>';
   return html;
 }
 // Async-load the complete, uncapped audit trail from the 'activity_archive' collection and render
@@ -5666,6 +5667,7 @@ function loadFullActivityHistory() {
     return;
   }
   box.innerHTML = '<div class="empty">Loading full audit trail…</div>';
+  try { box.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
   fbDb.collection('activity_archive').orderBy('ts', 'desc').limit(1000).get().then(function(snap) {
     var evs = [];
     snap.forEach(function(d) { evs.push(d.data()); });
