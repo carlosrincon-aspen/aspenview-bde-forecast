@@ -1925,13 +1925,15 @@ function rebuildFromActivityLog() {
   if (!log.some(function(e){ return /Edit HC|Edit Fcst HC|Spread headcount/.test(e.action); })) { alert('No forecast actions in the Activity log to replay.'); return; }
   if (!confirm('FULL REBUILD from the Activity log?\n\nReplays Don\'s entire session in order — every ⇶ Spread, every typed HC cell, every Fcst HC — then pins the exact 3-month window from the Jul lock. A safety version is saved first, so it\'s reversible.\n\nThis is the most complete recovery. Review afterward and fix any spread that started a month off.')) return;
   _pushVersion('Auto-save before FULL rebuild from log');
-  var deals = getDeals(), byName = {}; deals.forEach(function(d){ byName[d.dealName] = d; });
+  // Match by NORMALIZED name (case/punctuation-insensitive) so renamed deals like
+  // "Confidential - ISTARI" vs "DK Confidential (ISTARI)" still match and don't get skipped.
+  var deals = getDeals(), byName = {}; deals.forEach(function(d){ byName[normDealName(d.dealName)] = d; });
   var anchor = getAnchorMonth();
   var spreadRe = /^(.+) · (\d+) HC over (\d+) phase\(s\), every (\d+) mo$/;
   var hcRe     = /^(.+) · (\d{4}-\d{2}): .* → (\d+)\s*$/;
   var totRe    = /^(.+): \d+ → (\d+)\s*$/;
   var touched = {}, missing = {}, spreads = 0, edits = 0, tots = 0;
-  function ensureClean(name){ var d = byName[name]; if (d && !touched[name]) { d.monthlyHC = {}; d.totalHC = 0; touched[name] = true; } if (!d) missing[name] = 1; return d; }
+  function ensureClean(name){ var key = normDealName(name); var d = byName[key]; if (d && !touched[key]) { d.monthlyHC = {}; d.totalHC = 0; touched[key] = true; } if (!d) missing[name] = 1; return d; }
   log.forEach(function(e){
     var s;
     if (e.action === 'Spread headcount' && (s = (e.details || '').match(spreadRe))) {
@@ -1956,7 +1958,7 @@ function rebuildFromActivityLog() {
   if (snap && snap.perDeal) {
     var m0 = snap.snapshotMonth, m1 = monthKeyAfter(m0, 1), m2 = monthKeyAfter(m0, 2);
     Object.keys(snap.perDeal).forEach(function(name){
-      var d = byName[name]; if (!d) return; var hc = snap.perDeal[name].hc || {};
+      var d = byName[normDealName(name)]; if (!d) return; var hc = snap.perDeal[name].hc || {};
       d.monthlyHC = d.monthlyHC || {};
       if (hc.m0) d.monthlyHC[m0] = hc.m0; if (hc.m1) d.monthlyHC[m1] = hc.m1; if (hc.m2) d.monthlyHC[m2] = hc.m2;
       d.totalHC = sumMonths(d.monthlyHC); pinned++;
@@ -1965,8 +1967,8 @@ function rebuildFromActivityLog() {
   deals.forEach(function(d){ if ((d.monthlyHC && Object.keys(d.monthlyHC).length) || (d.totalHC || 0) > 0) d.inForecast = true; });
   setDeals(deals);
   logActivity('Forecast', 'Full rebuild from log', spreads + ' spreads + ' + edits + ' edits + ' + tots + ' Fcst HC; pinned ' + pinned);
-  var missN = Object.keys(missing).length;
-  alert('Full rebuild done:\n• ' + spreads + ' spreads replayed\n• ' + edits + ' typed HC cells\n• ' + tots + ' Fcst HC totals\n• ' + pinned + ' deals pinned to the exact 3-month lock' + (missN ? '\n• ' + missN + ' log deal name(s) not found in the current list' : '') + '\n\nReview Aureum vs what Don remembers, fix any spread start-month, then 💾 Save a version.');
+  var missNames = Object.keys(missing);
+  alert('Full rebuild done:\n• ' + spreads + ' spreads replayed\n• ' + edits + ' typed HC cells\n• ' + tots + ' Fcst HC totals\n• ' + pinned + ' deals pinned to the exact 3-month lock' + (missNames.length ? '\n\n⚠ ' + missNames.length + ' deal name(s) in the log did NOT match a current deal (their data was skipped):\n' + missNames.slice(0, 15).join('\n') + (missNames.length > 15 ? '\n…' : '') : '') + '\n\nReview Aureum vs what Don remembers, fix any spread start-month, then 💾 Save a version.');
   renderTab();
 }
 // Forecast audit viewer — every forecast action (last 200), oldest first, so you can review
