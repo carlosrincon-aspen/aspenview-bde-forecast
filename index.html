@@ -3115,11 +3115,11 @@ function renderAureumGrid() {
     h += '<td></td>';
     h += '<td style="border-left:2px solid var(--gold);color:' + fg + ';font-size:10px">' + sublabel + '</td>';
     arrY1.forEach(function(v, i){ var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; h += '<td class="num" style="color:' + fg + ';' + bl + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
-    h += '<td class="num" style="' + yTotCss + '">' + fmtFn(t1) + '</td>';
+    h += '<td class="num" style="color:' + fg + ';border-left:1px solid var(--gold);font-weight:800">' + fmtFn(t1) + '</td>';
     arrY2.forEach(function(v, i){ var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; h += '<td class="num" style="color:' + fg + ';' + bl + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
-    h += '<td class="num" style="' + yTotCss + '">' + fmtFn(t2) + '</td>';
+    h += '<td class="num" style="color:' + fg + ';border-left:1px solid var(--gold);font-weight:800">' + fmtFn(t2) + '</td>';
     h += '<td style="border-left:2px solid var(--gold)"></td>';
-    h += '<td class="num" style="color:var(--gold)">' + fmtFn(t3) + '</td>';
+    h += '<td class="num" style="color:' + fg + ';font-weight:800">' + fmtFn(t3) + '</td>';
     h += '<td></td></tr>';
     return h;
   }
