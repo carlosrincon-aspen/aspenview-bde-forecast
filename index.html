@@ -2773,6 +2773,8 @@ function _aureumExportMatrix() {
   for (k = aMon; k <= 12; k++) monthsY1.push(aYear + '-' + ('0' + k).slice(-2));
   for (k = 1; k <= 12; k++) monthsY2.push((aYear + 1) + '-' + ('0' + k).slice(-2));
   var months = monthsY1.concat(monthsY2);
+  // Local year-dollars helper (the grid's own yearDollars is scoped inside renderAureumGrid).
+  function _yd(dd, mk, pph) { return mk.reduce(function(s, m){ return s + (((dd.monthlyHC || {})[m] || 0) * pph); }, 0); }
   var rows = [];
   rows.push(['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho $/head','Fcst $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Margin %','Target Margin %','In Forecast','Super']
     .concat(months.map(monthLabel)).concat([aYear + ' Total MRR', (aYear + 1) + ' Total MRR']));
@@ -2785,7 +2787,7 @@ function _aureumExportMatrix() {
       Math.round(getWinRateFor(d) * 100), Math.round(getMarginFor(d) * 100), Math.round(targetMarginFor(d) * 100),
       d.inForecast ? 'Y' : 'N', isSuperDeal(d) ? 'Y' : 'N'];
     months.forEach(function(mk){ row.push((d.monthlyHC || {})[mk] || 0); });
-    row.push(Math.round(yearDollars(d, monthsY1, pph)), Math.round(yearDollars(d, monthsY2, pph)));
+    row.push(Math.round(_yd(d, monthsY1, pph)), Math.round(_yd(d, monthsY2, pph)));
     rows.push(row);
   });
   // Summary rows (forecast set: inForecast, non-Closed-Won), gross + adjusted by month.
