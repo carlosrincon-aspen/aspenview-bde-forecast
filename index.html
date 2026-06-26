@@ -845,6 +845,7 @@ function fbInitDataSync() {
       // deals to Zoho"), so opening the app never destroys saved data.
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
+      ensureDailyBackupVersion();   // automatic daily restore point — never lose data again
       renderTab();
     } else {
       fbReady = true;
@@ -856,6 +857,7 @@ function fbInitDataSync() {
       // deals to Zoho"), so opening the app never destroys saved data.
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
+      ensureDailyBackupVersion();   // automatic daily restore point — never lose data again
       fbPushNow();
       renderTab();
     }
@@ -1576,15 +1578,11 @@ function mergeSeedData(dst, src) {
 // 100% Zoho: drop any non-Zoho ghost deals and retire the old Excel-only fields. Runs
 // once per browser; setDeals pushes the cleaned set to Firestore for the whole team.
 function autoApplySeedOnce() {
-  if (load('zoho_only_v1', false)) return;
-  var deals = getDeals();
-  var before = deals.length;
-  var zohoOnly = deals.filter(function(d){ return d.zohoId; });
-  zohoOnly.forEach(function(d){ delete d.mrrAureum; delete d.inExcel; delete d.notInZoho; });
-  backfillOwners(zohoOnly);
-  setDeals(zohoOnly);
-  save('zoho_only_v1', true);
-  console.log('Zoho-only migration: removed ' + (before - zohoOnly.length) + ' non-Zoho (Excel) deals; ' + zohoOnly.length + ' Zoho deals kept.');
+  // NEUTRALIZED (2026-06-26). This one-time Zoho-only migration already ran globally; it used to
+  // strip non-Zoho deals on load, gated only by a per-browser flag — exactly the kind of automatic
+  // data mutation that must NEVER touch live data again. It is now a hard no-op: opening the app
+  // modifies nothing. (Kept as a function so existing call sites stay valid.)
+  return;
 }
 // One-time: adopt the Win %/Margin % set with Don & Michael on 2026-06-25. The live state
 // still holds the old saved defaults, so overwrite them once (runs before anyone edits the
@@ -1941,11 +1939,13 @@ function _captureForecastItems() {
   });
   return items;
 }
+// Next manual-version label (v1, v2, …) — auto-backups don't consume a number.
+function _nextVersionLabel() { return 'v' + (getForecastVersions().filter(function(v){ return !v.auto; }).length + 1); }
 // Push a version without prompting — used by Save version and as an auto safety-save before any
 // recovery action (so every recover/reconstruct is reversible).
 function _pushVersion(note) {
   var versions = getForecastVersions();
-  var label = 'v' + (versions.length + 1);
+  var label = _nextVersionLabel();
   versions.push({
     id: String(new Date().getTime()),
     label: label,
@@ -1960,13 +1960,42 @@ function _pushVersion(note) {
   return label;
 }
 function saveForecastVersion() {
-  var label = 'v' + (getForecastVersions().length + 1);
+  var label = _nextVersionLabel();
   var note = prompt('Save the current forecast as a working version (' + label + ').\n\nOptional note — what changed / what to review:', '');
   if (note === null) return;   // cancelled
   _pushVersion(note);
   logActivity('Forecast', 'Save working version', label + (note ? ' · ' + note : ''));
   alert('💾 Saved as ' + label + '. Keep revising and save again, or restore any version from “Versions”. Nothing was locked or pushed to Zoho.');
   renderTab();
+}
+// Automatic daily safety backup (Carlos: never lose data again). On login, once per day GLOBALLY,
+// snapshot the current forecast as a restore point. Non-destructive — only ADDS a version. Keeps
+// the last 10 auto-backups so the Firestore doc stays small. Skips if today's backup already exists
+// or there's no forecast worth saving.
+function ensureDailyBackupVersion() {
+  var today = new Date().toISOString().slice(0, 10);
+  var versions = getForecastVersions();
+  if (versions.some(function(v){ return v.auto && v.day === today; })) return;
+  var hasData = getDeals().some(function(d){ return (d.monthlyHC && Object.keys(d.monthlyHC).length) || (d.totalHC || 0) > 0; });
+  if (!hasData) return;
+  versions.push({
+    id: String(new Date().getTime()),
+    label: 'auto ' + today,
+    savedAt: new Date().toISOString(),
+    savedBy: 'auto-backup',
+    note: 'Automatic daily safety backup',
+    anchor: getAnchorMonth(),
+    items: _captureForecastItems(),
+    summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) },
+    auto: true, day: today
+  });
+  var autos = versions.filter(function(v){ return v.auto; });
+  if (autos.length > 10) {
+    var drop = autos.slice(0, autos.length - 10).map(function(v){ return v.id; });
+    versions = versions.filter(function(v){ return drop.indexOf(v.id) < 0; });
+  }
+  setForecastVersions(versions);
+  console.log('Auto-backup version saved for ' + today);
 }
 function restoreForecastVersion(id) {
   var v = getForecastVersions().find(function(x){ return x.id === id; });
@@ -5438,13 +5467,9 @@ function renderSettings() {
   html += '<button class="btn btn-danger btn-sm" onclick="resetAllData()">⚠ Reset all data</button></div>';
   html += '<div style="font-size:11px;color:var(--muted);margin-top:8px">Deals, margin rules, snapshots, and actuals are all stored in your browser. Export regularly as backup.</div></div>';
 
-  // Reset deals to Zoho (clear old Excel-file data, keep Fcst picks) — the deterministic
-  // version of the auto-purge, for when the first-load sync races.
-  if (canGovern()) {
-    html += '<div class="card"><div class="card-header"><span class="card-title">Forget the Spreadsheet — Reset Deals to Zoho</span><span class="card-sub">Clears every leftover from Don\'s old Excel file so deals read 100% from Zoho</span></div>';
-    html += '<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Clears the monthly build, Fcst HC overrides, $/head, win %, margins and growth % on every deal — so <b>Fcst HC = Zoho HC</b>, <b>Win % follows the stage rule</b>, and <b>Fcst MRR = the real Zoho MRR</b>. The Forecast (Fcst) checkboxes Don selected are <b>kept</b>.</div>';
-    html += '<button class="btn btn-gold btn-sm" onclick="resetDealsToZoho()">↻ Reset all deals to Zoho (keep Fcst picks)</button></div>';
-  }
+  // NOTE: the "Reset all deals to Zoho" button was REMOVED (2026-06-26). The one-time Excel cleanup
+  // is done; a one-click mass-wipe is too dangerous to keep around. Recover/restore is now via the
+  // Forecast Accuracy snapshots, the Activity-log reconstruction, and the saved working versions.
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Daily Workflow</span></div>';
   html += '<ol style="font-size:12.5px;color:var(--muted);line-height:1.75;padding-left:20px">';
@@ -5484,8 +5509,14 @@ function importData(file) {
   r.readAsText(file);
 }
 function resetAllData() {
-  if (!confirm('Reset ALL data (deals, rules, snapshots, actuals)? Cannot be undone.')) return;
+  // Hardened (2026-06-26): this wipes the SHARED forecast for everyone, so it must be deliberate.
+  // Requires typing RESET — no accidental one-click wipe.
+  var typed = prompt('⚠ DANGER: This clears deals, rules, snapshots and actuals for EVERYONE (it syncs to Firestore). This is almost never what you want — to undo recent changes use 🗂 Versions or a snapshot Recover instead.\n\nIf you are absolutely sure, type RESET in capitals to proceed:');
+  if (typed === null) return;
+  if (typed.trim() !== 'RESET') { alert('Cancelled — nothing was deleted.'); return; }
+  _pushVersion('Auto-save before Reset all data');   // last-ditch restore point
   ['deals','margin_rules','snapshots','actuals','anchor_month'].forEach(function(k) { localStorage.removeItem('bde_' + k); });
+  logActivity('Settings', 'Reset all data', 'confirmed with typed RESET');
   renderTab();
 }
 
