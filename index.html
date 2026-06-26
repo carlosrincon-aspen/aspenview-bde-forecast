@@ -1914,6 +1914,61 @@ function reconstructFromActivityLog() {
   alert('Replayed ' + appliedHc + ' monthly HC edit(s) and ' + appliedTot + ' Fcst HC total(s) across all months.' + (missN ? '\n\n' + missN + ' deal name(s) in the log no longer match the current list.' : '') + '\n\nReview Aureum and 💾 Save a version.');
   renderTab();
 }
+// FULL rebuild from the Activity log — the most complete in-app recovery. Replays Don's whole
+// session in order: re-runs every ⇶ Spread (using each deal's default start = close date + 1 month,
+// the modal default), applies every typed HC cell and Fcst HC total, then PINS the exact 3-month
+// window from the latest lock snapshot (the truth at lock time). Caveat: a spread whose start month
+// Don changed by hand can't be known from the log, so a few later waves may land a month off — the
+// 3-month window is always exact, and any tweak is a quick manual fix afterward.
+function rebuildFromActivityLog() {
+  var log = getActivityLog();
+  if (!log.some(function(e){ return /Edit HC|Edit Fcst HC|Spread headcount/.test(e.action); })) { alert('No forecast actions in the Activity log to replay.'); return; }
+  if (!confirm('FULL REBUILD from the Activity log?\n\nReplays Don\'s entire session in order — every ⇶ Spread, every typed HC cell, every Fcst HC — then pins the exact 3-month window from the Jul lock. A safety version is saved first, so it\'s reversible.\n\nThis is the most complete recovery. Review afterward and fix any spread that started a month off.')) return;
+  _pushVersion('Auto-save before FULL rebuild from log');
+  var deals = getDeals(), byName = {}; deals.forEach(function(d){ byName[d.dealName] = d; });
+  var anchor = getAnchorMonth();
+  var spreadRe = /^(.+) · (\d+) HC over (\d+) phase\(s\), every (\d+) mo$/;
+  var hcRe     = /^(.+) · (\d{4}-\d{2}): .* → (\d+)\s*$/;
+  var totRe    = /^(.+): \d+ → (\d+)\s*$/;
+  var touched = {}, missing = {}, spreads = 0, edits = 0, tots = 0;
+  function ensureClean(name){ var d = byName[name]; if (d && !touched[name]) { d.monthlyHC = {}; d.totalHC = 0; touched[name] = true; } if (!d) missing[name] = 1; return d; }
+  log.forEach(function(e){
+    var s;
+    if (e.action === 'Spread headcount' && (s = (e.details || '').match(spreadRe))) {
+      var d = ensureClean(s[1]); if (!d) return;
+      var closeM = dealCloseMonthKey(d), start = closeM ? monthKeyAfter(closeM, 1) : anchor;
+      d.monthlyHC = computeSpreadPlan(parseInt(s[2]), start, 0, parseInt(s[3]), parseInt(s[4]));
+      d.totalHC = sumMonths(d.monthlyHC); spreads++;
+    } else if (e.action === 'Edit HC' && (s = (e.details || '').match(hcRe))) {
+      var d2 = ensureClean(s[1]); if (!d2) return;
+      d2.monthlyHC = d2.monthlyHC || {}; var v = parseInt(s[3]);
+      if (v > 0) d2.monthlyHC[s[2]] = v; else delete d2.monthlyHC[s[2]];
+      d2.totalHC = sumMonths(d2.monthlyHC); edits++;
+    } else if (e.action === 'Edit Fcst HC' && (s = (e.details || '').match(totRe))) {
+      var d3 = ensureClean(s[1]); if (!d3) return;
+      if (!d3.monthlyHC || Object.keys(d3.monthlyHC).length === 0) d3.totalHC = parseInt(s[2]) || 0;
+      tots++;
+    }
+  });
+  // Pin the EXACT 3-month window from the most recent snapshot (truth at lock time).
+  var snaps = getSnapshots().slice().sort(function(a,b){ return (a.lockedAt || a.takenAt) < (b.lockedAt || b.takenAt) ? -1 : 1; });
+  var snap = snaps[snaps.length - 1], pinned = 0;
+  if (snap && snap.perDeal) {
+    var m0 = snap.snapshotMonth, m1 = monthKeyAfter(m0, 1), m2 = monthKeyAfter(m0, 2);
+    Object.keys(snap.perDeal).forEach(function(name){
+      var d = byName[name]; if (!d) return; var hc = snap.perDeal[name].hc || {};
+      d.monthlyHC = d.monthlyHC || {};
+      if (hc.m0) d.monthlyHC[m0] = hc.m0; if (hc.m1) d.monthlyHC[m1] = hc.m1; if (hc.m2) d.monthlyHC[m2] = hc.m2;
+      d.totalHC = sumMonths(d.monthlyHC); pinned++;
+    });
+  }
+  deals.forEach(function(d){ if ((d.monthlyHC && Object.keys(d.monthlyHC).length) || (d.totalHC || 0) > 0) d.inForecast = true; });
+  setDeals(deals);
+  logActivity('Forecast', 'Full rebuild from log', spreads + ' spreads + ' + edits + ' edits + ' + tots + ' Fcst HC; pinned ' + pinned);
+  var missN = Object.keys(missing).length;
+  alert('Full rebuild done:\n• ' + spreads + ' spreads replayed\n• ' + edits + ' typed HC cells\n• ' + tots + ' Fcst HC totals\n• ' + pinned + ' deals pinned to the exact 3-month lock' + (missN ? '\n• ' + missN + ' log deal name(s) not found in the current list' : '') + '\n\nReview Aureum vs what Don remembers, fix any spread start-month, then 💾 Save a version.');
+  renderTab();
+}
 // Forecast audit viewer — every forecast action (last 200), oldest first, so you can review
 // exactly what was entered, one by one, and rebuild anything missing. Carlos's ask.
 function openForecastAuditModal() {
@@ -3199,14 +3254,10 @@ function openSpreadModal(idx) {
   html += '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="applySpread(' + idx + ')">Spread it</button></div>';
   openModal(html);
 }
-function applySpread(idx) {
-  var deals = getDeals(); var d = deals[idx]; if (!d) { closeModal(); return; }
-  var total  = parseInt(document.getElementById('sp_total').value) || 0;
-  var start  = document.getElementById('sp_start').value;
-  var first  = parseInt(document.getElementById('sp_first').value) || 0;
-  var phases = Math.max(1, parseInt(document.getElementById('sp_phases').value) || 1);
-  var step   = Math.max(1, parseInt(document.getElementById('sp_step').value) || 1);
-  if (total <= 0) { alert('Enter a total headcount greater than 0.'); return; }
+// Pure spread math — shared by the Spread tool and the Activity-log rebuild.
+function computeSpreadPlan(total, start, first, phases, step) {
+  total = parseInt(total) || 0; phases = Math.max(1, parseInt(phases) || 1); step = Math.max(1, parseInt(step) || 1); first = parseInt(first) || 0;
+  if (total <= 0 || !start) return {};
   if (first > total) first = total;
   var plan = {};
   if (first > 0) {
@@ -3221,8 +3272,18 @@ function applySpread(idx) {
     var per2 = Math.floor(total / phases), left2 = total - per2 * phases;
     for (var j = 0; j < phases; j++) { var mk2 = monthKeyAfter(start, j * step); var c2 = per2 + (j === phases - 1 ? left2 : 0); if (c2 > 0) plan[mk2] = (plan[mk2] || 0) + c2; }
   }
-  d.monthlyHC = plan;
-  d.totalHC = sumMonths(plan);
+  return plan;
+}
+function applySpread(idx) {
+  var deals = getDeals(); var d = deals[idx]; if (!d) { closeModal(); return; }
+  var total  = parseInt(document.getElementById('sp_total').value) || 0;
+  var start  = document.getElementById('sp_start').value;
+  var first  = parseInt(document.getElementById('sp_first').value) || 0;
+  var phases = Math.max(1, parseInt(document.getElementById('sp_phases').value) || 1);
+  var step   = Math.max(1, parseInt(document.getElementById('sp_step').value) || 1);
+  if (total <= 0) { alert('Enter a total headcount greater than 0.'); return; }
+  d.monthlyHC = computeSpreadPlan(total, start, first, phases, step);
+  d.totalHC = sumMonths(d.monthlyHC);
   setDeals(deals);
   logActivity('Forecast', 'Spread headcount', d.dealName + ' · ' + total + ' HC over ' + phases + ' phase(s), every ' + step + ' mo');
   closeModal();
@@ -3750,7 +3811,7 @@ function renderForecastAccuracy() {
   if (backfillN) sourceBits.push('<b>' + backfillN + ' backfilled month' + (backfillN === 1 ? '' : 's') + '</b>');
   var sourceLabel = sourceBits.length ? 'Computed from ' + sourceBits.join(' + ') : 'Computed from auto-snapshots — lock a forecast or backfill historical data to base accuracy on explicit commitments instead';
   html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · ' + sourceLabel + '</div></div>';
-  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-ghost btn-sm" onclick="openBackfillModal()" title="Enter historical forecast + actual pairs to populate the accuracy bands without waiting for the natural cycle">📥 Backfill historical data</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-ghost btn-sm" onclick="pullActualsFromZoho()" title="Pull actuals from Zoho Closed Won deals (grouped by owner). Non-destructive — manual entries are kept.">↻ Pull actuals from Zoho</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button> <button class="btn btn-ghost btn-sm" onclick="reconstructFromActivityLog()" title="Rebuild the forecast from the Activity log — recovers every per-month HC cell typed by hand, across all months (not spread-built months)">↩ Reconstruct from Activity log</button> <button class="btn btn-ghost btn-sm" onclick="openForecastAuditModal()" title="See every forecast action one by one (HC edits, spreads, locks) to review and rebuild">🔎 Audit log</button></div></div>';
+  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-ghost btn-sm" onclick="openBackfillModal()" title="Enter historical forecast + actual pairs to populate the accuracy bands without waiting for the natural cycle">📥 Backfill historical data</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-ghost btn-sm" onclick="pullActualsFromZoho()" title="Pull actuals from Zoho Closed Won deals (grouped by owner). Non-destructive — manual entries are kept.">↻ Pull actuals from Zoho</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button> <button class="btn btn-gold btn-sm" onclick="rebuildFromActivityLog()" title="Most complete recovery — replays every spread + typed cell from the log and pins the exact 3-month lock">⟲ Full rebuild from log</button> <button class="btn btn-ghost btn-sm" onclick="reconstructFromActivityLog()" title="Lighter recovery — replays only the per-month HC cells typed by hand (not spreads)">↩ Reconstruct (typed cells only)</button> <button class="btn btn-ghost btn-sm" onclick="openForecastAuditModal()" title="See every forecast action one by one (HC edits, spreads, locks) to review and rebuild">🔎 Audit log</button></div></div>';
 
   html += '<div class="acc-bands">';
   html += accCard('m0', 'Current Month (M0)', bands.m0);
