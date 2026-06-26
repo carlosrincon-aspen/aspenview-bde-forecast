@@ -2810,21 +2810,36 @@ function _aureumExportMatrix() {
   return rows;
 }
 function downloadAureumCsv() {
+  // Formatted .xls (HTML-table flavour Excel reads) — bold navy header, shaded TOTAL rows,
+  // right-aligned numbers. Opens formatted in Excel AND in Google Sheets (upload to Drive).
   var rows = _aureumExportMatrix();
-  function c(s){ s = (s == null ? '' : String(s)); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
-  var csv = rows.map(function(r){ return r.map(c).join(','); }).join('\n');
-  var fname = 'aspenview-forecast-' + new Date().toISOString().slice(0, 10) + '.csv';
-  // ﻿ BOM so Excel/Sheets read UTF-8 correctly. Cleanup is DEFERRED — removing the link
-  // synchronously after click() cancels the download in some browsers.
-  var blob = new Blob(["﻿" + csv], { type: 'text/csv;charset=utf-8;' });
+  function esc(s){ s = (s == null ? '' : String(s)); return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  var trs = rows.map(function(r){
+    if (!r.length) return '<tr><td style="height:8px"></td></tr>';   // spacer row
+    var isHeader = r[0] === 'Client';
+    var isTotal  = typeof r[0] === 'string' && r[0].indexOf('TOTAL') === 0;
+    var base = isHeader ? 'background:#0C1A28;color:#ffffff;font-weight:bold;'
+             : isTotal  ? 'background:#13233b;color:#FEC219;font-weight:bold;' : '';
+    var tds = r.map(function(cell){
+      var align = (typeof cell === 'number') ? 'right' : 'left';
+      return '<td style="' + base + 'text-align:' + align + ';border:1px solid #d6dde5;padding:2px 6px;mso-number-format:\'\\@\'">' + esc(cell) + '</td>';
+    }).join('');
+    return '<tr>' + tds + '</tr>';
+  }).join('');
+  var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">'
+    + '<head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Forecast</x:Name></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>'
+    + '<body><table border="0" cellspacing="0">' + trs + '</table></body></html>';
+  var fname = 'aspenview-forecast-' + new Date().toISOString().slice(0, 10) + '.xls';
+  // Cleanup is DEFERRED — removing the link synchronously after click() cancels the download in some browsers.
+  var blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
   a.href = url; a.download = fname; a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
   setTimeout(function(){ try { document.body.removeChild(a); } catch(e) {} URL.revokeObjectURL(url); }, 1500);
-  logActivity('Forecast', 'Download CSV', Math.max(0, rows.length - 7) + ' deals exported');
-  alert('Downloaded "' + fname + '" — check your Downloads folder. Open it in Excel or Google Sheets (or use 📋 Copy for Google Sheets to paste directly).');
+  logActivity('Forecast', 'Download Excel', Math.max(0, rows.length - 7) + ' deals exported');
+  alert('Downloaded "' + fname + '" (formatted Excel) — check your Downloads folder. Opens in Excel; for Google Sheets, upload it to Drive and it keeps the formatting.');
 }
 // Copy as tab-separated text — paste straight into a blank Google Sheet (Ctrl+V) and it fills the
 // columns. Smoothest path for Google Workspace (no file handling). READ-ONLY.
@@ -2884,8 +2899,8 @@ function renderAureumGrid() {
   var html = '';
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">The single input — one screen for <b>' + Y1 + ', ' + Y2 + ' &amp; ' + Y3 + '</b>. Spread ' + Y1 + '/' + Y2 + ' by month; ' + Y3 + ' by growth %. Lock &amp; push to Zoho at the bottom.</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
-  html += '<button class="btn btn-ghost btn-sm" onclick="downloadAureumCsv()" title="Download the forecast as a CSV (opens in Excel or Google Sheets). Deal rows + monthly build + gross & adjusted summary. Read-only.">⬇ Download (CSV/Sheets)</button>';
-  html += '<button class="btn btn-ghost btn-sm" onclick="copyAureumForSheets()" title="Copy the forecast to the clipboard, then paste (Ctrl+V) into a blank Google Sheet — fills the columns automatically. Read-only.">📋 Copy for Google Sheets</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="downloadAureumCsv()" title="Download a FORMATTED Excel (.xls) — bold header, shaded totals. Opens in Excel; upload to Drive to open in Google Sheets with formatting. Read-only.">⬇ Download Excel</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="copyAureumForSheets()" title="Copy the forecast to the clipboard, then paste (Ctrl+V) into a blank Google Sheet — fills the columns automatically (plain values, no formatting). Read-only.">📋 Copy for Google Sheets</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="newDealInZoho()">+ New Deal (in Zoho)</button></div></div>';
 
   // "Build & Invoice, not Close" reminder — Michael's framing for the whole model.
