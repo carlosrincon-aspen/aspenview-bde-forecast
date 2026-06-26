@@ -225,6 +225,31 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-06-26 — Eric/John change-set, a data-loss incident + recovery, and hardening
+Big day. All live on GitHub Pages (commits through `e893763`). Order of events:
+
+**1) Data-loss incident + recovery (most important).** Don built a full forecast (6:40–7:27am, locked 7:27) and it got **wiped**. Root cause: the `purgeSeededHcOnce` "forget the spreadsheet" migration was **auto-run on load gated by a per-browser localStorage flag**, so a fresh browser/device re-ran it and cleared the live `deals` build in Firestore for everyone. Recovery built and used:
+- `recoverForecastFromSnapshot(monthKey)` — restores the 3-month build from a snapshot (the 7:27 lock survived in `snapshots`). Button on each Forecast-Accuracy snapshot row.
+- `reconstructFromActivityLog()` — replays typed `Edit HC` / `Edit Fcst HC` from the activity log (all months).
+- `rebuildFromActivityLog()` (the **⟲ Full rebuild from log** button) — replays the WHOLE session: every ⇶ Spread (via `computeSpreadPlan`, refactored out of `applySpread`) + typed cells, then pins the exact 3-month window. **Fuzzy (normalized) deal-name matching** so renamed deals match. The log is authoritative — the snapshot pin does NOT overwrite a replayed spread (the FIFA bug).
+- **Spread start clamp:** many deals carry placeholder close dates (Jan 2030); close+1 sent spreads to 2030 (off-screen → missing 2027). Both the rebuild and the Spread modal now clamp the start to `[anchor … anchor+24]`, else the anchor. This restored 2026/2027 (2027 jumped $1.6M → ~$3.3M).
+- `openForecastAuditModal()` — **🔎 Audit log** viewer (every forecast action, oldest-first, copyable) so Carlos could see exactly what Don did, deal by deal.
+- ⚠ **No server-side recovery available:** Firebase project `aspenview-bde-forecast-154b4` is on the **Spark (free) plan** → no Firestore PITR / backups. The activity log caps at 200 events. So the in-app rebuild is the ceiling; consider upgrading to **Blaze + enable PITR** as the real safety net.
+
+**2) Anti-data-loss hardening (so it never happens again).** `autoApplySeedOnce` neutralized to a no-op; `purgeSeededHcOnce` / `migrateStageRules` no longer auto-run; removed the one-click "Reset all deals to Zoho" mass-wipe button; `resetAllData` now requires typing RESET + auto-saves a version first; **`ensureDailyBackupVersion()`** auto-saves a daily restore point on login (keeps last 10). **Nothing mutates deals on load anymore.**
+
+**3) Per-user view state.** `active_phases` removed from `FB_SYNCED_KEYS` — the phase filter is now **local per browser**, so two people on different PCs filter without changing each other's screen. (Search / multi-select / tab / scroll were already local.) `togglePhaseActive` no longer logs.
+
+**4) Eric/John meeting change-set (additive only — no data touched):**
+- **Forecast Margin** — editable `Fcst MG` column per deal (placeholder = stage target); `getMarginFor` = actual → forecast → target, so it drives the adjusted MRR / contribution.
+- **Adjusted-by-month rows** at the bottom: Adj. Headcount (×win), Adj. MRR (×win), Adj. Margin $ / contribution (×win×forecast-margin), across Y1/Y2 + year totals. Gross rows relabelled (HC / mo, MRR / mo). Bottom summary rows made **non-sticky** (`sumrow` class, no hover flash, subtle separators) after the sticky `totals-row` versions stacked/overlapped.
+- **CGI breakout vs All Other** in the weighted summary card (own HC/MRR/win/margin; OneMain stays in All Other).
+- **Editable Forecast Close Date** in the close-date cell (`forecastClosingDate`, type=date) to fix erroneous Zoho dates (2030); Zoho date shown as reference; does NOT change the Spread. (Done as an editable cell, not a separate column, to avoid grid churn — split later if Michael wants two columns.)
+- **Export for Finance/John:** `⬇ Download Excel` → formatted **.xls** (HTML-table flavour: bold navy header, shaded TOTAL rows, right-aligned numbers; opens in Excel and, via Drive upload, Google Sheets with formatting). `📋 Copy for Google Sheets` → TSV to clipboard, paste into a blank Sheet (plain values). Both READ-ONLY via `_aureumExportMatrix()` (deal rows + monthly build + gross & adjusted summary). ⚠ Export functions are top-level so they use a local `_yd` helper (the grid's `yearDollars` is scoped inside `renderAureumGrid`).
+- **Header:** tool name **"Horizon"** enlarged to 21px.
+
+**Open / to confirm:** Don was validating the recovered forecast (some spreads where he hand-changed the start month may land a month off — quick manual fix). Forecast-margin/adjusted/CGI/close-date all pending Don+Michael review. Carlos stepped out; will adjust on return.
+
 ### 2026-06-25 — Don + Michael live-review change-set (the 20-point punch list)
 Implemented from the minute-by-minute transcript of the live review. Backup: `index.backup-2026-06-25.html`. JS validated; Aureum column counts reconcile (MRR/month row = 38 + N1). All pending **live verification** by Carlos after push (Firebase Google auth can't run headless).
 - **The "jumping" bug (the #1 complaint) — FIXED.** Every cell edit re-rendered `mainContent` and reset the grid's own `.scroll-x` scroll (→ "jumps to top") and page scroll. `renderTab()` now captures & restores both scroll positions; `selectTab()` resets to top on a real tab switch (`_suppressScrollRestore`). Affected everyone, not just Don.
