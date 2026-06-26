@@ -611,16 +611,36 @@ function recordKnownUser(u) {
   setKnownUsers(users);
 }
 function logActivity(source, action, details) {
-  var log = getActivityLog();
-  log.push({
+  var ev = {
     ts:      new Date().toISOString(),
     source:  source || 'app',
     action:  action || '',
     details: details || '',
     actor:   (currentUser && currentUser.email) || 'anon'
-  });
+  };
+  var log = getActivityLog();
+  log.push(ev);
+  // The in-doc log stays capped at 200: it lives inside the shared dashboard/state document
+  // (1 MB hard limit) and feeds the recovery tools (rebuild/reconstruct) which read it synchronously.
   if (log.length > 200) log = log.slice(-200);
   setActivityLog(log);
+  // ALSO mirror every event to a standalone, uncapped Firestore collection (permanent audit trail).
+  fbArchiveActivity(ev);
+}
+// Permanent audit trail: append one event to the standalone 'activity_archive' collection.
+// Kept OUT of dashboard/state on purpose so it can never bloat that 1 MB doc, and it has NO cap.
+// Fire-and-forget with errors swallowed — if the Firestore security rules don't yet allow this
+// collection (or we're offline), it fails silently and the app behaves exactly as before. It does
+// NOT replace the in-doc log the recovery tools rely on; it is an additive, write-only mirror.
+function fbArchiveActivity(ev) {
+  try {
+    if (!fbDb || !fbAuth || !fbAuth.currentUser) return;
+    fbDb.collection('activity_archive').add(ev).catch(function(e){
+      console.warn('activity_archive write failed (non-fatal):', e && e.message);
+    });
+  } catch (e) {
+    console.warn('activity_archive error (non-fatal):', e && e.message);
+  }
 }
 function logError(source, code, endpoint, message) {
   var log = getErrorLog();
@@ -5614,9 +5634,11 @@ function sourceClass(source) {
 
 function adminActivitySection(activity) {
   var html = '';
-  html += '<div class="card"><div class="card-header"><span class="card-title"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2e7d32;animation:pulse 1.6s infinite;vertical-align:middle;margin-right:6px"></span>Activity Stream</span><span class="card-sub">Last ' + Math.min(activity.length, 50) + ' events · updates in real-time</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2e7d32;animation:pulse 1.6s infinite;vertical-align:middle;margin-right:6px"></span>Activity Stream</span><span class="card-sub">Last ' + Math.min(activity.length, 50) + ' events · live view</span>';
+  html += ' <button class="btn btn-ghost btn-sm" style="margin-left:10px" onclick="loadFullActivityHistory()" title="Load the complete, uncapped audit trail from Firestore (the permanent record — beyond the last 200 shown here)">📜 Load full history</button></div>';
   if (!activity.length) {
-    html += '<div class="empty">No activity recorded yet. Try syncing Zoho or taking a snapshot.</div></div>';
+    html += '<div class="empty">No activity recorded yet. Try syncing Zoho or taking a snapshot.</div>';
+    html += '<div id="fullActivityHistory" style="margin-top:14px"></div></div>';
     return html;
   }
   html += '<table><thead><tr><th>Source</th><th>Action</th><th>Details</th><th>Actor</th><th>When</th></tr></thead><tbody>';
@@ -5629,8 +5651,48 @@ function adminActivitySection(activity) {
     html += '<td style="font-size:11px;color:var(--muted);white-space:nowrap" title="' + esc(ev.ts) + '">' + timeAgo(ev.ts) + '</td>';
     html += '</tr>';
   });
-  html += '</tbody></table></div>';
+  html += '</tbody></table>';
+  html += '<div id="fullActivityHistory" style="margin-top:14px"></div></div>';
   return html;
+}
+// Async-load the complete, uncapped audit trail from the 'activity_archive' collection and render
+// it below the live stream. Additive: the default 50-event live view above is untouched. If the
+// security rules don't permit the collection yet, this shows a clear message with the fix.
+function loadFullActivityHistory() {
+  var box = document.getElementById('fullActivityHistory');
+  if (!box) return;
+  if (!fbDb || !fbAuth || !fbAuth.currentUser) {
+    box.innerHTML = '<div class="empty">Sign in to Firestore first to load the full history.</div>';
+    return;
+  }
+  box.innerHTML = '<div class="empty">Loading full audit trail…</div>';
+  fbDb.collection('activity_archive').orderBy('ts', 'desc').limit(1000).get().then(function(snap) {
+    var evs = [];
+    snap.forEach(function(d) { evs.push(d.data()); });
+    if (!evs.length) {
+      box.innerHTML = '<div class="empty">No archived events yet. From now on, every action is recorded permanently here (uncapped).</div>';
+      return;
+    }
+    var html = '<div class="card"><div class="card-header"><span class="card-title">Full Audit Trail</span><span class="card-sub">' + evs.length + ' event(s) loaded · newest first · permanent record (uncapped)</span></div>';
+    html += '<table><thead><tr><th>Source</th><th>Action</th><th>Details</th><th>Actor</th><th>When</th></tr></thead><tbody>';
+    evs.forEach(function(ev) {
+      html += '<tr>';
+      html += '<td><span style="display:inline-block;padding:3px 9px;border-radius:4px;font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;' + sourceClass(ev.source) + '">' + esc(ev.source || '') + '</span></td>';
+      html += '<td><b>' + esc(ev.action || '') + '</b></td>';
+      html += '<td style="font-size:11.5px;color:var(--muted)">' + esc(ev.details || '') + '</td>';
+      html += '<td style="font-size:11.5px;color:var(--muted)">' + esc(ev.actor || '') + '</td>';
+      html += '<td style="font-size:11px;color:var(--muted);white-space:nowrap" title="' + esc(ev.ts || '') + '">' + timeAgo(ev.ts) + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    box.innerHTML = html;
+  }).catch(function(e) {
+    var msg = (e && e.message) || 'unknown error';
+    var hint = /permission|insufficient|PERMISSION_DENIED/i.test(msg)
+      ? '<br><br>This means the Firestore <b>security rules</b> don\'t allow the <code>activity_archive</code> collection yet. There is a one-time rule to add in the Firebase console — ask Carlos.'
+      : '';
+    box.innerHTML = '<div class="empty" style="color:#b00020">Could not load the full history: ' + esc(msg) + hint + '</div>';
+  });
 }
 
 function adminErrorsSection(errors) {
