@@ -3068,71 +3068,66 @@ function renderAureumGrid() {
     monthsY1.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY1[i] += hc; tot.mrrY1[i] += hc * pph; tot.aHcY1[i] += hc * win; tot.aMrrY1[i] += hc * pph * win; tot.aMgnY1[i] += hc * pph * win * mgn; });
     monthsY2.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY2[i] += hc; tot.mrrY2[i] += hc * pph; tot.aHcY2[i] += hc * win; tot.aMrrY2[i] += hc * pph * win; tot.aMgnY2[i] += hc * pph * win * mgn; });
   });
-  var yTotCss = 'color:var(--gold);border-left:1px solid var(--gold)';
-  html += '<tr class="totals-row" style="background:var(--navy);color:white;font-weight:700">';
-  html += '<td colspan="7" style="color:white">TOTALS (' + filtered.length + ' deals)</td>';
-  html += '<td colspan="2" style="border-left:2px solid var(--gold)"></td>';        // Start Date + Contract
-  html += '<td class="num" style="color:white">' + (tot.zohoHC || '—') + '</td>';     // Zoho HC
-  html += '<td class="num" style="color:white">' + tot.totHC + '</td>';               // Fcst HC
-  html += '<td></td>';                                                               // Zoho $/head
-  html += '<td></td>';                                                               // Fcst $/head
-  html += '<td class="num" style="color:white">' + fmt$k(tot.mrr) + '</td>';          // MRR (Zoho)
-  html += '<td class="num" style="color:white">' + fmt$k(tot.fcstMRR) + '</td>';      // Fcst MRR
-  html += '<td class="num" style="color:white">' + fmt$k(tot.fcstMRR * 12) + '</td>'; // Fcst ARR = Fcst MRR × 12
+  // Bottom summary bands — NOT sticky (plain rows in flow, so they never stack/overlap) and with a
+  // subtle separator instead of harsh gold lines. `sep` is a faint vertical divider before each year.
+  var sep = 'border-left:1px solid rgba(255,255,255,.18);';
+  var yTotCss = 'color:var(--gold);' + sep + 'font-weight:800';
+  // Gross HC by month (a gold top border separates the summary block from the deal rows).
+  html += '<tr style="background:var(--navy);color:#fff;font-weight:700;border-top:3px solid var(--gold)">';
+  html += '<td colspan="7" style="color:#fff">TOTALS (' + filtered.length + ' deals)</td>';
+  html += '<td colspan="2"></td>';                                                   // Start Date + Contract
+  html += '<td class="num" style="color:#fff">' + (tot.zohoHC || '—') + '</td>';      // Zoho HC
+  html += '<td class="num" style="color:#fff">' + tot.totHC + '</td>';                // Fcst HC
+  html += '<td></td><td></td>';                                                      // Zoho/Fcst $/head
+  html += '<td class="num" style="color:#fff">' + fmt$k(tot.mrr) + '</td>';           // MRR (Zoho)
+  html += '<td class="num" style="color:#fff">' + fmt$k(tot.fcstMRR) + '</td>';       // Fcst MRR
+  html += '<td class="num" style="color:#fff">' + fmt$k(tot.fcstMRR * 12) + '</td>';  // Fcst ARR
   html += '<td colspan="4"></td>';                                                   // Win, Fcst MG, TM, AM
   html += '<td></td>';                                                               // Revert
-  html += '<td style="border-left:2px solid var(--gold);color:#9ecbff;font-size:10px">HC / mo (gross)</td>'; // Spread col — row label
-  tot.hcY1.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:white;' + bl + '">' + v + '</td>'; });
-  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';        // Y1 total $
-  tot.hcY2.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:white;' + bl + '">' + v + '</td>'; });
-  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y2) + '</td>';        // Y2 total $
-  html += '<td style="border-left:2px solid var(--gold)"></td>';                     // Y3 growth %
-  html += '<td class="num" style="color:var(--gold)">' + fmt$k(tot.y3) + '</td>';      // Y3 total $
+  html += '<td style="color:#9ecbff;font-size:10px;' + sep + '">HC / mo</td>';        // Spread col — row label
+  tot.hcY1.forEach(function(v, i) { html += '<td class="num" style="color:#fff;' + (i === 0 ? sep : '') + '">' + v + '</td>'; });
+  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';
+  tot.hcY2.forEach(function(v, i) { html += '<td class="num" style="color:#fff;' + (i === 0 ? sep : '') + '">' + v + '</td>'; });
+  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y2) + '</td>';
+  html += '<td style="' + sep + '"></td>';                                           // Y3 growth %
+  html += '<td class="num" style="color:var(--gold);font-weight:800">' + fmt$k(tot.y3) + '</td>';
   html += '<td></td></tr>';
 
-  // MRR / month totals row — the dollars behind each month's headcount (Σ HC × $/head).
-  html += '<tr class="totals-row" style="background:#13233b;color:var(--gold);font-weight:700">';
+  // Gross MRR by month
+  html += '<tr style="background:#13233b;color:var(--gold);font-weight:700">';
   html += '<td colspan="7" style="color:var(--gold)">MRR / month (gross)</td>';
-  html += '<td colspan="2" style="border-left:2px solid var(--gold)"></td>';          // Start Date + Contract
-  html += '<td colspan="11"></td>';                                                   // Zoho HC → Actual MG (11 cols)
-  html += '<td></td>';                                                                // Revert
-  html += '<td style="border-left:2px solid var(--gold);color:var(--gold);font-size:10px">MRR / mo (gross)</td>'; // Spread col — row label
-  tot.mrrY1.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:var(--gold);' + bl + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
-  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';        // Y1 total $
-  tot.mrrY2.forEach(function(v, i) { var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; html += '<td class="num" style="color:var(--gold);' + bl + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
-  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y2) + '</td>';        // Y2 total $
-  html += '<td style="border-left:2px solid var(--gold)"></td>';                      // Y3 growth %
-  html += '<td class="num" style="color:var(--gold)">' + fmt$k(tot.y3) + '</td>';      // Y3 total $
+  html += '<td colspan="2"></td><td colspan="11"></td><td></td>';
+  html += '<td style="color:var(--gold);font-size:10px;' + sep + '">MRR / mo</td>';
+  tot.mrrY1.forEach(function(v, i) { html += '<td class="num" style="color:var(--gold);' + (i === 0 ? sep : '') + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
+  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';
+  tot.mrrY2.forEach(function(v, i) { html += '<td class="num" style="color:var(--gold);' + (i === 0 ? sep : '') + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
+  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y2) + '</td>';
+  html += '<td style="' + sep + '"></td>';
+  html += '<td class="num" style="color:var(--gold);font-weight:800">' + fmt$k(tot.y3) + '</td>';
   html += '<td></td></tr>';
 
   // ── ADJUSTED by month (Eric/John ask): win-rate- and margin-adjusted, month by month ──
-  // Helper: emit a month-aligned totals row (label, the two month arrays, the 3 year totals).
-  function adjRow(label, sublabel, bg, fg, arrY1, arrY2, t1, t2, t3, fmtFn) {
-    var h = '<tr class="totals-row" style="background:' + bg + ';color:' + fg + ';font-weight:700">';
+  function adjRow(label, sublabel, fg, arrY1, arrY2, t1, t2, t3, fmtFn) {
+    var h = '<tr style="background:#13233b;color:' + fg + ';font-weight:700">';
     h += '<td colspan="7" style="color:' + fg + '">' + label + '</td>';
-    h += '<td colspan="2" style="border-left:2px solid var(--gold)"></td>';
-    h += '<td colspan="11"></td>';
-    h += '<td></td>';
-    h += '<td style="border-left:2px solid var(--gold);color:' + fg + ';font-size:10px">' + sublabel + '</td>';
-    arrY1.forEach(function(v, i){ var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; h += '<td class="num" style="color:' + fg + ';' + bl + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
-    h += '<td class="num" style="color:' + fg + ';border-left:1px solid var(--gold);font-weight:800">' + fmtFn(t1) + '</td>';
-    arrY2.forEach(function(v, i){ var bl = (i === 0) ? 'border-left:2px solid var(--gold);' : ''; h += '<td class="num" style="color:' + fg + ';' + bl + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
-    h += '<td class="num" style="color:' + fg + ';border-left:1px solid var(--gold);font-weight:800">' + fmtFn(t2) + '</td>';
-    h += '<td style="border-left:2px solid var(--gold)"></td>';
+    h += '<td colspan="2"></td><td colspan="11"></td><td></td>';
+    h += '<td style="color:' + fg + ';font-size:10px;' + sep + '">' + sublabel + '</td>';
+    arrY1.forEach(function(v, i){ h += '<td class="num" style="color:' + fg + ';' + (i === 0 ? sep : '') + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
+    h += '<td class="num" style="color:' + fg + ';' + sep + 'font-weight:800">' + fmtFn(t1) + '</td>';
+    arrY2.forEach(function(v, i){ h += '<td class="num" style="color:' + fg + ';' + (i === 0 ? sep : '') + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
+    h += '<td class="num" style="color:' + fg + ';' + sep + 'font-weight:800">' + fmtFn(t2) + '</td>';
+    h += '<td style="' + sep + '"></td>';
     h += '<td class="num" style="color:' + fg + ';font-weight:800">' + fmtFn(t3) + '</td>';
     h += '<td></td></tr>';
     return h;
   }
   function _sum(a){ return a.reduce(function(s,v){ return s + v; }, 0); }
   var rnd = function(v){ return Math.round(v); };
-  // Section divider
-  html += '<tr class="totals-row" style="background:#0A1928;color:#7fa8d8;font-weight:700"><td colspan="7" style="color:#7fa8d8;font-size:11px;text-transform:uppercase;letter-spacing:.4px">↓ Adjusted (× Win % and Forecast Margin)</td><td colspan="13" style="border-left:2px solid var(--gold)"></td><td></td><td style="border-left:2px solid var(--gold)"></td><td colspan="' + (N1 + 1) + '"></td><td colspan="13"></td><td colspan="2" style="border-left:2px solid var(--gold)"></td><td></td></tr>';
-  // Adjusted HC by month (× win%)
-  html += adjRow('Adj. Headcount / month', 'Adj HC', '#13233b', '#9ecbff', tot.aHcY1, tot.aHcY2, _sum(tot.aHcY1), _sum(tot.aHcY2), _sum(tot.aHcY2), rnd);
-  // Adjusted MRR by month (× win%)
-  html += adjRow('Adj. MRR / month', 'Adj MRR', '#13233b', '#9ecbff', tot.aMrrY1, tot.aMrrY2, tot.y1w, tot.y2w, tot.y3w, fmt$k);
-  // Adjusted Margin $ (contribution) by month (× win% × forecast margin)
-  html += adjRow('Adj. Margin $ / month (contribution)', 'Contribution', '#13233b', '#aef0bd', tot.aMgnY1, tot.aMgnY2, tot.y1c, tot.y2c, tot.y3c, fmt$k);
+  // Section divider (clean — no gold lines)
+  html += '<tr style="background:#0A1928;color:#7fa8d8;font-weight:700"><td colspan="20" style="color:#7fa8d8;font-size:11px;text-transform:uppercase;letter-spacing:.4px">↓ Adjusted (× Win % and Forecast Margin)</td><td></td><td></td><td colspan="' + (N1 + 1) + '"></td><td colspan="13"></td><td colspan="2"></td><td></td></tr>';
+  html += adjRow('Adj. Headcount / month', 'Adj HC', '#9ecbff', tot.aHcY1, tot.aHcY2, _sum(tot.aHcY1), _sum(tot.aHcY2), _sum(tot.aHcY2), rnd);
+  html += adjRow('Adj. MRR / month', 'Adj MRR', '#9ecbff', tot.aMrrY1, tot.aMrrY2, tot.y1w, tot.y2w, tot.y3w, fmt$k);
+  html += adjRow('Adj. Margin $ / month (contribution)', 'Contribution', '#aef0bd', tot.aMgnY1, tot.aMgnY2, tot.y1c, tot.y2c, tot.y3c, fmt$k);
 
   html += '</tbody></table></div></div>';
 
