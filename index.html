@@ -552,6 +552,7 @@ function getActivePhases() {
   if (saved && saved.length) return saved;
   return PHASES.filter(function(p){ return p.defaultFcst; }).map(function(p){ return p.id; });
 }
+// Local-only (not synced) — see the FB_SYNCED_KEYS note. Each browser keeps its own phase filter.
 function setActivePhases(arr) { save('active_phases', arr); }
 function togglePhaseActive(id) {
   var cur = getActivePhases();
@@ -559,8 +560,8 @@ function togglePhaseActive(id) {
   if (idx >= 0) cur.splice(idx, 1);
   else          cur.push(id);
   setActivePhases(cur);
-  logActivity('Forecast', 'Toggle phase filter', 'Phase ' + id + ' → ' + (idx < 0 ? 'ON' : 'OFF'));
-  renderTab();
+  // No logActivity here: a view filter is personal, must not sync or re-render anyone else's screen.
+  renderAureumGrid();
 }
 
 // ── Admin Panel state ──
@@ -790,7 +791,9 @@ function maybeStartOnboarding() {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions'];
+// NOTE: 'active_phases' is intentionally NOT synced — the phase filter is a PERSONAL view control,
+// so each person browsing on their own PC filters without changing anyone else's screen.
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
