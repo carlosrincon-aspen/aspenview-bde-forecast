@@ -1966,7 +1966,10 @@ function rebuildFromActivityLog() {
   if (snap && snap.perDeal) {
     var m0 = snap.snapshotMonth, m1 = monthKeyAfter(m0, 1), m2 = monthKeyAfter(m0, 2);
     Object.keys(snap.perDeal).forEach(function(name){
-      var d = byName[normDealName(name)]; if (!d) return; var hc = snap.perDeal[name].hc || {};
+      var key = normDealName(name);
+      if (touched[key]) return;   // the log is authoritative for any deal Don actually spread/edited —
+                                  // never let the snapshot overwrite a replayed spread (the FIFA bug).
+      var d = byName[key]; if (!d) return; var hc = snap.perDeal[name].hc || {};
       d.monthlyHC = d.monthlyHC || {};
       if (hc.m0) d.monthlyHC[m0] = hc.m0; if (hc.m1) d.monthlyHC[m1] = hc.m1; if (hc.m2) d.monthlyHC[m2] = hc.m2;
       d.totalHC = sumMonths(d.monthlyHC); pinned++;
