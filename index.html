@@ -790,7 +790,7 @@ function maybeStartOnboarding() {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','active_phases','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions'];
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
@@ -1825,8 +1825,124 @@ function lockForecast(monthKey) {
   }
   setSnapshots(snaps);
   logActivity('Forecast', 'Lock month forecast', monthKey + ' · stamped by ' + lockedBy);
-  alert('🔒 Forecast for ' + monthLabel(monthKey) + ' locked.\n\nThis snapshot is now the source of truth for measuring accuracy when M+0 / M+1 / M+2 actuals come in.');
+  alert('🔒 OFFICIAL lock for ' + monthLabel(monthKey) + '.\n\nThis is now the version accuracy is measured against (M+0 / M+1 / M+2). It does NOT push to Zoho — that\'s a separate step. You can Unlock to revise if needed.');
   renderTab();
+}
+// Re-open an official lock for revision (Don/Michael: "give us a way to unlock"). Keeps the
+// snapshot's numbers but marks it not-locked, so it no longer counts toward accuracy until re-locked.
+function unlockForecast(monthKey) {
+  monthKey = monthKey || getAnchorMonth();
+  var snaps = getSnapshots();
+  var s = snaps.find(function(x){ return x.snapshotMonth === monthKey; });
+  if (!s || !s.locked) { alert(monthLabel(monthKey) + ' is not locked.'); return; }
+  if (!confirm('Unlock ' + monthLabel(monthKey) + '?\n\nThis re-opens the forecast for editing. Your numbers are kept, but it will not count toward accuracy until you lock it again.')) return;
+  s.locked = false;
+  s.unlockedBy = (currentUser && currentUser.name) || (currentUser && currentUser.email) || '';
+  s.unlockedAt = new Date().toISOString();
+  setSnapshots(snaps);
+  logActivity('Forecast', 'Unlock month forecast', monthKey + ' · by ' + s.unlockedBy);
+  renderTab();
+}
+
+// ── Forecast working versions (Don & Michael's ask) ───────────────────────────
+// A safe save → revise → save loop that is SEPARATE from the official lock. They can snapshot
+// the forecast as v1, v2, … over days of back-and-forth without losing data and without touching
+// Zoho. The official 🔒 lock is applied only at the end, right before Finance, and is what
+// accuracy is measured against. Versions store the lean per-deal inputs (not whole deals) so the
+// Firestore document stays small.
+function getForecastVersions()  { return load('forecast_versions', []); }
+function setForecastVersions(v) { save('forecast_versions', v); }
+function _dealKey(d) { return d.zohoId || d.dealName || ''; }
+function _captureForecastItems() {
+  var items = {};
+  getDeals().forEach(function(d){
+    items[_dealKey(d)] = {
+      monthlyHC:     JSON.parse(JSON.stringify(d.monthlyHC || {})),
+      totalHC:       d.totalHC || 0,
+      dollarPerHead: d.dollarPerHead,
+      winRateAdj:    d.winRateAdj,
+      actualMargin:  d.actualMargin,
+      growthPct:     d.growthPct,
+      inForecast:    !!d.inForecast
+    };
+  });
+  return items;
+}
+function saveForecastVersion() {
+  var versions = getForecastVersions();
+  var label = 'v' + (versions.length + 1);
+  var note = prompt('Save the current forecast as a working version (' + label + ').\n\nOptional note — what changed / what to review:', '');
+  if (note === null) return;   // cancelled
+  var who = (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'anon';
+  var anchor = getAnchorMonth();
+  var t = forecastTotals(rollingMonths(anchor, 3));
+  versions.push({
+    id: String(new Date().getTime()),
+    label: label,
+    savedAt: new Date().toISOString(),
+    savedBy: who,
+    note: (note || '').trim(),
+    anchor: anchor,
+    items: _captureForecastItems(),
+    summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) }
+  });
+  setForecastVersions(versions);
+  logActivity('Forecast', 'Save working version', label + (note ? ' · ' + note : ''));
+  alert('💾 Saved as ' + label + '. Keep revising and save again (v' + (versions.length + 1) + ', …), or restore any version from “Versions”. Nothing was locked or pushed to Zoho.');
+  renderTab();
+}
+function restoreForecastVersion(id) {
+  var v = getForecastVersions().find(function(x){ return x.id === id; });
+  if (!v) return;
+  if (!confirm('Restore working version ' + v.label + ' (saved ' + new Date(v.savedAt).toLocaleString() + ' by ' + (v.savedBy || '—') + ')?\n\nThis loads that version\'s forecast back in so you can review / revise it. Your current unsaved edits will be replaced — save them first if you want to keep them.')) return;
+  var deals = getDeals();
+  deals.forEach(function(d){
+    var it = v.items[_dealKey(d)];
+    if (!it) return;
+    d.monthlyHC = JSON.parse(JSON.stringify(it.monthlyHC || {}));
+    d.totalHC = it.totalHC || 0;
+    if (it.dollarPerHead === undefined) delete d.dollarPerHead; else d.dollarPerHead = it.dollarPerHead;
+    if (it.winRateAdj === undefined)    delete d.winRateAdj;    else d.winRateAdj = it.winRateAdj;
+    if (it.actualMargin === undefined)  delete d.actualMargin;  else d.actualMargin = it.actualMargin;
+    if (it.growthPct === undefined)     delete d.growthPct;     else d.growthPct = it.growthPct;
+    d.inForecast = !!it.inForecast;
+  });
+  setDeals(deals);
+  logActivity('Forecast', 'Restore working version', v.label);
+  closeModal();
+  alert('Restored ' + v.label + '. Revise as needed, then Save a new version, or apply the Official lock when you\'re ready for Finance.');
+  renderTab();
+}
+function deleteForecastVersion(id) {
+  var versions = getForecastVersions();
+  var v = versions.find(function(x){ return x.id === id; });
+  if (!v) return;
+  if (!confirm('Delete working version ' + v.label + '? This only removes the saved draft — it does not change your current forecast.')) return;
+  setForecastVersions(versions.filter(function(x){ return x.id !== id; }));
+  logActivity('Forecast', 'Delete working version', v.label);
+  openVersionsModal();
+}
+function openVersionsModal() {
+  var versions = getForecastVersions().slice().sort(function(a,b){ return a.savedAt < b.savedAt ? 1 : -1; });
+  var html = '<h3>Forecast Working Versions</h3>';
+  html += '<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Save the forecast as you go (v1, v2, …), revise, and save again — nothing is locked or pushed to Zoho. Restore any version to review or keep editing it. Apply the <b>Official lock</b> only at the end, right before Finance — that\'s the version accuracy is measured against.</p>';
+  html += '<div style="margin-bottom:12px"><button class="btn btn-gold btn-sm" onclick="saveForecastVersion()">💾 Save current as a new version</button></div>';
+  if (!versions.length) {
+    html += '<div class="empty">No versions saved yet.</div>';
+  } else {
+    html += '<div style="max-height:46vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--navy);color:white"><th style="text-align:left;padding:7px 10px">Version</th><th style="text-align:left;padding:7px 10px">Saved</th><th class="num" style="padding:7px 10px">Deals · HC</th><th style="text-align:left;padding:7px 10px">Note</th><th style="padding:7px 10px"></th></tr></thead><tbody>';
+    versions.forEach(function(v){
+      var sm = v.summary || {};
+      html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px"><b>' + esc(v.label) + '</b></td>';
+      html += '<td style="padding:7px 10px;color:var(--muted)">' + new Date(v.savedAt).toLocaleString() + '<br><span style="font-size:10px">by ' + esc(v.savedBy || '—') + '</span></td>';
+      html += '<td class="num" style="padding:7px 10px;color:var(--muted)">' + (sm.deals != null ? sm.deals + ' · ' + sm.fcstHC : '—') + '</td>';
+      html += '<td style="padding:7px 10px;color:var(--muted)">' + (esc(v.note) || '—') + '</td>';
+      html += '<td style="padding:7px 10px;white-space:nowrap;text-align:right"><button class="btn btn-ghost btn-sm" onclick="restoreForecastVersion(\'' + v.id + '\')">↩ Restore</button> <button class="btn btn-danger btn-sm" onclick="deleteForecastVersion(\'' + v.id + '\')">✕</button></td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  html += '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>';
+  openModal(html);
 }
 
 // Compute accuracy bands: for each historical snapshot, compare its predictions for
@@ -2427,11 +2543,9 @@ function formatClosingDate(s) {
 
 // Bottom-bar actions on Aureum (Michael's flow: review totals → lock → push, all on one screen).
 function aureumLockForecast() {
-  var anchor = getAnchorMonth();
-  lockForecast(anchor);   // saves the snapshot + re-renders
-  setTimeout(function(){
-    if (confirm('Forecast locked for ' + monthLabel(anchor) + '.\n\nPush any changed deals to Zoho now?')) aureumPushToZoho();
-  }, 60);
+  // Official lock only — does NOT prompt to push to Zoho (Don/Michael: don't push until the
+  // final lock + Finance review; pushing is a deliberate separate step).
+  lockForecast(getAnchorMonth());
 }
 function aureumPushToZoho() {
   var anchor = getAnchorMonth();
@@ -2763,8 +2877,11 @@ function renderAureumGrid() {
   html += '<div style="padding:8px 16px;border-top:1px solid var(--border);background:#fbfdff;font-size:11.5px;color:var(--muted)">Forecast HC <b style="color:var(--navy)">' + tot.totHC + '</b> · Probability-weighted HC <b style="color:#1d4a86">' + Math.round(tot.wHC) + '</b></div>';
   html += '</div>';
 
-  // ── Bottom action bar (sticky): bottom-line numbers + Lock + Push, so the whole flow stays on
-  //    this one screen (Michael: don't scroll back up, don't jump tabs). ──
+  // ── Workflow note + bottom action bar (sticky). Don/Michael: save & revise freely as working
+  //    versions; the official lock is only for the end; push to Zoho is a separate final step. ──
+  html += '<div style="margin-top:14px;padding:9px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy);line-height:1.5">';
+  html += '<b>How to save your work:</b> 1) <b>💾 Save version</b> as often as you like (v1, v2…) — revise and re-save over days; nothing locks or touches Zoho. 2) <b>🗂 Versions</b> to restore an earlier one. 3) <b>🔒 Official lock</b> only at the very end, right before Finance — that\'s the version accuracy is measured against (you can 🔓 Unlock to revise). 4) <b>↗ Push to Zoho</b> is a separate final step after the lock.';
+  html += '</div>';
   var aSnap = getSnapshots().find(function(s){ return s.snapshotMonth === anchor; });
   var aLocked = !!(aSnap && aSnap.locked);
   html += '<div style="position:sticky;bottom:0;z-index:20;margin-top:12px;padding:12px 16px;background:linear-gradient(90deg,#0A1928,#1c3250);border-radius:8px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;box-shadow:0 -3px 12px rgba(0,0,0,.18)">';
@@ -2776,8 +2893,18 @@ function renderAureumGrid() {
   html += '<span style="color:#7fa8d8;font-size:12.5px;border-left:1px solid #34506e;padding-left:14px" title="' + Y1 + ' revenue × stage win %">Weighted ' + Y1 + ' <b style="color:#9ecbff">' + fmt$k(tot.y1w) + '</b></span>';
   html += '<span style="color:#7fc98a;font-size:12.5px" title="' + Y1 + ' weighted revenue × margin">Contribution ' + Y1 + ' <b style="color:#aef0bd">' + fmt$k(tot.y1c) + '</b></span>';
   html += '<span style="flex:1"></span>';
-  html += '<button class="btn ' + (aLocked ? 'btn-ghost' : 'btn-gold') + ' btn-sm" onclick="aureumLockForecast()" title="Lock the 3-month window for accuracy tracking, then push changes to Zoho">' + (aLocked ? '🔒 Locked · Re-lock ' + monthLabel(anchor) : '🔒 Lock ' + monthLabel(anchor) + ' forecast') + '</button>';
-  html += '<button class="btn btn-gold btn-sm" onclick="aureumPushToZoho()" title="Push changed deals to Zoho (lock first). Requires Zoho WRITE scope.">↗ Push changes to Zoho</button>';
+  // Working versions: save / revise / save freely — NOT the official lock, never pushes to Zoho.
+  html += '<button class="btn btn-gold btn-sm" onclick="saveForecastVersion()" title="Save the current forecast as a working version (v1, v2, …). Revise and save again anytime — nothing is locked or pushed to Zoho.">💾 Save version</button>';
+  html += '<button class="btn btn-ghost btn-sm" style="color:#cdd7e3;border-color:#34506e" onclick="openVersionsModal()" title="Open saved working versions to restore or review">🗂 Versions (' + getForecastVersions().length + ')</button>';
+  // Official lock (the version accuracy is measured against) — only at the end, with Unlock to revise.
+  if (aLocked) {
+    html += '<span style="color:#9ecbff;font-size:11.5px;border-left:1px solid #34506e;padding-left:12px" title="Locked by ' + esc((aSnap && aSnap.lockedBy) || '—') + '">🔒 ' + monthLabel(anchor) + ' locked</span>';
+    html += '<button class="btn btn-ghost btn-sm" style="color:#ffd9a8;border-color:#34506e" onclick="unlockForecast()" title="Re-open the official forecast for revision (kept, but not measured until re-locked)">🔓 Unlock</button>';
+    html += '<button class="btn btn-ghost btn-sm" style="color:#cdd7e3;border-color:#34506e" onclick="aureumLockForecast()" title="Re-lock with the current numbers">Re-lock</button>';
+  } else {
+    html += '<button class="btn btn-gold btn-sm" style="border-left:1px solid #34506e;margin-left:4px" onclick="aureumLockForecast()" title="OFFICIAL lock — the version accuracy is measured against. Use only at the end, right before Finance. Does NOT push to Zoho.">🔒 Official lock ' + monthLabel(anchor) + '</button>';
+  }
+  html += '<button class="btn btn-ghost btn-sm" style="color:#cdd7e3;border-color:#34506e" onclick="aureumPushToZoho()" title="Push to Zoho — a separate final step, only after the official lock + Finance review. Requires Zoho WRITE scope.">↗ Push to Zoho</button>';
   html += '</div>';
 
   document.getElementById('mainContent').innerHTML = html;
