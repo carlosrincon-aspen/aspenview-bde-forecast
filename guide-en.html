@@ -221,7 +221,7 @@
       <li><strong>⬇ Download Excel</strong> — a formatted <code>.xls</code> (bold navy header, shaded TOTAL rows). Opens in Excel; upload it to Drive to open in Google Sheets with the formatting intact.</li>
       <li><strong>📋 Copy for Google Sheets</strong> — copies the forecast to the clipboard; paste (Ctrl+V) into a blank Google Sheet and it fills the columns.</li>
     </ul>
-    <p><strong>What gets exported = exactly what's on screen.</strong> The export mirrors your current Aureum filters: turn on <strong>Forecast only</strong> (or filter by phase / BDE / search) and the file follows. A reminder confirms the scope and deal count before it runs. Each row carries a <strong>Fcst (Y/N)</strong> column so you can re-filter inside the sheet, and the bottom TOTAL rows reconcile with the detail.</p>
+    <p><strong>The download is always the forecast set only</strong> — the deals with <strong>Fcst</strong> checked (Closed Won excluded), regardless of the on-screen filters — so every row counts and there are no confusing "not-in-forecast" rows. A reminder confirms the deal count before it runs, and the bottom TOTAL rows reconcile with the detail. Columns: <strong>2026</strong> month-by-month + totals, <strong>2027</strong> month-by-month + totals, and a <strong>top-down 2028</strong> total (each deal's 2027 total × its growth %).</p>
     <div class="callout gold"><span class="ct">Numbers always match the platform</span>The export and the on-screen totals are computed by the <em>same</em> function, so they can't drift. The <strong>✓ Verify export = table</strong> button double-checks the file against the platform to the dollar — and that same check runs <strong>automatically before every export</strong>, blocking the download/copy if anything doesn't reconcile. So a file that downloaded is a file that matched.</div>
 
     <h3>6.4 — 3 mo. revenue (rolling 1-3 month forecast with Lock)</h3>
@@ -321,7 +321,7 @@
       <tr><td>Sign-in "not authorized"</td><td>You used a non-@aspenview.com account — switch accounts.</td></tr>
       <tr><td>"Not been invited to Horizon"</td><td>Access is invite-only. Ask an admin (Carlos, Michael, Don, or Juliana) to add you as an admin or observer from ★ Admin → Team, then sign in again.</td></tr>
       <tr><td>Fields are greyed out / can't edit</td><td>You're signed in as an <strong>observer</strong> (view-only). That's expected — you can browse and export, but not edit. Ask an admin if you need edit access.</td></tr>
-      <tr><td>Export looks like fewer deals than expected</td><td>The export mirrors your on-screen filters. Clear the <strong>Forecast only</strong> / phase / search filters in Aureum, then export again.</td></tr>
+      <tr><td>A deal isn't in the exported sheet</td><td>The download is forecast-only. If a deal should be there, check its <strong>Fcst</strong> box in Aureum (and confirm it isn't Closed Won), then export again.</td></tr>
       <tr><td>Zoho sync fails (401)</td><td>The 1-hour token expired. Click the Zoho pill → reconnect.</td></tr>
       <tr><td>Push to Zoho says "scope missing"</td><td>The OAuth client lacks <code>ZohoCRM.modules.Deals.WRITE</code>. Ask the Zoho admin to enable it at api-console.zoho.com, then Disconnect + Connect from the Zoho pill so the new permission takes effect.</td></tr>
       <tr><td>A deal shows <code>⚠ none</code> for BDE</td><td>No deal in that account has an owner in Zoho. Assign one in Zoho, then re-sync.</td></tr>
