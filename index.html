@@ -730,15 +730,29 @@ var ONBOARDING_STEPS = [
   { tab: 'overview',   title: 'Overview',                body: 'Your starting point each session. The four KPI cards summarize the next 3 months — deal count, forecasted headcount, adjusted revenue, and margin. Below: the rolling 3-month window, a Rolling Months 4–12 block with its own accuracy, and the reliability bands (M+0 / M+1 / M+2). Managers can pin those bands.' },
   { tab: 'pipeline',   title: 'Pipeline',                body: 'The investor-grade view. All deals (excluding Closed Lost) grouped by the 5-phase model: SQL → Recruitment → Pricing → Legal Contracting → Closed Won. Includes a Forecast Coverage by Phase report — how much of the pipeline is actually being forecast — plus Deal Age cards (Healthy / Active / Slow / Critical) flagging what is stuck.' },
   { tab: 'aureum',     title: 'Aureum Demand Forecast',  body: 'The single input — one row per Zoho deal, rolling 12 months. The Deal column is frozen so it stays visible as you scroll. Deal Summary (MRR, ARR, TCV, contract, $/head, win %, target vs actual margin) comes from Zoho; the Headcount Build is where you type headcount by month — or use the ⇶ Spread button to ramp it automatically. Check Forecast to include a deal; Super-Deal is automatic at 100+ headcount. 3 mo. revenue & 12-Month Plan are outputs of this grid.' },
+  { tab: 'aureum',     title: 'Download to Excel / Google Sheets', body: 'Two buttons at the top of Aureum take the forecast out for Finance: <b>⬇ Download Excel</b> (a formatted .xls) and <b>📋 Copy for Google Sheets</b> (paste straight into a blank sheet). The export <b>mirrors exactly what is filtered on screen</b> — toggle "Forecast only" (or phase / BDE) and the file follows. A reminder confirms the scope first, and the <b>✓ Verify export = table</b> button double-checks the file matches the platform to the dollar (it also runs automatically before every export, and blocks if anything is off). Observers can export too.' },
   { tab: 'threemo',    title: '3 mo. revenue',           body: 'Deep-dive on the next 3 months. Only deals you flagged as Forecast appear here. When the numbers are right, click "🔒 Lock {month}" — that snapshot becomes immutable and is what the accuracy bands compare against when actuals roll in. The "Apply BDE accuracy haircut" checkbox discounts every cell by that BDE\'s historical accuracy.' },
   { tab: 'midterm',    title: '12-Month Plan',           body: 'A read-only OUTPUT of months 4 through 12 — the headcount ramp you entered in Aureum Demand Forecast, with revenue computed automatically (HC × $/head). These months use a single standard margin % and accuracy %, set by a manager in Settings. Reminder: this is "Build & Invoice, NOT Close" — HC by month is when a person STARTS BILLING, not when the deal closes.' },
   { tab: 'longterm',   title: 'Rolling Months 13–24',    body: 'The long-term outlook. No per-deal forecasting at this horizon — take month-12 as the baseline, pick a monthly growth rate, and the model projects the 2-year (24-month) outlook for Finance without forcing certainty that does not exist. The growth rate is set by a manager.' },
-  { tab: 'playground', title: 'Playground',              body: 'Your sandbox before touching Zoho. Edit numbers freely in Aureum and come here to see the diff against what Zoho currently has — side by side. Approve the deals whose changes are ready, then click "↗ Push approved to Zoho" to send them all in one click. Requires WRITE scope on the OAuth client.' },
+  { tab: 'playground', title: 'Playground', editorOnly: true, body: 'Your sandbox before touching Zoho (managers/admins only). Edit numbers freely in Aureum and come here to see the diff against what Zoho currently has — side by side. Approve the deals whose changes are ready, then click "↗ Push approved to Zoho" to send them all in one click. Zoho write access is enabled; each person pushing authorizes once in their own browser.' },
   { tab: 'accuracy',   title: 'Forecast Accuracy',       body: 'Your forecast track record. Lock a 3-month forecast → wait for the month to close → enter the actuals → the bands populate. Per-BDE table breaks accuracy down by person at M+0 / M+1 / M+2. Use "📥 Backfill historical data" to seed past months and skip the wait. Below: trend charts comparing forecast vs actual over time.' },
   { tab: 'super',      title: 'Super-Deals',             body: 'Qualitative assessment of programs with 100+ headcount. Each program is rated across 9 dimensions: deal confidence, start readiness, readiness gap, speed sensitivity, ramp duration, first phase timing, phase risk concentration, program horizon, deployment map. Edit Peak HC / Phase 1 / Activation / Notes with the pencil icon.' },
   { tab: 'active',     title: 'Active Customers — Actuals', body: 'Customers already producing revenue today: Active, Expanding, Aureum, and Closed Won deals. Shows current headcount, MRR per head, and monthly billing. Different from Pipeline — these are the deals already alive, not the ones in pursuit.' },
-  { tab: 'settings',   title: 'Settings',                body: 'Configuration. Stage Rules (defaults for Win % and Margin % by stage), Zoho integration status, field mapping reference, JSON export/import for backup. The "↻ Replay tour" button is here — click it any time you want to walk through the modules again.' }
+  { tab: 'settings',   title: 'Settings', editorOnly: true, body: 'Configuration (managers/admins only). Stage Rules (defaults for Win % and Margin % by stage), Zoho integration status, field mapping reference, JSON export/import for backup, and the "↻ Replay tour" button. Admins also manage who can sign in — granting <b>admin</b> (full access) or <b>observer</b> (view-only) — from the ★ Admin panel in the header. Only invited @aspenview.com accounts can enter.' }
 ];
+// Tour steps are built per session so they adapt to the user's role: observers (view-only) get a
+// read-only framing on the first step and skip the editor-only tabs (Playground, Settings).
+function buildOnboardingSteps() {
+  var obs = (typeof isViewer === 'function') && isViewer();
+  return ONBOARDING_STEPS.filter(function(s){ return !(s.editorOnly && obs); }).map(function(s){
+    if (obs && s.tab === 'overview') {
+      return { tab: s.tab, title: 'Overview — Observer (view-only)',
+        body: '<b>You have view-only (Observer) access:</b> you can browse every tab, use all the filters, and download/export the forecast — but the numbers are read-only (no editing, locking, approving, or pushing).<br><br>' + s.body };
+    }
+    return s;
+  });
+}
+var _onboardingSteps = [];
 var _onboardingStep = 0;
 
 function ensureOnboardingOverlay() {
@@ -807,13 +821,14 @@ function positionOnboardingOverlay() {
 }
 function startOnboarding() {
   ensureOnboardingOverlay();
+  _onboardingSteps = buildOnboardingSteps();   // role-aware: observers skip editor-only tabs
   _onboardingStep = 0;
   document.getElementById('onboardingOverlay').style.display = 'block';
   renderOnboardingStep();
-  logActivity('Onboarding', 'Start tour', '');
+  logActivity('Onboarding', 'Start tour', (typeof isViewer === 'function' && isViewer()) ? 'observer' : 'editor');
 }
 function renderOnboardingStep() {
-  var step = ONBOARDING_STEPS[_onboardingStep];
+  var step = _onboardingSteps[_onboardingStep];
   if (!step) return endOnboarding(true);
   // Switch the underlying tab so the user sees the real screen behind the card.
   currentTab = step.tab;
@@ -824,7 +839,7 @@ function renderOnboardingStep() {
   var activeBtn = document.querySelector('.topnav-btn.active');
   if (activeBtn) activeBtn.classList.add('tour-spotlight');
 
-  var total = ONBOARDING_STEPS.length;
+  var total = _onboardingSteps.length;
   document.getElementById('onboardingStepNum').textContent = 'Step ' + (_onboardingStep + 1) + ' of ' + total;
   document.getElementById('onboardingTitle').textContent = step.title;
   document.getElementById('onboardingBody').innerHTML = step.body;
@@ -838,7 +853,7 @@ function renderOnboardingStep() {
 }
 function nextOnboarding() {
   _onboardingStep++;
-  if (_onboardingStep >= ONBOARDING_STEPS.length) return endOnboarding(true);
+  if (_onboardingStep >= _onboardingSteps.length) return endOnboarding(true);
   renderOnboardingStep();
 }
 function prevOnboarding() {
