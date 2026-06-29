@@ -2917,18 +2917,20 @@ function _aureumExportMatrix() {
   // exported totals match the table by construction. Each row's year total = the sum of its OWN
   // rounded month cells, so the file is internally consistent for Finance (row total == sum of row).
   var T = aureumTotals(deals, monthsY1, monthsY2);
-  function sumRow(label, arrY1, arrY2){
+  function sumRow(label, arrY1, arrY2, dec){
+    // dec=true → keep 1 decimal (for the probability-weighted Adjusted HC row); else whole numbers.
+    var r = dec ? function(v){ return Math.round(v * 10) / 10; } : function(v){ return Math.round(v); };
     var pre = [label]; for (var i = 0; i < 18; i++) pre.push('');   // align to first month col (19 lead cols)
-    var v1 = arrY1.map(function(v){ return Math.round(v); });
-    var v2 = arrY2.map(function(v){ return Math.round(v); });
+    var v1 = arrY1.map(r), v2 = arrY2.map(r);
     var y1 = v1.reduce(function(a,b){ return a + b; }, 0);
     var y2 = v2.reduce(function(a,b){ return a + b; }, 0);
+    if (dec) { y1 = Math.round(y1 * 10) / 10; y2 = Math.round(y2 * 10) / 10; }
     return pre.concat(v1).concat(v2).concat([y1, y2]);
   }
   rows.push([]);
   rows.push(sumRow('TOTAL - Gross HC / month', T.hcY1, T.hcY2));
   rows.push(sumRow('TOTAL - Gross MRR / month', T.mrrY1, T.mrrY2));
-  rows.push(sumRow('TOTAL - Adjusted HC / month (x win)', T.aHcY1, T.aHcY2));
+  rows.push(sumRow('TOTAL - Adjusted HC / month (x win)', T.aHcY1, T.aHcY2, true));
   rows.push(sumRow('TOTAL - Adjusted MRR / month (x win)', T.aMrrY1, T.aMrrY2));
   rows.push(sumRow('TOTAL - Contribution $ / month (x win x margin)', T.aMgnY1, T.aMgnY2));
   return rows;
@@ -2949,13 +2951,15 @@ function verifyAureumExport() {
   var matrix = _aureumExportMatrix();
   var diffs = [];
   function row(prefix){ return matrix.find(function(r){ return typeof r[0] === 'string' && r[0].indexOf(prefix) === 0; }); }
-  function checkRow(prefix, expectArr){
+  function checkRow(prefix, expectArr, dec){
+    var rf  = dec ? function(v){ return Math.round((v || 0) * 10) / 10; } : function(v){ return Math.round(v || 0); };
+    var tol = dec ? 0.05 : 0.5;
     var r = row(prefix);
     if (!r) { diffs.push(prefix + ': total row missing'); return; }
     var cells = r.slice(nLead, nLead + nMonths);
     for (var i = 0; i < nMonths; i++){
-      if (Math.abs(Math.round(expectArr[i] || 0) - Number(cells[i] || 0)) > 0.5)
-        diffs.push(prefix + ' · month ' + (i + 1) + ': table ' + Math.round(expectArr[i] || 0) + ' vs export ' + Number(cells[i] || 0));
+      if (Math.abs(rf(expectArr[i]) - Number(cells[i] || 0)) > tol)
+        diffs.push(prefix + ' · month ' + (i + 1) + ': table ' + rf(expectArr[i]) + ' vs export ' + Number(cells[i] || 0));
     }
     var yr = r.slice(nLead + nMonths);
     var s1 = cells.slice(0, monthsY1.length).reduce(function(a,b){ return a + Number(b || 0); }, 0);
@@ -2965,7 +2969,7 @@ function verifyAureumExport() {
   }
   checkRow('TOTAL - Gross HC',     T.hcY1.concat(T.hcY2));
   checkRow('TOTAL - Gross MRR',    T.mrrY1.concat(T.mrrY2));
-  checkRow('TOTAL - Adjusted HC',  T.aHcY1.concat(T.aHcY2));
+  checkRow('TOTAL - Adjusted HC',  T.aHcY1.concat(T.aHcY2), true);
   checkRow('TOTAL - Adjusted MRR', T.aMrrY1.concat(T.aMrrY2));
   checkRow('TOTAL - Contribution', T.aMgnY1.concat(T.aMgnY2));
   // Detail monthly HC must sum to the Gross HC total row (catches set/alignment drift).
@@ -3390,7 +3394,10 @@ function renderAureumGrid() {
   var rnd = function(v){ return Math.round(v); };
   // Section divider (clean — no gold lines)
   html += '<tr class="sumrow" style="background:#0A1928;color:#7fa8d8;font-weight:700"><td colspan="20" style="color:#7fa8d8;font-size:11px;text-transform:uppercase;letter-spacing:.4px">↓ Adjusted (× Win % and Forecast Margin)</td><td></td><td></td><td colspan="' + (N1 + 1) + '"></td><td colspan="13"></td><td colspan="2"></td><td></td></tr>';
-  html += adjRow('Adj. Headcount / month', 'Adj HC', '#9ecbff', tot.aHcY1, tot.aHcY2, _sum(tot.aHcY1), _sum(tot.aHcY2), _sum(tot.aHcY2), rnd);
+  // Adjusted HC is probability-weighted, so it's fractional — show 1 decimal (e.g. 5.5, not 6) so
+  // the weighted math reconciles with a by-hand check (Eric's ask: 3×100% + 5×50% = 5.5).
+  var hcDec = function(v){ return (Math.round(v * 10) / 10).toFixed(1); };
+  html += adjRow('Adj. Headcount / month', 'Adj HC', '#9ecbff', tot.aHcY1, tot.aHcY2, _sum(tot.aHcY1), _sum(tot.aHcY2), _sum(tot.aHcY2), hcDec);
   html += adjRow('Adj. MRR / month', 'Adj MRR', '#9ecbff', tot.aMrrY1, tot.aMrrY2, tot.y1w, tot.y2w, tot.y3w, fmt$k);
   html += adjRow('Adj. Margin $ / month (contribution)', 'Contribution', '#aef0bd', tot.aMgnY1, tot.aMgnY2, tot.y1c, tot.y2c, tot.y3c, fmt$k);
 
