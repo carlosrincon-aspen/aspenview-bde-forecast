@@ -2917,7 +2917,22 @@ function _aureumExportMatrix() {
   rows.push(sumRow('TOTAL - Contribution $ / month (x win x margin)', 'amgn'));
   return rows;
 }
+// Reminder shown before any export: states exactly what scope will be exported (it follows the
+// on-screen Aureum filters) so nobody accidentally sends "all deals" when they meant forecast-only.
+function _aureumExportConfirm(kindLabel) {
+  var ds = aureumFilteredDeals();
+  var f = filterScope('aureum');
+  var bits = [f.forecastOnly ? 'FORECAST-ONLY deals' : 'ALL deals currently shown'];
+  if (f.phaseFilterOn)        bits.push('phase filter ON');
+  if (f.superOnly)            bits.push('super-deals only');
+  if ((f.search || '').trim()) bits.push('search "' + f.search.trim() + '"');
+  return confirm(kindLabel + '\n\nYou are about to export ' + ds.length + ' deal(s).\n' +
+    'Scope: ' + bits.join(' · ') + '.\n\n' +
+    'The export matches exactly what is filtered in Aureum right now.\n' +
+    'Want a different set? Click Cancel, toggle "Forecast only" (or clear filters), then export again.\n\nContinue?');
+}
 function downloadAureumCsv() {
+  if (!_aureumExportConfirm('⬇ Download Excel')) return;
   // Formatted .xls (HTML-table flavour Excel reads) — bold navy header, shaded TOTAL rows,
   // right-aligned numbers. Opens formatted in Excel AND in Google Sheets (upload to Drive).
   var rows = _aureumExportMatrix();
@@ -2952,6 +2967,7 @@ function downloadAureumCsv() {
 // Copy as tab-separated text — paste straight into a blank Google Sheet (Ctrl+V) and it fills the
 // columns. Smoothest path for Google Workspace (no file handling). READ-ONLY.
 function copyAureumForSheets() {
+  if (!_aureumExportConfirm('📋 Copy for Google Sheets')) return;
   var rows = _aureumExportMatrix();
   var tsv = rows.map(function(r){ return r.map(function(s){ return (s == null ? '' : String(s)).replace(/[\t\n]/g, ' '); }).join('\t'); }).join('\n');
   function done(){ logActivity('Forecast', 'Copy for Sheets', Math.max(0, rows.length - 7) + ' deals'); alert('Copied ✓\n\nOpen a blank Google Sheet and paste (Ctrl+V) — it fills the columns automatically.'); }
