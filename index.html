@@ -508,8 +508,8 @@ function save(k, v) {
   // observer's sign-ins and exports are still recorded. Remote sync application sets
   // fbSuppressPush, so updates from teammates always apply. This single data-layer check is the
   // robust integrity guard for the Observer role — independent of any UI button or input.
-  if (VIEWER_PROTECTED_KEYS.indexOf(k) >= 0 && !fbSuppressPush && typeof isViewer === 'function' && isViewer()) {
-    console.warn('Observer (read-only): blocked write to shared key "' + k + '".');
+  if (VIEWER_PROTECTED_KEYS.indexOf(k) >= 0 && !fbSuppressPush && currentUser && typeof canEdit === 'function' && !canEdit()) {
+    console.warn('Read-only (observer or un-invited): blocked write to shared key "' + k + '".');
     return;
   }
   localStorage.setItem('bde_' + k, JSON.stringify(v));
@@ -611,10 +611,22 @@ function isViewer(u) {
   if (u.role === 'manager') return false;
   return getViewers().indexOf((u.email || '').toLowerCase()) >= 0;
 }
-// True when the user may edit/persist shared state (everyone except observers).
+// True when the user has been INVITED to Horizon: a code-defined manager, a granted admin, or a
+// granted observer. A plain @aspenview.com account that nobody invited is NOT invited and is denied
+// access at login (see denyAccess / fbInitDataSync). Managers are hardcoded, so they're always invited.
+function isInvited(u) {
+  u = u || currentUser;
+  if (!u || !u.email) return false;
+  var e = (u.email || '').toLowerCase();
+  var mgr = false;
+  Object.keys(USERS).forEach(function(k){ if (USERS[k].email.toLowerCase() === e) mgr = true; });
+  return mgr || getAdminExtra().indexOf(e) >= 0 || getViewers().indexOf(e) >= 0;
+}
+// True when the user may edit/persist shared state: invited AND not an observer. So managers and
+// granted admins can edit; observers and un-invited users cannot.
 function canEdit(u) {
   u = u || currentUser;
-  return !!u && !isViewer(u);
+  return !!u && isInvited(u) && !isViewer(u);
 }
 // Standard read-only notice; returns false for use as `if (!canEdit()) return denyEdit();`.
 function denyEdit() {
@@ -906,6 +918,9 @@ function fbInitDataSync() {
       FB_SYNCED_KEYS.forEach(function(k) { if (data[k] !== undefined) save(k, data[k]); });
       fbSuppressPush = false;
       fbReady = true;
+      // Invite-only gate (authoritative): the latest admin/observer lists are now loaded from
+      // Firestore, so deny anyone who wasn't invited. Managers are hardcoded, so they always pass.
+      if (currentUser && !isInvited(currentUser)) { denyAccess(); return; }
       setFbPill('on', 'Sync · Live');
       autoApplySeedOnce();   // now sees latest Firestore data; setDeals triggers push if changed
       // NOTE: the one-time stage-rules migration and the Excel purge are NOT auto-run anymore.
@@ -918,6 +933,7 @@ function fbInitDataSync() {
       renderTab();
     } else {
       fbReady = true;
+      if (currentUser && !isInvited(currentUser)) { denyAccess(); return; }
       setFbPill('on', 'Sync · Live (first push)');
       autoApplySeedOnce();   // populates ghosts before first push
       // NOTE: the one-time stage-rules migration and the Excel purge are NOT auto-run anymore.
@@ -937,6 +953,8 @@ function fbInitDataSync() {
       fbSuppressPush = true;
       FB_SYNCED_KEYS.forEach(function(k) { if (data[k] !== undefined) save(k, data[k]); });
       fbSuppressPush = false;
+      // Live revocation: if an admin just removed this user's access, kick them on the next sync.
+      if (currentUser && !isInvited(currentUser)) { denyAccess(); return; }
       setFbPill('on', 'Sync · Live (updated by ' + (data.updatedBy || 'someone') + ')');
       renderTab();
     }, function(err) {
@@ -999,6 +1017,23 @@ function signInWithGoogle() {
     document.getElementById('loginError').textContent = 'Sign-in failed: ' + (err.message || err.code);
   });
 }
+// Invite-only access: a user authenticated with @aspenview.com but was never invited (not a
+// manager, admin, or observer). Kick them back to the login screen with a clear message and sign
+// out. Called immediately in loginAs when the invite lists are already loaded, and authoritatively
+// from fbInitDataSync once Firestore delivers the latest lists.
+function denyAccess(u) {
+  u = u || currentUser;
+  var email = (u && u.email) || '';
+  try { logActivity('Auth', 'Access denied — not invited', email); } catch (e) {}
+  currentUser = null;
+  try { localStorage.removeItem('bde_current_user'); } catch (e) {}
+  try { document.getElementById('appScreen').style.display = 'none'; } catch (e) {}
+  var ls = document.getElementById('loginScreen'); if (ls) ls.style.display = 'flex';
+  var le = document.getElementById('loginError');
+  if (le) le.textContent = 'The account ' + email + ' has not been invited to Horizon. Ask an admin (Carlos, Michael, Don, or Juliana) to grant you admin or observer access, then sign in again.';
+  fbReady = false;
+  if (fbAuth) { try { fbAuth.signOut(); } catch (e) {} }
+}
 function loginAs(u) {
   // Re-resolve role/name from the current USERS map every time. Sessions cached
   // with an older role (e.g. user was BDE before being added as manager) get
@@ -1010,6 +1045,10 @@ function loginAs(u) {
       u.initials = USERS[k].initials || u.initials;
     }
   });
+  // Invite-only gate: if the invite lists are already loaded (fbReady) and this account wasn't
+  // invited, deny now. On first load (fbReady false) we proceed and fbInitDataSync re-checks once
+  // Firestore delivers the latest lists — so a fresh browser never wrongly locks out an invitee.
+  if (fbReady && !isInvited(u)) { denyAccess(u); return; }
   currentUser = u;
   save('current_user', u);
   document.getElementById('loginScreen').style.display = 'none';
