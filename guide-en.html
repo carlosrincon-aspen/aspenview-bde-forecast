@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AspenView — Forecast Platform User Guide</title>
+<title>Horizon — AspenView Forecast Platform User Guide</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230A1928'/%3E%3Crect x='6' y='19' width='4' height='7' rx='1' fill='%23E8B84B' opacity='0.55'/%3E%3Crect x='13' y='15' width='4' height='11' rx='1' fill='%23E8B84B' opacity='0.75'/%3E%3Crect x='20' y='10' width='4' height='16' rx='1' fill='%23E8B84B'/%3E%3Cpath d='M5 18 L12 13 L18 15 L26 6' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M21 6 L26 6 L26 11' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap');
@@ -96,9 +96,9 @@
         <div class="tagline">Technology Partners</div>
       </div>
     </div>
-    <h1>Rolling 12-Month<br>Sales &amp; Readiness<br><span>Forecast</span></h1>
+    <h1>Horizon<br><span>Sales &amp; Demand Forecast</span></h1>
     <div class="accent"></div>
-    <div class="sub">User Guide — how to connect Zoho, enter your forecast, and read every view of the platform.</div>
+    <div class="sub">User Guide — access &amp; roles, connecting Zoho, entering your forecast, exporting for Finance, and reading every view of the platform.</div>
     <div class="meta">AspenView Technology Partners · Sales Forecasting Platform</div>
   </div>
 
@@ -127,9 +127,16 @@
     <ol>
       <li>Open the platform URL in Chrome or Edge.</li>
       <li>Click <strong>Sign in with Google</strong>.</li>
-      <li>Choose your <strong>@aspenview.com</strong> account. Only @aspenview.com accounts are allowed.</li>
+      <li>Choose your <strong>@aspenview.com</strong> account. <strong>Access is invite-only:</strong> an admin must have added you first (as an admin or an observer). A plain @aspenview.com account that wasn't invited is turned away with a message to ask an admin.</li>
       <li>You land on the <strong>Overview</strong> tab.</li>
     </ol>
+    <h3>Who can do what (roles)</h3>
+    <table class="zebra">
+      <tr><th>Role</th><th>Can</th><th>Cannot</th></tr>
+      <tr><td><strong>Manager / Admin</strong></td><td>Everything — edit the forecast, ⇶ Spread, 🔒 Lock, approve &amp; push to Zoho, change Settings, and manage who has access from the ★ Admin panel</td><td>—</td></tr>
+      <tr><td><strong>Observer</strong> (view-only)</td><td>Browse every tab, use all the filters, and <strong>download / copy</strong> the forecast to Excel / Sheets</td><td>Edit any number, Lock, approve, push to Zoho, or open Settings / Admin</td></tr>
+    </table>
+    <div class="callout"><span class="ct">Invite-only</span>Only people an admin has invited — as an admin or an observer — can sign in. An admin grants access from <strong>★ Admin → Team</strong> (<em>+ Add admin</em> or <em>+ Add observer</em>); the two roles are mutually exclusive.</div>
     <h3>The header (top-right)</h3>
     <table>
       <tr><th>Indicator</th><th>Meaning</th></tr>
@@ -147,7 +154,7 @@
       <li>On Zoho, click <strong>Accept</strong> to authorize access to Deals (read + write) and Accounts (read).</li>
       <li>You return; the pill turns green: <strong>Zoho · Connected</strong>.</li>
     </ol>
-    <div class="callout gold"><span class="ct">Write scope</span>The platform requests <code>ZohoCRM.modules.Deals.WRITE</code> so the Playground's <strong>Push approved to Zoho</strong> button can update records. If your Zoho admin hasn't enabled write yet, the rest of the platform still works; only the push action will surface a clear message asking the admin to enable the scope.</div>
+    <div class="callout gold"><span class="ct">Write scope — enabled</span>The platform requests <code>ZohoCRM.modules.Deals.WRITE</code> so the Playground's <strong>Push approved to Zoho</strong> button can update records. Write access is <strong>enabled</strong>. Because Zoho's token is per user, <em>each person who will push</em> authorizes once: click the Zoho pill → <strong>Disconnect → Connect → Accept</strong> (grant Deals read + write). Observers don't push, so they don't need this.</div>
     <h3>Pulling the deals</h3>
     <ol>
       <li>Go to <strong>Aureum Demand Forecast</strong>.</li>
@@ -186,7 +193,7 @@
     <p>The C-suite snapshot — the same kind of view investors see. Four KPI cards (Total Deals, Total Headcount, Total Pipeline MRR, Total Pipeline ARR) and a phase-by-phase breakdown table with deal count, HC, MRR, ARR, and % of total MRR. Click any phase row to focus the deal breakdown below on that single phase. The bottom cards segment deals by age: Healthy (&lt;3 mo) / Active Pipeline (3-6 mo) / Slow-moving (6-12 mo) / Critical (&gt;1 yr).</p>
 
     <h3>6.3 — Aureum Demand Forecast (the single input)</h3>
-    <p>Where everything starts — and the <strong>only place you forecast</strong>. Every Zoho deal in the allowed stages is one row, <strong>grouped by account</strong>, across a <strong>rolling 12 months</strong> from the anchor. The <strong>Deal column is frozen</strong> so it stays visible as you scroll sideways (at any zoom). Columns group under <strong>Deal Summary</strong> (Zoho deal data) and <strong>Headcount Build</strong> (headcount by month); months 1–3 are precise, months 4–12 the lighter horizon. Use the <strong>⇶ Spread</strong> button on a row to ramp a deal's headcount automatically instead of typing each month. Turn on <strong>Filter by phase</strong> (top-left) to scope the table. <em>3 mo. revenue and 12-Month Plan are read-only outputs of this grid.</em></p>
+    <p>Where everything starts — and the <strong>only place you forecast</strong>. Every Zoho deal in the allowed stages is one row, <strong>grouped by account</strong>, across a <strong>rolling 24 months</strong>: the current year (<strong>Y1</strong>) and next year (<strong>Y2</strong>) are spread month-by-month, and a third year (<strong>Y3</strong>) is a per-deal <strong>growth %</strong> applied to Y2. The <strong>Client and Deal columns are frozen</strong> so they stay visible as you scroll. <strong>Fcst HC</strong> (editable) is the total headcount you forecast; <strong>Zoho HC</strong> and <strong>Zoho $/head</strong> are read-only references, while <strong>Fcst $/head</strong> is your editable rate that drives <strong>Fcst MRR</strong> and <strong>Fcst ARR</strong>. Type headcount by month or use the <strong>⇶ Spread</strong> button to ramp it; the <strong>Close Date</strong> is editable to fix erroneous Zoho dates. Check <strong>Forecast</strong> to include a deal; Super-Deal is automatic at 100+ HC. Filter with the <strong>Forecast-only</strong> toggle and the phase / BDE / search controls. The navy band at the bottom totals everything by month and year — gross HC, gross MRR, and the <strong>win-/margin-adjusted</strong> rows (Adj. HC, Adj. MRR, Contribution $) — with the <strong>26 / 27 / 28 year totals framed in gold</strong>. <em>3 mo. revenue and 12-Month Plan are read-only outputs of this grid.</em></p>
     <table class="zebra">
       <tr><th>Column</th><th>Source</th><th>Editable</th></tr>
       <tr><td><strong>Deal</strong> (frozen)</td><td>Zoho</td><td>Read-only · always visible while scrolling · click ↗ to open in Zoho</td></tr>
@@ -195,9 +202,9 @@
       <tr><td><strong>BDE</strong></td><td>Zoho owner</td><td>Read-only · <code>≈</code> inferred from account · <code>⚠ none</code> no owner</td></tr>
       <tr><td>Status / Client / Stage / <strong>Phase</strong> / Loc</td><td>Zoho</td><td>Read-only · Phase is computed from Stage</td></tr>
       <tr><td colspan="3" style="background:#1c3250;color:#fff;font-weight:700">— Deal Summary (from Zoho's Pricing Framework) —</td></tr>
-      <tr><td><strong>Start</strong> · <strong>Contract (mo)</strong> · <strong>MRR</strong> · <strong>ARR</strong> · <strong>TCV</strong></td><td>Zoho</td><td>Read-only · expected start date, contract length, monthly/annual/total contract value</td></tr>
-      <tr><td><strong>Total HC</strong></td><td>Auto</td><td>Read-only · sum of the monthly build</td></tr>
-      <tr><td><strong>$/head</strong></td><td>Manual / Auto</td><td>✅ Override → else MRR ÷ HC → else the Settings default</td></tr>
+      <tr><td><strong>Close Date</strong> · <strong>Contract (mo)</strong> · <strong>MRR</strong> · <strong>Fcst MRR</strong> · <strong>Fcst ARR</strong></td><td>Zoho / Manual</td><td>Close Date is <strong>editable</strong> (fixes erroneous Zoho dates; Zoho date shown for reference); MRR is Zoho's; <strong>Fcst MRR</strong> = Fcst HC × Fcst $/head; <strong>Fcst ARR</strong> = Fcst MRR × 12</td></tr>
+      <tr><td><strong>Zoho HC</strong> · <strong>Fcst HC</strong></td><td>Zoho / Manual</td><td>Zoho HC read-only; <strong>Fcst HC</strong> is editable — the total you forecast (then ⇶ Spread distributes it across the months)</td></tr>
+      <tr><td><strong>Zoho $/head</strong> · <strong>Fcst $/head</strong></td><td>Auto / Manual</td><td>Zoho rate (MRR ÷ Zoho HC) read-only; <strong>Fcst $/head</strong> editable (green when you confirm it) and drives Fcst MRR/ARR</td></tr>
       <tr><td><strong>Win %</strong></td><td>Zoho <code>Probability</code> / manual</td><td>✅ Win probability used in the forecast (Zoho sets it by stage)</td></tr>
       <tr><td><strong>Target %</strong></td><td>Stage Rules</td><td>Read-only here · the default margin by stage — edit it in Settings</td></tr>
       <tr><td><strong>Actual %</strong></td><td>Manual</td><td>✅ Real margin once the deal is priced/closed · blank until known</td></tr>
@@ -207,6 +214,15 @@
     </table>
     <p style="font-size:13px;color:#5a6a7a"><strong>Margin is calculated, not pulled from Zoho.</strong> The Target % comes from the Stage Rules table (managed in Settings); the Actual % is what you enter once a deal is priced. Win % is the Zoho <code>Probability</code> field.</p>
     <p><strong>+ New Deal</strong> opens Zoho's new-deal form in a new tab. New deals are always created in Zoho — never locally.</p>
+
+    <h3>Exporting to Excel / Google Sheets</h3>
+    <p>Two buttons at the top of Aureum take the forecast out for Finance (both are <strong>read-only</strong> and available to everyone, including observers):</p>
+    <ul>
+      <li><strong>⬇ Download Excel</strong> — a formatted <code>.xls</code> (bold navy header, shaded TOTAL rows). Opens in Excel; upload it to Drive to open in Google Sheets with the formatting intact.</li>
+      <li><strong>📋 Copy for Google Sheets</strong> — copies the forecast to the clipboard; paste (Ctrl+V) into a blank Google Sheet and it fills the columns.</li>
+    </ul>
+    <p><strong>What gets exported = exactly what's on screen.</strong> The export mirrors your current Aureum filters: turn on <strong>Forecast only</strong> (or filter by phase / BDE / search) and the file follows. A reminder confirms the scope and deal count before it runs. Each row carries a <strong>Fcst (Y/N)</strong> column so you can re-filter inside the sheet, and the bottom TOTAL rows reconcile with the detail.</p>
+    <div class="callout gold"><span class="ct">Numbers always match the platform</span>The export and the on-screen totals are computed by the <em>same</em> function, so they can't drift. The <strong>✓ Verify export = table</strong> button double-checks the file against the platform to the dollar — and that same check runs <strong>automatically before every export</strong>, blocking the download/copy if anything doesn't reconcile. So a file that downloaded is a file that matched.</div>
 
     <h3>6.4 — 3 mo. revenue (rolling 1-3 month forecast with Lock)</h3>
     <p>Deep-dive on the next 3 months. Only deals flagged <strong>Fcst</strong> appear here. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %).</p>
@@ -227,7 +243,7 @@
       <li><strong>Approve</strong> the deals whose drafts are ready (per-row checkbox). Approval is shared with the team.</li>
       <li>Click <strong>↗ Push approved to Zoho</strong>. The platform sends a PATCH to Zoho per approved deal — updating <code>Headcounts</code>, <code>MRR</code>, and <code>Probability</code> (win %). Margin stays local — it's calculated, not a Zoho field.</li>
     </ol>
-    <div class="callout gold"><span class="ct">Zoho is the system of record</span>If your OAuth client doesn't have <code>Deals.WRITE</code> yet, the push action explains what your Zoho admin needs to enable.</div>
+    <div class="callout gold"><span class="ct">Push is live · Zoho is the system of record</span>Write access is enabled, so <strong>↗ Push approved to Zoho</strong> updates the real records. Each person pushing authorizes Zoho once in their own browser (Zoho pill → Disconnect → Connect → Accept). Playground and push are <strong>manager/admin only</strong> — observers don't see the push action.</div>
 
     <h3>6.8 — Forecast Accuracy (with embedded Trend section)</h3>
     <p>Reliability bands by horizon. Lock a forecast → wait for the month to close → <strong>Enter Actuals</strong> → bands populate as <strong>mean ± standard deviation</strong> per horizon. Defaults until history builds: M+0 = 80% ±5, M+1 = 75% ±10, M+2 = 30% ±20. A <strong>manager can pin</strong> any band (accuracy and ±) so BDEs can't move the committed numbers.</p>
@@ -248,10 +264,10 @@
     <p>Plus: Zoho integration status + field mapping (<code>MRR · ARR · TCV · Contract_Term_Months · Expected_Start_Date · Headcounts · Probability · Account_Status</code>), Export / Import JSON for backup, and the <strong>↻ Replay tour</strong> button.</p>
 
     <h3>★ Admin Panel (header button, admins only)</h3>
-    <p>The gold "★ Admin" button next to <em>Guide</em> in the top-right opens the Admin Panel — visible only to managers and emails that have been granted admin via the panel. Inside:</p>
+    <p>The gold "★ Admin" button next to <em>Guide</em> in the top-right opens the Admin Panel — visible only to managers and admins (observers don't see it). KPI cards at the top count <strong>Admins</strong> and <strong>Observers</strong> currently configured. Inside:</p>
     <ul>
-      <li><strong>Team</strong> — every user who has signed in, with last-active, status, and per-row Grant / Revoke admin buttons. Add admins by typing their email and clicking <em>+ Add admin</em>.</li>
-      <li><strong>Activity</strong> — live stream of all platform events: Zoho syncs, Pushes to Zoho, snapshots, sign-ins, deal edits, admin changes.</li>
+      <li><strong>Team</strong> — the <strong>full roster</strong>: the four code-defined managers, every granted admin, and every observer — shown even before they've signed in (marked "not signed in yet"), so the access list is always complete. The <strong>Access</strong> column shows ★ ADMIN / 👁 OBSERVER / Editor. Grant access with <em>+ Add admin</em> or <em>+ Add observer</em>, or use the per-row <em>Grant / Revoke</em> and <em>Make admin / Make observer</em> buttons (admin and observer are mutually exclusive). The four managers are code-defined and can't be changed from the UI.</li>
+      <li><strong>Activity</strong> — live stream of platform events (Zoho syncs, pushes, snapshots, sign-ins, deal edits, role changes). The visible list shows the most recent 200; click <strong>📜 Load full history</strong> to load the complete, <strong>uncapped permanent audit trail</strong> kept in its own Firestore collection.</li>
       <li><strong>Errors</strong> — auto-captured Zoho REST failures with code, endpoint, message, and actor.</li>
     </ul>
 
@@ -293,7 +309,7 @@
 
     <h2><span class="num">9</span>Guided tour for new users</h2>
     <div class="h2-rule"></div>
-    <p>The first time anyone signs in, a 12-step walk-through pops up explaining each module in plain language. Buttons: <em>Skip tour</em>, <em>← Previous</em>, <em>Next →</em>. A progress bar at the top of the card shows how far along you are.</p>
+    <p>The first time anyone signs in, a guided walk-through pops up explaining each module in plain language, including a step on <strong>exporting to Excel / Google Sheets</strong>. The tour is <strong>role-aware</strong>: observers get a view-only framing and skip the editor-only tabs (Playground, Settings). Buttons: <em>Skip tour</em>, <em>← Previous</em>, <em>Next →</em>, with a progress bar.</p>
     <p>To replay the tour at any time — useful for new hires or as a refresher — go to <strong>Settings</strong> and click <em>↻ Replay tour</em>. The tour switches the underlying tab as you progress so you see each module on the actual screen behind the explanation card.</p>
 
     <h2><span class="num">10</span>Tips &amp; troubleshooting</h2>
@@ -302,7 +318,10 @@
       <tr><th>Symptom</th><th>Fix</th></tr>
       <tr><td>Revenue shows $0</td><td>The deal has no MRR in Zoho and no $/head — set the MRR in Zoho, or type a $/head on the row.</td></tr>
       <tr><td>A deal isn't in 3 mo. revenue</td><td>Check its <strong>Fcst</strong> box and confirm it has headcount in the anchor window.</td></tr>
-      <tr><td>Sign-in "not authorized"</td><td>You used a non-@aspenview.com account. Switch accounts.</td></tr>
+      <tr><td>Sign-in "not authorized"</td><td>You used a non-@aspenview.com account — switch accounts.</td></tr>
+      <tr><td>"Not been invited to Horizon"</td><td>Access is invite-only. Ask an admin (Carlos, Michael, Don, or Juliana) to add you as an admin or observer from ★ Admin → Team, then sign in again.</td></tr>
+      <tr><td>Fields are greyed out / can't edit</td><td>You're signed in as an <strong>observer</strong> (view-only). That's expected — you can browse and export, but not edit. Ask an admin if you need edit access.</td></tr>
+      <tr><td>Export looks like fewer deals than expected</td><td>The export mirrors your on-screen filters. Clear the <strong>Forecast only</strong> / phase / search filters in Aureum, then export again.</td></tr>
       <tr><td>Zoho sync fails (401)</td><td>The 1-hour token expired. Click the Zoho pill → reconnect.</td></tr>
       <tr><td>Push to Zoho says "scope missing"</td><td>The OAuth client lacks <code>ZohoCRM.modules.Deals.WRITE</code>. Ask the Zoho admin to enable it at api-console.zoho.com, then Disconnect + Connect from the Zoho pill so the new permission takes effect.</td></tr>
       <tr><td>A deal shows <code>⚠ none</code> for BDE</td><td>No deal in that account has an owner in Zoho. Assign one in Zoho, then re-sync.</td></tr>
@@ -311,13 +330,20 @@
 
     <h2><span class="num">11</span>Backup</h2>
     <div class="h2-rule"></div>
-    <p>Firestore keeps the shared copy, but export a backup periodically: <strong>Settings → ⬇ Export all data (JSON)</strong>. To restore: <strong>Settings → ⬆ Import data (JSON)</strong>.</p>
+    <p>Several layers protect the data:</p>
+    <ul>
+      <li><strong>Daily auto-backup</strong> — a restore point is saved automatically on sign-in (the last 10 are kept). Restore from <strong>Settings → 🗂 Versions</strong>.</li>
+      <li><strong>Snapshots</strong> — every 🔒 Lock keeps an immutable copy of that month's forecast, recoverable from Forecast Accuracy.</li>
+      <li><strong>Permanent audit log</strong> — every action is recorded in an uncapped trail (★ Admin → Activity → 📜 Load full history), so changes are always traceable.</li>
+      <li><strong>Manual backup</strong> — periodically export <strong>Settings → ⬇ Export all data (JSON)</strong>; restore with <strong>⬆ Import data (JSON)</strong>.</li>
+    </ul>
+    <p style="font-size:13px;color:#5a6a7a">Nothing mutates the shared forecast on load, and a full reset requires typing <code>RESET</code> — so opening the app can never wipe the team's work.</p>
 
   </div>
 
   <div class="footer">
     <div class="brand">ASPEN<span>VIEW</span> <span style="color:rgba(255,255,255,0.4);font-weight:400;font-size:10px">Technology Partners</span></div>
-    <div>Rolling 12-Month Sales &amp; Readiness Forecast — User Guide</div>
+    <div>Horizon — Sales &amp; Demand Forecast — User Guide</div>
   </div>
 
 </div>
