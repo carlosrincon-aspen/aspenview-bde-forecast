@@ -2868,9 +2868,12 @@ function aureumPushToZoho() {
 // builds a file from the current data, never changes anything. Deal rows + monthly build +
 // the gross and adjusted (×win, ×margin) summary rows.
 // Build the export as a matrix (array of rows of raw values) — shared by the CSV download and the
-// "Copy for Google Sheets" (TSV → paste) button. READ-ONLY; builds from current data.
+// Shared export matrix for the Excel download and the "Copy for Google Sheets" button. READ-ONLY.
+// Detail rows use the SAME set as the bottom TOTAL rows — the forecast set (in forecast, excluding
+// Closed Won) — so summing a detail column reconciles exactly with the TOTAL rows and with the
+// 3 mo / 12-Month tabs. Ignores on-screen view filters (search/BDE): always the full forecast set.
 function _aureumExportMatrix() {
-  var deals = getDeals();
+  var deals = forecastDeals();
   var anchor = getAnchorMonth();
   var aYear = parseInt(anchor.split('-')[0]), aMon = parseInt(anchor.split('-')[1]);
   var monthsY1 = [], monthsY2 = [], k;
