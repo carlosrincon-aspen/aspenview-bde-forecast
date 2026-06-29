@@ -2869,11 +2869,12 @@ function aureumPushToZoho() {
 // the gross and adjusted (×win, ×margin) summary rows.
 // Build the export as a matrix (array of rows of raw values) — shared by the CSV download and the
 // Shared export matrix for the Excel download and the "Copy for Google Sheets" button. READ-ONLY.
-// Detail rows use the SAME set as the bottom TOTAL rows — the forecast set (in forecast, excluding
-// Closed Won) — so summing a detail column reconciles exactly with the TOTAL rows and with the
-// 3 mo / 12-Month tabs. Ignores on-screen view filters (search/BDE): always the full forecast set.
+// Mirrors EXACTLY what the Aureum grid currently shows — it honors the same filters (forecast-only
+// toggle, phase pills, BDE, search, super). The bottom TOTAL rows are computed over the SAME set,
+// so summing any detail column reconciles with the TOTALs. The "Fcst (Y/N)" column lets you
+// re-filter inside the sheet, just like the platform.
 function _aureumExportMatrix() {
-  var deals = forecastDeals();
+  var deals = aureumFilteredDeals();   // exactly the on-screen filtered set
   var anchor = getAnchorMonth();
   var aYear = parseInt(anchor.split('-')[0]), aMon = parseInt(anchor.split('-')[1]);
   var monthsY1 = [], monthsY2 = [], k;
@@ -2883,7 +2884,7 @@ function _aureumExportMatrix() {
   // Local year-dollars helper (the grid's own yearDollars is scoped inside renderAureumGrid).
   function _yd(dd, mk, pph) { return mk.reduce(function(s, m){ return s + (((dd.monthlyHC || {})[m] || 0) * pph); }, 0); }
   var rows = [];
-  rows.push(['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho $/head','Fcst $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Margin %','Target Margin %','In Forecast','Super']
+  rows.push(['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho $/head','Fcst $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Margin %','Target Margin %','Fcst (Y/N)','Super']
     .concat(months.map(monthLabel)).concat([aYear + ' Total MRR', (aYear + 1) + ' Total MRR']));
   deals.forEach(function(d){
     var pph = pricePerHead(d), built = d.totalHC || sumMonths(d.monthlyHC) || 0, fcstMRR = built * pph;
@@ -2897,8 +2898,8 @@ function _aureumExportMatrix() {
     row.push(Math.round(_yd(d, monthsY1, pph)), Math.round(_yd(d, monthsY2, pph)));
     rows.push(row);
   });
-  // Summary rows (forecast set: inForecast, non-Closed-Won), gross + adjusted by month.
-  var fd = forecastDeals();
+  // Summary rows over the SAME (on-screen filtered) set as the detail rows, so totals reconcile.
+  var fd = deals;
   function monthAgg(mk, mode){ return fd.reduce(function(s,d){ var hc=(d.monthlyHC||{})[mk]||0, pph=pricePerHead(d), w=getWinRateFor(d), m=getMarginFor(d);
     return s + (mode==='hc'?hc : mode==='mrr'?hc*pph : mode==='ahc'?hc*w : mode==='amrr'?hc*pph*w : hc*pph*w*m); }, 0); }
   function sumRow(label, mode){
@@ -2961,6 +2962,32 @@ function copyAureumForSheets() {
 // ─────────────────────────────────────────────────────────────────────────────
 // TAB: AUREUM DEMAND FORECAST (main grid)
 // ─────────────────────────────────────────────────────────────────────────────
+// The Aureum grid's filtered + sorted deal set. Extracted so the Excel/Sheets export can mirror
+// EXACTLY what's on screen (same forecast-only toggle, phase pills, BDE, search, super filters).
+function aureumFilteredDeals(deals) {
+  deals = deals || getDeals();   // callers that need stable object refs (the grid) pass their own array
+  var f = filterScope('aureum');
+  var activePhases = getActivePhases();
+  var filtered = deals.filter(function(d) {
+    if (!passSearch('aureum', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
+    if (!passMulti('aureum', 'status', d.status)) return false;
+    if (!passMulti('aureum', 'stage',  d.stage))  return false;
+    if (!passMulti('aureum', 'bde',    d.bde))    return false;
+    if (f.forecastOnly && !d.inForecast) return false;
+    if (f.superOnly    && !isSuperDeal(d)) return false;
+    if (f.phaseFilterOn) {
+      var pid = phaseForDeal(d);
+      if (!pid || activePhases.indexOf(pid) < 0) return false;
+    }
+    return true;
+  });
+  filtered.sort(function(a, b) {
+    var ca = (a.client || '').toLowerCase(), cb = (b.client || '').toLowerCase();
+    if (ca !== cb) return ca < cb ? -1 : 1;
+    return (a.dealName || '').toLowerCase() < (b.dealName || '').toLowerCase() ? -1 : 1;
+  });
+  return filtered;
+}
 function renderAureumGrid() {
   var deals  = getDeals();
   var f      = filterScope('aureum');
@@ -2981,25 +3008,9 @@ function renderAureumGrid() {
   function yearDollars(d, mk, pph) { return mk.reduce(function(s, m){ return s + (((d.monthlyHC || {})[m] || 0) * pph); }, 0); }
 
   var activePhases = getActivePhases();
-  var filtered = deals.filter(function(d) {
-    if (!passSearch('aureum', (d.dealName || '') + ' ' + (d.client || '') + ' ' + (d.bde || ''))) return false;
-    if (!passMulti('aureum', 'status', d.status)) return false;
-    if (!passMulti('aureum', 'stage',  d.stage))  return false;
-    if (!passMulti('aureum', 'bde',    d.bde))    return false;
-    if (f.forecastOnly && !d.inForecast) return false;
-    if (f.superOnly    && !isSuperDeal(d)) return false;
-    if (f.phaseFilterOn) {
-      var pid = phaseForDeal(d);
-      if (!pid || activePhases.indexOf(pid) < 0) return false;
-    }
-    return true;
-  });
-  // Account-level traceability: group all deals of the same client together (then by deal name)
-  filtered.sort(function(a, b) {
-    var ca = (a.client || '').toLowerCase(), cb = (b.client || '').toLowerCase();
-    if (ca !== cb) return ca < cb ? -1 : 1;
-    return (a.dealName || '').toLowerCase() < (b.dealName || '').toLowerCase() ? -1 : 1;
-  });
+  // Shared filter + sort (also used by the Excel/Sheets export so it mirrors what's on screen).
+  // Pass the grid's own `deals` array so row identity (deals.indexOf(d)) stays valid for editing.
+  var filtered = aureumFilteredDeals(deals);
 
   var bdes = uniqueBdes(deals);
 
