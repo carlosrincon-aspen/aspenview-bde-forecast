@@ -3314,7 +3314,10 @@ function renderAureumGrid() {
   // Bottom summary bands — NOT sticky (plain rows in flow, so they never stack/overlap) and with a
   // subtle separator instead of harsh gold lines. `sep` is a faint vertical divider before each year.
   var sep = 'border-left:1px solid rgba(255,255,255,.18);';
-  var yTotCss = 'color:var(--gold);' + sep + 'font-weight:800';
+  // Gold separators carried down into the summary block (Michael): spread column + 26/27/28 totals.
+  var goldL  = 'border-left:1px solid var(--gold);';   // 26 / 27 year-total columns
+  var goldL2 = 'border-left:2px solid var(--gold);';   // spread column + 28 total (heavier)
+  var yTotCss = 'color:var(--gold);' + goldL + 'font-weight:800';
   // Gross HC by month (a gold top border separates the summary block from the deal rows).
   html += '<tr class="sumrow" style="background:var(--navy);color:#fff;font-weight:700;border-top:3px solid var(--gold)">';
   html += '<td colspan="7" style="color:#fff">TOTALS (' + filtered.length + ' deals)</td>';
@@ -3327,26 +3330,27 @@ function renderAureumGrid() {
   html += '<td class="num" style="color:#fff">' + fmt$k(tot.fcstMRR * 12) + '</td>';  // Fcst ARR
   html += '<td colspan="4"></td>';                                                   // Win, Fcst MG, TM, AM
   html += '<td></td>';                                                               // Revert
-  html += '<td style="color:#9ecbff;font-size:10px;' + sep + '">HC / mo</td>';        // Spread col — row label
+  html += '<td style="color:#9ecbff;font-size:10px;' + goldL2 + '">HC / mo</td>';      // Spread col — row label (gold line)
   tot.hcY1.forEach(function(v, i) { html += '<td class="num" style="color:#fff;' + (i === 0 ? sep : '') + '">' + v + '</td>'; });
-  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';
+  // 26 total HC = Σ of the year's monthly HC (NOT dollars — was duplicating the MRR row per Michael).
+  html += '<td class="num" style="color:#fff;' + goldL + 'font-weight:800" title="Total ' + Y1 + ' headcount (sum of the monthly HC above)">' + _sum(tot.hcY1) + '</td>';
   tot.hcY2.forEach(function(v, i) { html += '<td class="num" style="color:#fff;' + (i === 0 ? sep : '') + '">' + v + '</td>'; });
-  html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y2) + '</td>';
+  html += '<td class="num" style="color:#fff;' + goldL + 'font-weight:800" title="Total ' + Y2 + ' headcount (sum of the monthly HC above)">' + _sum(tot.hcY2) + '</td>';
   html += '<td style="' + sep + '"></td>';                                           // Y3 growth %
-  html += '<td class="num" style="color:var(--gold);font-weight:800">' + fmt$k(tot.y3) + '</td>';
+  html += '<td class="num" style="color:#fff;' + goldL2 + 'font-weight:800" title="' + Y3 + ' carries ' + Y2 + ' headcount — Y3 grows revenue (× growth %), not headcount">' + _sum(tot.hcY2) + '</td>';
   html += '<td></td></tr>';
 
   // Gross MRR by month
   html += '<tr class="sumrow" style="background:#13233b;color:var(--gold);font-weight:700">';
   html += '<td colspan="7" style="color:var(--gold)">MRR / month (gross)</td>';
   html += '<td colspan="2"></td><td colspan="11"></td><td></td>';
-  html += '<td style="color:var(--gold);font-size:10px;' + sep + '">MRR / mo</td>';
+  html += '<td style="color:var(--gold);font-size:10px;' + goldL2 + '">MRR / mo</td>';
   tot.mrrY1.forEach(function(v, i) { html += '<td class="num" style="color:var(--gold);' + (i === 0 ? sep : '') + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
   html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y1) + '</td>';
   tot.mrrY2.forEach(function(v, i) { html += '<td class="num" style="color:var(--gold);' + (i === 0 ? sep : '') + '">' + (v ? fmt$k(v) : '—') + '</td>'; });
   html += '<td class="num" style="' + yTotCss + '">' + fmt$k(tot.y2) + '</td>';
   html += '<td style="' + sep + '"></td>';
-  html += '<td class="num" style="color:var(--gold);font-weight:800">' + fmt$k(tot.y3) + '</td>';
+  html += '<td class="num" style="color:var(--gold);' + goldL2 + 'font-weight:800">' + fmt$k(tot.y3) + '</td>';
   html += '<td></td></tr>';
 
   // ── ADJUSTED by month (Eric/John ask): win-rate- and margin-adjusted, month by month ──
@@ -3354,13 +3358,13 @@ function renderAureumGrid() {
     var h = '<tr class="sumrow" style="background:#13233b;color:' + fg + ';font-weight:700">';
     h += '<td colspan="7" style="color:' + fg + '">' + label + '</td>';
     h += '<td colspan="2"></td><td colspan="11"></td><td></td>';
-    h += '<td style="color:' + fg + ';font-size:10px;' + sep + '">' + sublabel + '</td>';
+    h += '<td style="color:' + fg + ';font-size:10px;' + goldL2 + '">' + sublabel + '</td>';
     arrY1.forEach(function(v, i){ h += '<td class="num" style="color:' + fg + ';' + (i === 0 ? sep : '') + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
-    h += '<td class="num" style="color:' + fg + ';' + sep + 'font-weight:800">' + fmtFn(t1) + '</td>';
+    h += '<td class="num" style="color:' + fg + ';' + goldL + 'font-weight:800">' + fmtFn(t1) + '</td>';
     arrY2.forEach(function(v, i){ h += '<td class="num" style="color:' + fg + ';' + (i === 0 ? sep : '') + '">' + (v ? fmtFn(v) : '—') + '</td>'; });
-    h += '<td class="num" style="color:' + fg + ';' + sep + 'font-weight:800">' + fmtFn(t2) + '</td>';
+    h += '<td class="num" style="color:' + fg + ';' + goldL + 'font-weight:800">' + fmtFn(t2) + '</td>';
     h += '<td style="' + sep + '"></td>';
-    h += '<td class="num" style="color:' + fg + ';font-weight:800">' + fmtFn(t3) + '</td>';
+    h += '<td class="num" style="color:' + fg + ';' + goldL2 + 'font-weight:800">' + fmtFn(t3) + '</td>';
     h += '<td></td></tr>';
     return h;
   }
