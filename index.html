@@ -2465,7 +2465,7 @@ function renderOverview() {
   html += statCard('Total Deals',     totalDeals,                   pipelineDeals + ' in pipeline · ' + aureumDeals + ' super-deals', 'gold');
   html += statCard('Forecasted HC (3mo)', totalHc,                   monthLabel(months[0]) + ' → ' + monthLabel(months[2]), 'aureum');
   html += statCard('Adj. Revenue (3mo)',  fmt$k(totalAdj),           'Win-rate-adjusted', 'good');
-  html += statCard('Margin $ (3mo)',      fmt$k(totalMargin),        'Adjusted × Margin %', 'good');
+  html += statCard('Contribution $ (3mo)', fmt$k(totalMargin),       'Adjusted × Contribution Margin %', 'good');
   html += '</div>';
 
 
@@ -2474,7 +2474,7 @@ function renderOverview() {
   html += '<tr><td>Forecasted Headcount</td>' + totals.hc.map(function(v){ return '<td class="num num-bold">' + v + '</td>'; }).join('') + '<td class="num num-bold">' + totalHc + '</td></tr>';
   html += '<tr><td>Projected Revenue</td>'   + totals.proj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totals.proj.reduce(function(s,v){return s+v;},0)) + '</td></tr>';
   html += '<tr><td>Adj. Revenue (× win rate)</td>' + totals.adj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalAdj) + '</td></tr>';
-  html += '<tr><td>Margin $ (× margin %)</td>' + totals.margin$.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalMargin) + '</td></tr>';
+  html += '<tr><td>Contribution $ (× contribution margin %)</td>' + totals.margin$.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalMargin) + '</td></tr>';
   html += '</tbody></table></div>';
 
   // Rolling months 4–12 — the lighter horizon, with its own accuracy % and standard margin.
@@ -2486,9 +2486,9 @@ function renderOverview() {
   html += '<div class="card"><div class="card-header"><span class="card-title">Rolling Months 4–12</span><span class="card-sub">' + monthLabel(m412[0]) + ' → ' + monthLabel(m412[m412.length-1]) + ' · lighter horizon · accuracy ' + Math.round(mAcc*100) + '% · standard margin ' + Math.round(mMar*100) + '%</span></div>';
   html += '<div class="stat-grid" style="margin-bottom:0">';
   html += statCard('Forecasted HC (4–12)', hc412,          '9-month build');
-  html += statCard('Projected Rev (4–12)', fmt$k(proj412), 'HC × $/head');
+  html += statCard('Projected Rev (4–12)', fmt$k(proj412), 'HC × MRR $/head');
   html += statCard('Adj. Revenue (4–12)',  fmt$k(adj412),  '× ' + Math.round(mAcc*100) + '% accuracy', 'gold');
-  html += statCard('Margin $ (4–12)',      fmt$k(mar412),  '× ' + Math.round(mMar*100) + '% standard margin', 'good');
+  html += statCard('Contribution $ (4–12)', fmt$k(mar412), '× ' + Math.round(mMar*100) + '% standard contribution margin', 'good');
   html += '</div></div>';
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Reliability by Horizon</span><span class="card-sub">' + (bands.m0.isDefault ? 'Default values — accumulates as snapshots build up' : 'Computed from ' + bands.m0.n + '/' + bands.m1.n + '/' + bands.m2.n + ' historical snapshots') + '</span></div>';
@@ -2899,7 +2899,7 @@ function _aureumExportMatrix() {
   // Local year-dollars helper (the grid's own yearDollars is scoped inside renderAureumGrid).
   function _yd(dd, mk, pph) { return mk.reduce(function(s, m){ return s + (((dd.monthlyHC || {})[m] || 0) * pph); }, 0); }
   var rows = [];
-  rows.push(['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho $/head','Fcst $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Margin %','Target Margin %','Fcst (Y/N)','Super']
+  rows.push(['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho MRR $/head','Fcst MRR $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Contribution Margin %','Target Contribution Margin %','Fcst (Y/N)','Super']
     .concat(months.map(monthLabel)).concat([aYear + ' Total MRR', (aYear + 1) + ' Total MRR']));
   deals.forEach(function(d){
     var pph = pricePerHead(d), built = d.totalHC || sumMonths(d.monthlyHC) || 0, fcstMRR = built * pph;
@@ -3214,15 +3214,15 @@ function renderAureumGrid() {
   html += '<th class="num" title="Contract length in months (Zoho)">Contract Terms</th>';
   html += '<th class="num" title="Headcount mapped on the Zoho deal (Zoho Headcounts field) — read-only">Zoho HC</th>';
   html += '<th class="num" title="Headcount Don is forecasting — the SUM of the monthly build below. Set it by typing here or with the ⇶ Spread tool.">Fcst HC</th>';
-  html += '<th class="num" title="Zoho rate = MRR ÷ Zoho HC. Read-only — the original is never overwritten (your revert reference).">Zoho $/head</th>';
-  html += '<th class="num" title="Forecast rate Don bills per head. Blank = use the Zoho rate; type to override (turns green).">Fcst $/head</th>';
+  html += '<th class="num" title="Zoho MRR rate per head = MRR ÷ Zoho HC. Read-only — the original is never overwritten (your revert reference).">Zoho MRR $/head</th>';
+  html += '<th class="num" title="Forecast MRR rate billed per head. Blank = use the Zoho rate; type to override (turns green).">Fcst MRR $/head</th>';
   html += '<th class="num" title="MRR from Zoho — based on the full mapped headcount">MRR</th>';
   html += '<th class="num" title="Forecast MRR = Fcst HC × Fcst $/head — what Don is actually forecasting">Fcst MRR</th>';
   html += '<th class="num" title="Forecast ARR = Fcst MRR × 12 — follows Don\'s forecast $/head">Fcst ARR</th>';
   html += '<th class="num" title="Win % — from Zoho Probability, editable per deal">Win %</th>';
-  html += '<th class="num" title="Forecast Margin — Don\'s working margin (defaults to the stage standard; edit up/down per deal). Drives the adjusted MRR / contribution at the bottom.">Fcst MG</th>';
-  html += '<th class="num" title="Target Margin — default from Stage Rules (edit in Settings)">Target MG</th>';
-  html += '<th class="num" title="Actual Margin — once the deal is priced/closed (blank until known)">Actual MG</th>';
+  html += '<th class="num" title="Forecast Contribution Margin — the working contribution margin (defaults to the stage standard; edit up/down per deal). Drives the adjusted MRR / contribution at the bottom.">Fcst Contrib. Margin</th>';
+  html += '<th class="num" title="Target Contribution Margin — default from Stage Rules (edit in Settings)">Target Contrib. Margin</th>';
+  html += '<th class="num" title="Actual Contribution Margin — once the deal is priced/closed (blank until known)">Actual Contrib. Margin</th>';
   // Y1 months + calendar-year total
   monthsY1.forEach(function(m, i){
     var precise = months.indexOf(m) < 3;
@@ -3791,7 +3791,7 @@ function render3MoRevenue() {
   html += '<th rowspan="2" class="num" style="background:var(--navy);color:white">Total Adj.</th></tr>';
   html += '<tr>';
   months.forEach(function(){
-    html += '<th class="num">HC</th><th class="num">Proj. Rev</th><th class="num">Adj. Rev</th><th class="num">Margin $</th>';
+    html += '<th class="num">HC</th><th class="num">Proj. Rev</th><th class="num">Adj. Rev</th><th class="num">Contribution $</th>';
   });
   html += '</tr></thead><tbody>';
 
@@ -4939,7 +4939,7 @@ function openTrendDealsModal(pointIndex) {
   html += '<th style="text-align:right;padding:9px 10px">HC (3-mo)</th>';
   html += '<th style="text-align:right;padding:9px 10px">MRR</th>';
   html += '<th style="text-align:right;padding:9px 10px">Win %</th>';
-  html += '<th style="text-align:right;padding:9px 10px">Margin %</th>';
+  html += '<th style="text-align:right;padding:9px 10px">Contrib. Margin %</th>';
   html += '<th style="text-align:right;padding:9px 10px">Adj. Revenue</th>';
   html += '</tr></thead><tbody>';
   dealsList.forEach(function(d, i) {
@@ -5093,7 +5093,7 @@ function renderSuperDeals() {
   // ── Financial rollup of deals flagged Super in Aureum Demand Forecast ──
   html += '<div class="card" style="padding:6px"><div class="card-header" style="padding:8px 8px 0"><span class="card-title">Deal-level rollup (deals flagged Super in Aureum Demand Forecast)</span><span class="card-sub">' + flagged.length + ' deals</span></div>';
   html += '<div class="scroll-x"><table class="grid-tbl"><thead><tr>';
-  html += '<th>Client</th><th>Deal</th><th>BDE</th><th>Stage</th><th class="num">Total HC</th><th class="num">Eff. MRR</th><th class="num">Win %</th><th class="num">Adj. Rev</th><th class="num">Margin $</th></tr></thead><tbody>';
+  html += '<th>Client</th><th>Deal</th><th>BDE</th><th>Stage</th><th class="num">Total HC</th><th class="num">Eff. MRR</th><th class="num">Win %</th><th class="num">Adj. Rev</th><th class="num">Contribution $</th></tr></thead><tbody>';
   flagged.sort(function(a,b){ return effectivePricing(b)*getWinRateFor(b) - effectivePricing(a)*getWinRateFor(a); }).forEach(function(d) {
     var eff = effectivePricing(d), adj = eff * getWinRateFor(d), mar = adj * getMarginFor(d);
     html += '<tr><td>' + esc(d.client) + '</td><td>' + dealNameCell(d) + '</td>';
@@ -5276,7 +5276,7 @@ function renderActiveCustomers() {
   html += '<span class="spacer"></span><button class="btn btn-ghost btn-sm" onclick="setAllActiveExpanded(' + (anyOpen ? 'false' : 'true') + ')">' + (anyOpen ? '▸ Collapse all' : '▾ Expand all') + '</button></div>';
   html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#fff8e1;border-radius:4px;border-left:3px solid var(--gold)">Grouped by <b>client</b> — click a client row (or ▸) to expand its deals. <b># Deals</b>, total <b>HC</b> and <b>Monthly $</b> show on the client line. <b style="color:var(--navy)">·z</b> on a deal\'s HC = value from the Zoho <code>Headcounts</code> field (no monthly HC entered yet).</div>';
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
-  html += '<th>Client</th><th class="num"># Deals</th><th class="num">HC (current)</th><th class="num">Monthly $</th><th>Status</th><th>Deal</th><th>Stage</th><th class="num">MRR/Head</th><th class="num">Margin %</th>';
+  html += '<th>Client</th><th class="num"># Deals</th><th class="num">HC (current)</th><th class="num">Monthly $</th><th>Status</th><th>Deal</th><th>Stage</th><th class="num">MRR $/Head</th><th class="num">Contrib. Margin %</th>';
   html += '</tr></thead><tbody>';
   var grand = { hc: 0, monthly$: 0, deals: 0 };
   clients.forEach(function(c, ci) {
@@ -5330,7 +5330,7 @@ function stageRulesSectionHtml() {
   html += '<div class="card"><div class="card-header"><span class="card-title">Stage Rules — Win % &amp; Margin %</span><span class="card-sub">Standard win rate and margin per stage · per-deal overrides &amp; Zoho target margin take precedence</span>';
   html += ' <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="resetMarginRules()">Reset to Defaults</button> <button class="btn btn-gold btn-sm" onclick="openMarginRuleModal(null)">+ Add Rule</button>';
   html += '</div>';
-  html += '<table><thead><tr><th>Stage / Deal Type</th><th class="num">Win %</th><th class="num">Margin %</th><th>Note</th><th></th></tr></thead><tbody>';
+  html += '<table><thead><tr><th>Stage / Deal Type</th><th class="num">Win %</th><th class="num">Contribution Margin %</th><th>Note</th><th></th></tr></thead><tbody>';
   rules.forEach(function(r, i) {
     html += '<tr><td><b>' + esc(r.dealType) + '</b></td>';
     html += '<td class="num"><input type="number" min="0" max="100" step="1" value="' + (r.winRate !== undefined ? Math.round(r.winRate * 100) : '') + '" onchange="updateMarginRule(' + i + ', \'winRate\', this.value/100)" style="width:64px;padding:3px 7px;text-align:right;border:1px solid var(--border);border-radius:4px;font-family:inherit" placeholder="—"></td>';
@@ -5361,7 +5361,7 @@ function openMarginRuleModal(idx) {
   var html = '<h3>' + (idx === null ? 'Add Stage Rule' : 'Edit Stage Rule') + '</h3>';
   html += '<div class="form-group"><label>Stage / Deal Type</label><input id="r_type" value="' + esc(r.dealType) + '" placeholder="e.g. Pricing"></div>';
   html += '<div class="form-row"><div class="form-group"><label>Win %</label><input type="number" min="0" max="100" step="1" id="r_win" value="' + (r.winRate !== undefined ? Math.round(r.winRate * 100) : '') + '"></div>';
-  html += '<div class="form-group"><label>Margin %</label><input type="number" min="0" max="100" step="1" id="r_margin" value="' + Math.round(r.margin * 100) + '"></div></div>';
+  html += '<div class="form-group"><label>Contribution Margin %</label><input type="number" min="0" max="100" step="1" id="r_margin" value="' + Math.round(r.margin * 100) + '"></div></div>';
   html += '<div class="form-group"><label>Note</label><textarea id="r_note">' + esc(r.note || '') + '</textarea></div>';
   html += '<div class="modal-actions">';
   if (idx !== null) html += '<button class="btn btn-danger" onclick="deleteMarginRule(' + idx + ')">Delete</button>';
