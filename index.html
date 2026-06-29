@@ -5628,6 +5628,14 @@ function adminTeamSection(users, emails) {
   });
   getAdminExtra().forEach(function(e0){ var k = (e0 || '').toLowerCase(); if (k && !roster[k]) roster[k] = { email: e0, name: e0, role: 'bde', loginCount: 0, signedIn: false }; });
   getViewers().forEach(function(e0){ var k = (e0 || '').toLowerCase(); if (k && !roster[k]) roster[k] = { email: e0, name: e0, role: 'bde', loginCount: 0, signedIn: false }; });
+  // Also seed from the activity log: anyone who has ACTED in the tool is real, even if the
+  // single-doc known_users sync dropped them (the same overwrite fragility behind earlier issues).
+  getActivityLog().forEach(function(ev) {
+    var em = (ev && ev.actor || '').toLowerCase();
+    if (!em || em === 'anon' || em.indexOf('@') < 0) return;
+    if (!roster[em]) roster[em] = { email: ev.actor, name: ev.actor, role: 'bde', loginCount: 0, signedIn: true, lastSeen: ev.ts };
+    else { roster[em].signedIn = true; if (!roster[em].lastSeen || (ev.ts || '') > roster[em].lastSeen) roster[em].lastSeen = ev.ts; }
+  });
   var rkeys = Object.keys(roster);
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Team members</span><span class="card-sub">' + rkeys.length + ' configured · ' + emails.length + ' have signed in</span></div>';
@@ -5651,9 +5659,10 @@ function adminTeamSection(users, emails) {
     var isUserAdmin = isAdmin({ email: e, role: u.role });
     var isUserViewer = isViewer({ email: e, role: u.role });
     var youBadge = (currentUser && currentUser.email && currentUser.email.toLowerCase() === e) ? ' <span class="pill pill-gold" style="font-size:9px;margin-left:4px">YOU</span>' : '';
-    var sub = u.signedIn
-      ? (u.loginCount + ' login' + (u.loginCount === 1 ? '' : 's') + (u.firstSeen ? ' · since ' + new Date(u.firstSeen).toLocaleDateString() : ''))
-      : 'not signed in yet';
+    var sub;
+    if (u.signedIn && u.loginCount > 0) sub = u.loginCount + ' login' + (u.loginCount === 1 ? '' : 's') + (u.firstSeen ? ' · since ' + new Date(u.firstSeen).toLocaleDateString() : '');
+    else if (u.signedIn)                sub = 'active (seen in audit log)';
+    else                                sub = 'not signed in yet';
     var lastActive = u.signedIn ? timeAgo(u.lastSeen) : '—';
     html += '<tr' + (u.signedIn ? '' : ' style="opacity:.7"') + '>';
     html += '<td><b>' + esc(u.name || u.email) + '</b>' + youBadge + '<div style="font-size:11px;color:var(--muted)">' + esc(sub) + '</div></td>';
