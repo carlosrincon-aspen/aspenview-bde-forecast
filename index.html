@@ -730,7 +730,7 @@ var ONBOARDING_STEPS = [
   { tab: 'overview',   title: 'Overview',                body: 'Your starting point each session. The four KPI cards summarize the next 3 months — deal count, forecasted headcount, adjusted revenue, and margin. Below: the rolling 3-month window, a Rolling Months 4–12 block with its own accuracy, and the reliability bands (M+0 / M+1 / M+2). Managers can pin those bands.' },
   { tab: 'pipeline',   title: 'Pipeline',                body: 'The investor-grade view. All deals (excluding Closed Lost) grouped by the 5-phase model: SQL → Recruitment → Pricing → Legal Contracting → Closed Won. Includes a Forecast Coverage by Phase report — how much of the pipeline is actually being forecast — plus Deal Age cards (Healthy / Active / Slow / Critical) flagging what is stuck.' },
   { tab: 'aureum',     title: 'Aureum Demand Forecast',  body: 'The single input — one row per Zoho deal, rolling 12 months. The Deal column is frozen so it stays visible as you scroll. Deal Summary (MRR, ARR, TCV, contract, $/head, win %, target vs actual margin) comes from Zoho; the Headcount Build is where you type headcount by month — or use the ⇶ Spread button to ramp it automatically. Check Forecast to include a deal; Super-Deal is automatic at 100+ headcount. 3 mo. revenue & 12-Month Plan are outputs of this grid.' },
-  { tab: 'aureum',     title: 'Download to Excel / Google Sheets', body: 'Two buttons at the top of Aureum take the forecast out for Finance: <b>⬇ Download Excel</b> (a formatted .xls) and <b>📋 Copy for Google Sheets</b> (paste straight into a blank sheet). The export <b>mirrors exactly what is filtered on screen</b> — toggle "Forecast only" (or phase / BDE) and the file follows. A reminder confirms the scope first, and the <b>✓ Verify export = table</b> button double-checks the file matches the platform to the dollar (it also runs automatically before every export, and blocks if anything is off). Observers can export too.' },
+  { tab: 'aureum',     title: 'Download to Excel / Google Sheets', body: 'Two buttons at the top of Aureum take the forecast out for Finance: <b>⬇ Download Excel</b> (a formatted .xls) and <b>📋 Copy for Google Sheets</b> (paste straight into a blank sheet). The download is always the <b>forecast set only</b> (Fcst-checked deals, Closed Won excluded), with 2026 and 2027 month-by-month plus a top-down 2028 total. A reminder confirms the scope first, and the <b>✓ Verify export = table</b> button double-checks the file matches the platform to the dollar (it also runs automatically before every export, and blocks if anything is off). Observers can export too.' },
   { tab: 'threemo',    title: '3 mo. revenue',           body: 'Deep-dive on the next 3 months. Only deals you flagged as Forecast appear here. When the numbers are right, click "🔒 Lock {month}" — that snapshot becomes immutable and is what the accuracy bands compare against when actuals roll in. The "Apply BDE accuracy haircut" checkbox discounts every cell by that BDE\'s historical accuracy.' },
   { tab: 'midterm',    title: '12-Month Plan',           body: 'A read-only OUTPUT of months 4 through 12 — the headcount ramp you entered in Aureum Demand Forecast, with revenue computed automatically (HC × $/head). These months use a single standard margin % and accuracy %, set by a manager in Settings. Reminder: this is "Build & Invoice, NOT Close" — HC by month is when a person STARTS BILLING, not when the deal closes.' },
   { tab: 'longterm',   title: 'Rolling Months 13–24',    body: 'The long-term outlook. No per-deal forecasting at this horizon — take month-12 as the baseline, pick a monthly growth rate, and the model projects the 2-year (24-month) outlook for Finance without forcing certainty that does not exist. The growth rate is set by a manager.' },
@@ -2884,12 +2884,12 @@ function aureumPushToZoho() {
 // the gross and adjusted (×win, ×margin) summary rows.
 // Build the export as a matrix (array of rows of raw values) — shared by the CSV download and the
 // Shared export matrix for the Excel download and the "Copy for Google Sheets" button. READ-ONLY.
-// Mirrors EXACTLY what the Aureum grid currently shows — it honors the same filters (forecast-only
-// toggle, phase pills, BDE, search, super). The bottom TOTAL rows are computed over the SAME set,
-// so summing any detail column reconciles with the TOTALs. The "Fcst (Y/N)" column lets you
-// re-filter inside the sheet, just like the platform.
+// Per Michael: the Finance download is ALWAYS the forecast set only (Fcst checked, excluding Closed
+// Won) — not the on-screen filter — so every row counts and there are no confusing "No" rows. The
+// bottom TOTAL rows use the same set, so summing any column reconciles with the TOTALs. Includes a
+// top-down 2028 year column (each deal's 2027 total × its growth %).
 function _aureumExportMatrix() {
-  var deals = aureumFilteredDeals();   // exactly the on-screen filtered set
+  var deals = forecastDeals();   // forecast-only, always (Michael's call for the Finance sheet)
   var anchor = getAnchorMonth();
   var aYear = parseInt(anchor.split('-')[0]), aMon = parseInt(anchor.split('-')[1]);
   var monthsY1 = [], monthsY2 = [], k;
@@ -2900,7 +2900,7 @@ function _aureumExportMatrix() {
   function _yd(dd, mk, pph) { return mk.reduce(function(s, m){ return s + (((dd.monthlyHC || {})[m] || 0) * pph); }, 0); }
   var rows = [];
   rows.push(['Client','Deal','BDE','Stage','Phase','Zoho Close','Fcst Close','Zoho HC','Fcst HC','Zoho MRR $/head','Fcst MRR $/head','Zoho MRR','Fcst MRR','Fcst ARR','Win %','Fcst Contribution Margin %','Target Contribution Margin %','Fcst (Y/N)','Super']
-    .concat(months.map(monthLabel)).concat([aYear + ' Total MRR', (aYear + 1) + ' Total MRR']));
+    .concat(months.map(monthLabel)).concat([aYear + ' Total MRR', (aYear + 1) + ' Total MRR', (aYear + 2) + ' Total MRR (top-down)']));
   deals.forEach(function(d){
     var pph = pricePerHead(d), built = d.totalHC || sumMonths(d.monthlyHC) || 0, fcstMRR = built * pph;
     var row = [d.client, d.dealName, d.bde || '', d.stage || '', (phaseById(phaseForDeal(d)) || {}).short || '',
@@ -2910,29 +2910,34 @@ function _aureumExportMatrix() {
       Math.round(getWinRateFor(d) * 100), Math.round(getMarginFor(d) * 100), Math.round(targetMarginFor(d) * 100),
       d.inForecast ? 'Y' : 'N', isSuperDeal(d) ? 'Y' : 'N'];
     months.forEach(function(mk){ row.push((d.monthlyHC || {})[mk] || 0); });
-    row.push(Math.round(_yd(d, monthsY1, pph)), Math.round(_yd(d, monthsY2, pph)));
+    var _y2 = _yd(d, monthsY2, pph);
+    row.push(Math.round(_yd(d, monthsY1, pph)), Math.round(_y2), Math.round(_y2 * (1 + effectiveGrowthPct(d) / 100)));
     rows.push(row);
   });
   // Summary rows from the SINGLE shared totals function (the same one the grid renders), so the
   // exported totals match the table by construction. Each row's year total = the sum of its OWN
   // rounded month cells, so the file is internally consistent for Finance (row total == sum of row).
   var T = aureumTotals(deals, monthsY1, monthsY2);
-  function sumRow(label, arrY1, arrY2, dec){
-    // dec=true → keep 1 decimal (for the probability-weighted Adjusted HC row); else whole numbers.
+  function _sum(a){ return a.reduce(function(s,v){ return s + v; }, 0); }
+  function sumRow(label, arrY1, arrY2, y3val, dec){
+    // dec=true → keep 1 decimal (probability-weighted Adjusted HC); else whole numbers.
+    // y3val = top-down 2028 figure for the row (null → blank). 2028 is NOT a monthly build.
     var r = dec ? function(v){ return Math.round(v * 10) / 10; } : function(v){ return Math.round(v); };
     var pre = [label]; for (var i = 0; i < 18; i++) pre.push('');   // align to first month col (19 lead cols)
     var v1 = arrY1.map(r), v2 = arrY2.map(r);
     var y1 = v1.reduce(function(a,b){ return a + b; }, 0);
     var y2 = v2.reduce(function(a,b){ return a + b; }, 0);
     if (dec) { y1 = Math.round(y1 * 10) / 10; y2 = Math.round(y2 * 10) / 10; }
-    return pre.concat(v1).concat(v2).concat([y1, y2]);
+    var y3 = (y3val == null) ? '' : (dec ? Math.round(y3val * 10) / 10 : Math.round(y3val));
+    return pre.concat(v1).concat(v2).concat([y1, y2, y3]);
   }
   rows.push([]);
-  rows.push(sumRow('TOTAL - Gross HC / month', T.hcY1, T.hcY2));
-  rows.push(sumRow('TOTAL - Gross MRR / month', T.mrrY1, T.mrrY2));
-  rows.push(sumRow('TOTAL - Adjusted HC / month (x win)', T.aHcY1, T.aHcY2, true));
-  rows.push(sumRow('TOTAL - Adjusted MRR / month (x win)', T.aMrrY1, T.aMrrY2));
-  rows.push(sumRow('TOTAL - Contribution $ / month (x win x margin)', T.aMgnY1, T.aMgnY2));
+  // 2028 (top-down): HC carries 2027; MRR/contribution = 2027 × growth (T.y3 / y3w / y3c).
+  rows.push(sumRow('TOTAL - Gross HC / month', T.hcY1, T.hcY2, _sum(T.hcY2), false));
+  rows.push(sumRow('TOTAL - Gross MRR / month', T.mrrY1, T.mrrY2, T.y3, false));
+  rows.push(sumRow('TOTAL - Adjusted HC / month (x win)', T.aHcY1, T.aHcY2, _sum(T.aHcY2), true));
+  rows.push(sumRow('TOTAL - Adjusted MRR / month (x win)', T.aMrrY1, T.aMrrY2, T.y3w, false));
+  rows.push(sumRow('TOTAL - Contribution $ / month (x win x margin)', T.aMgnY1, T.aMgnY2, T.y3c, false));
   return rows;
 }
 // ── Double-check for Finance: verify the export reconciles with the table, exactly. ──
@@ -2940,7 +2945,7 @@ function _aureumExportMatrix() {
 // the export equals the table, (2) each TOTAL row equals the sum of its own month cells, and (3) the
 // detail rows' monthly HC sums to the Gross HC total row. Returns {ok, diffs, deals}.
 function verifyAureumExport() {
-  var ds = aureumFilteredDeals();
+  var ds = forecastDeals();
   var anchor = getAnchorMonth();
   var aYear = parseInt(anchor.split('-')[0]), aMon = parseInt(anchor.split('-')[1]);
   var monthsY1 = [], monthsY2 = [], k;
@@ -2994,16 +2999,10 @@ function runExportQc() {
 // Reminder shown before any export: states exactly what scope will be exported (it follows the
 // on-screen Aureum filters) so nobody accidentally sends "all deals" when they meant forecast-only.
 function _aureumExportConfirm(kindLabel) {
-  var ds = aureumFilteredDeals();
-  var f = filterScope('aureum');
-  var bits = [f.forecastOnly ? 'FORECAST-ONLY deals' : 'ALL deals currently shown'];
-  if (f.phaseFilterOn)        bits.push('phase filter ON');
-  if (f.superOnly)            bits.push('super-deals only');
-  if ((f.search || '').trim()) bits.push('search "' + f.search.trim() + '"');
-  return confirm(kindLabel + '\n\nYou are about to export ' + ds.length + ' deal(s).\n' +
-    'Scope: ' + bits.join(' · ') + '.\n\n' +
-    'The export matches exactly what is filtered in Aureum right now.\n' +
-    'Want a different set? Click Cancel, toggle "Forecast only" (or clear filters), then export again.\n\nContinue?');
+  var ds = forecastDeals();
+  return confirm(kindLabel + '\n\nYou are about to export ' + ds.length + ' forecasted deal(s).\n' +
+    'Scope: FORECAST ONLY (Fcst checked, Closed Won excluded) — the on-screen filters don\'t change this.\n' +
+    'Columns: 2026 monthly build + totals, 2027 monthly build + totals, and a top-down 2028 total.\n\nContinue?');
 }
 function downloadAureumCsv() {
   if (!_aureumExportConfirm('⬇ Download Excel')) return;
