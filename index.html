@@ -219,6 +219,17 @@
     .acc-bands { grid-template-columns: 1fr; }
     .form-row { grid-template-columns: 1fr; }
   }
+  /* Observer (view-only) role: disable in-table data-entry controls. Toolbar search/filter
+     controls live outside tables, so they stay usable and observers can still navigate/filter. */
+  body.viewer-readonly table input,
+  body.viewer-readonly table select,
+  body.viewer-readonly table textarea {
+    pointer-events: none !important;
+    background: #eef1f4 !important;
+    color: #8a93a0 !important;
+    cursor: not-allowed !important;
+    border-color: #e3e7eb !important;
+  }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
@@ -492,6 +503,15 @@ function load(k, d) {
   catch(e) { return d; }
 }
 function save(k, v) {
+  // Observer (view-only) guard: block writes to shared DATA keys from an observer's browser.
+  // Audit keys (activity_log / known_users / error_log) are intentionally NOT protected, so an
+  // observer's sign-ins and exports are still recorded. Remote sync application sets
+  // fbSuppressPush, so updates from teammates always apply. This single data-layer check is the
+  // robust integrity guard for the Observer role — independent of any UI button or input.
+  if (VIEWER_PROTECTED_KEYS.indexOf(k) >= 0 && !fbSuppressPush && typeof isViewer === 'function' && isViewer()) {
+    console.warn('Observer (read-only): blocked write to shared key "' + k + '".');
+    return;
+  }
   localStorage.setItem('bde_' + k, JSON.stringify(v));
   if (FB_SYNCED_KEYS.indexOf(k) >= 0) fbSchedulePush();
 }
@@ -569,6 +589,8 @@ function togglePhaseActive(id) {
 // ── Admin Panel state ──
 function getAdminExtra()   { return load('admin_extra', []); }
 function setAdminExtra(a)  { save('admin_extra', a); }
+function getViewers()      { return load('viewers', []); }
+function setViewers(v)     { save('viewers', v); }
 function getKnownUsers()   { return load('known_users', {}); }
 function setKnownUsers(u)  { save('known_users', u); }
 function getActivityLog()  { return load('activity_log', []); }
@@ -581,10 +603,29 @@ function setErrorLog(l)    { save('error_log', l); }
 function getHistoricalAccuracy()  { return load('historical_accuracy', []); }
 function setHistoricalAccuracy(l) { save('historical_accuracy', l); }
 
-// True when the user is a hardcoded manager OR was granted admin via the panel.
+// Observer (view-only) role: can browse every tab and export, but cannot edit/persist anything.
+// Managers are never observers. Mutually exclusive with admin (enforced at grant time + below).
+function isViewer(u) {
+  u = u || currentUser;
+  if (!u) return false;
+  if (u.role === 'manager') return false;
+  return getViewers().indexOf((u.email || '').toLowerCase()) >= 0;
+}
+// True when the user may edit/persist shared state (everyone except observers).
+function canEdit(u) {
+  u = u || currentUser;
+  return !!u && !isViewer(u);
+}
+// Standard read-only notice; returns false for use as `if (!canEdit()) return denyEdit();`.
+function denyEdit() {
+  alert('Your account has view-only (Observer) access.\n\nYou can browse every tab and download/export the forecast, but editing, locking, approving, pushing to Zoho, and admin actions are disabled.');
+  return false;
+}
+// True when the user is a hardcoded manager OR was granted admin via the panel. Observers never qualify.
 function isAdmin(u) {
   u = u || currentUser;
   if (!u) return false;
+  if (isViewer(u)) return false;
   if (u.role === 'manager') return true;
   return getAdminExtra().indexOf((u.email || '').toLowerCase()) >= 0;
 }
@@ -813,7 +854,10 @@ function maybeStartOnboarding() {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions'];
+// Shared keys an Observer may NOT write (forecast + governance data). Excludes the audit/telemetry
+// keys (known_users, activity_log, error_log) so an observer's sign-ins and exports are still recorded.
+var VIEWER_PROTECTED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions'];
 // NOTE: 'active_phases' is intentionally NOT synced — the phase filter is a PERSONAL view control,
 // so each person browsing on their own PC filters without changing anyone else's screen.
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
@@ -972,7 +1016,7 @@ function loginAs(u) {
   document.getElementById('appScreen').style.display   = 'flex';
   recordKnownUser(u);
   logActivity('Auth', 'Sign in', u.name + ' (' + u.role + ')');
-  var roleLabel = isAdmin(u) ? 'Admin' : (u.role === 'manager' ? 'Manager' : 'BDE');
+  var roleLabel = isViewer(u) ? 'Observer' : (isAdmin(u) ? 'Admin' : (u.role === 'manager' ? 'Manager' : 'BDE'));
   document.getElementById('headerUser').textContent    = u.name + ' · ' + roleLabel;
   var adminBtn = document.getElementById('adminBtn');
   if (adminBtn) adminBtn.style.display = isAdmin(u) ? '' : 'none';
@@ -2297,6 +2341,7 @@ function selectTab(id) {
 // keeps Don exactly where he was. Tab switches set _suppressScrollRestore to skip this.
 var _suppressScrollRestore = false;
 function renderTab() {
+  try { document.body.classList.toggle('viewer-readonly', typeof isViewer === 'function' && isViewer()); } catch (e) {}
   var main = document.querySelector('.main');
   var sx   = document.querySelector('.scroll-x');
   var mainTop = main ? main.scrollTop : 0;
@@ -5249,6 +5294,7 @@ function revertPlayground(idx) {
 // Requires ZohoCRM.modules.Deals.WRITE scope on the OAuth app + the user re-authorized.
 // If scope is missing, Zoho returns 401/INVALID_OAUTH/OAUTH_SCOPE_MISMATCH and we surface clearly.
 function pushApprovedToZoho() {
+  if (!canEdit()) return denyEdit();
   var token = getZohoToken();
   if (!token) { alert('Connect Zoho first (click the Zoho pill in the header).'); return; }
   var deals = getDeals();
@@ -5552,6 +5598,13 @@ function adminTeamSection(users, emails) {
   html += '<button class="btn btn-gold btn-sm" onclick="grantAdminFromInput()">+ Add admin</button>';
   html += '</div></div>';
 
+  // Grant observer (view-only) form
+  html += '<div class="card" style="margin-bottom:14px"><div class="card-header"><span class="card-title">Grant observer (view-only) access</span><span class="card-sub">Observers can browse every tab and export to Excel/Sheets, but cannot edit, lock, approve, push to Zoho, or use admin tools</span></div>';
+  html += '<div style="display:flex;gap:8px;align-items:center;padding:0 4px">';
+  html += '<input id="viewerEmailInput" type="email" placeholder="name@aspenview.com" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:13px">';
+  html += '<button class="btn btn-ghost btn-sm" onclick="grantViewerFromInput()">+ Add observer</button>';
+  html += '</div></div>';
+
   // Members table
   html += '<div class="card"><div class="card-header"><span class="card-title">Team members</span><span class="card-sub">' + emails.length + ' have signed in to the platform</span></div>';
   if (!emails.length) {
@@ -5573,6 +5626,7 @@ function adminTeamSection(users, emails) {
     var statusCls = status === 'active' ? 'pill-green' : 'pill-gray';
     var isHardcoded = (function(){ var hc = false; Object.keys(USERS).forEach(function(k){ if (USERS[k].email.toLowerCase() === e.toLowerCase()) hc = true; }); return hc; })();
     var isUserAdmin = isAdmin({ email: e, role: u.role });
+    var isUserViewer = isViewer({ email: e, role: u.role });
     var youBadge = (currentUser && currentUser.email && currentUser.email.toLowerCase() === e.toLowerCase()) ? ' <span class="pill pill-gold" style="font-size:9px;margin-left:4px">YOU</span>' : '';
     html += '<tr>';
     html += '<td><b>' + esc(u.name || e) + '</b>' + youBadge + '<div style="font-size:11px;color:var(--muted)">' + u.loginCount + ' login' + (u.loginCount === 1 ? '' : 's') + ' · since ' + new Date(u.firstSeen).toLocaleDateString() + '</div></td>';
@@ -5580,14 +5634,18 @@ function adminTeamSection(users, emails) {
     html += '<td><span class="pill ' + (u.role === 'manager' ? 'pill-blue' : 'pill-gray') + '" style="font-size:10px">' + esc(u.role || 'bde').toUpperCase() + '</span></td>';
     html += '<td style="color:var(--muted);font-size:11.5px">' + timeAgo(u.lastSeen) + '</td>';
     html += '<td><span class="pill ' + statusCls + '" style="font-size:10px">' + (status === 'active' ? '● ACTIVE' : '● IDLE') + '</span></td>';
-    html += '<td>' + (isUserAdmin ? '<span class="pill pill-gold" style="font-size:10px">★ ADMIN</span>' : '<span style="color:var(--muted);font-size:11px">—</span>') + '</td>';
+    html += '<td>' + (isUserAdmin ? '<span class="pill pill-gold" style="font-size:10px">★ ADMIN</span>' : (isUserViewer ? '<span class="pill pill-gray" style="font-size:10px">&#128065; OBSERVER</span>' : '<span style="color:var(--muted);font-size:11px">—</span>')) + '</td>';
     html += '<td>';
     if (isHardcoded) {
-      html += '<span style="font-size:10.5px;color:var(--muted)" title="Hardcoded in USERS map — cannot revoke from UI">code-defined</span>';
+      html += '<span style="font-size:10.5px;color:var(--muted)" title="Hardcoded in USERS map — cannot change from UI">code-defined</span>';
     } else if (isUserAdmin) {
       html += '<button class="btn btn-ghost btn-sm" onclick="revokeAdmin(\'' + esc(e) + '\')">Revoke admin</button>';
+    } else if (isUserViewer) {
+      html += '<button class="btn btn-ghost btn-sm" onclick="revokeViewer(\'' + esc(e) + '\')">Revoke observer</button> ';
+      html += '<button class="btn btn-ghost btn-sm" onclick="grantAdmin(\'' + esc(e) + '\')">Make admin</button>';
     } else {
-      html += '<button class="btn btn-ghost btn-sm" onclick="grantAdmin(\'' + esc(e) + '\')">Grant admin</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="grantAdmin(\'' + esc(e) + '\')">Grant admin</button> ';
+      html += '<button class="btn btn-ghost btn-sm" onclick="grantViewer(\'' + esc(e) + '\')">Make observer</button>';
     }
     html += '</td></tr>';
   });
@@ -5604,6 +5662,9 @@ function grantAdminFromInput() {
 }
 function grantAdmin(email) {
   email = email.toLowerCase();
+  // Admin and observer are mutually exclusive — granting admin clears any observer flag.
+  var viewers = getViewers();
+  if (viewers.indexOf(email) >= 0) setViewers(viewers.filter(function(x){ return x !== email; }));
   var list = getAdminExtra();
   if (list.indexOf(email) >= 0) { alert(email + ' already has admin access.'); return; }
   list.push(email);
@@ -5618,6 +5679,39 @@ function revokeAdmin(email) {
   var list = getAdminExtra().filter(function(e){ return e !== email; });
   setAdminExtra(list);
   logActivity('Admin', 'Revoke admin', email);
+  renderTab();
+  renderTopNav();
+}
+function grantViewerFromInput() {
+  var input = document.getElementById('viewerEmailInput');
+  var email = (input && input.value || '').trim().toLowerCase();
+  if (!email) return;
+  if (!/@aspenview\.com$/i.test(email)) { alert('Only @aspenview.com emails can be set as observers.'); return; }
+  grantViewer(email);
+  if (input) input.value = '';
+}
+function grantViewer(email) {
+  email = email.toLowerCase();
+  // Managers can't be downgraded to observer from the UI.
+  var isMgr = false;
+  Object.keys(USERS).forEach(function(k){ if (USERS[k].email.toLowerCase() === email) isMgr = true; });
+  if (isMgr) { alert(email + ' is a code-defined manager and cannot be set to observer.'); return; }
+  // Observer and admin are mutually exclusive — making someone an observer clears any admin grant.
+  var admins = getAdminExtra();
+  if (admins.indexOf(email) >= 0) setAdminExtra(admins.filter(function(x){ return x !== email; }));
+  var list = getViewers();
+  if (list.indexOf(email) >= 0) { alert(email + ' already has observer (view-only) access.'); return; }
+  list.push(email);
+  setViewers(list);
+  logActivity('Admin', 'Grant observer', email);
+  renderTab();
+  renderTopNav();
+}
+function revokeViewer(email) {
+  email = email.toLowerCase();
+  if (!confirm('Remove view-only access for ' + email + '?\n\nThey will then sign in as a regular BDE — able to EDIT the forecast.')) return;
+  setViewers(getViewers().filter(function(x){ return x !== email; }));
+  logActivity('Admin', 'Revoke observer', email);
   renderTab();
   renderTopNav();
 }
@@ -5849,6 +5943,7 @@ function importData(file) {
   r.readAsText(file);
 }
 function resetAllData() {
+  if (!canEdit()) return denyEdit();
   // Hardened (2026-06-26): this wipes the SHARED forecast for everyone, so it must be deliberate.
   // Requires typing RESET — no accidental one-click wipe.
   var typed = prompt('⚠ DANGER: This clears deals, rules, snapshots and actuals for EVERYONE (it syncs to Firestore). This is almost never what you want — to undo recent changes use 🗂 Versions or a snapshot Recover instead.\n\nIf you are absolutely sure, type RESET in capitals to proceed:');
