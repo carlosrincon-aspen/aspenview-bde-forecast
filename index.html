@@ -5553,6 +5553,13 @@ function renderAdminPanel() {
   var users    = getKnownUsers();
   var emails   = Object.keys(users);
   var admins   = emails.filter(function(e){ return isAdmin({ email: e, role: (users[e] || {}).role }); });
+  // Counts of CONFIGURED profiles (not just signed-in): admins = code-defined managers + granted;
+  // observers = the granted view-only list.
+  var adminSet = {};
+  Object.keys(USERS).forEach(function(k){ adminSet[USERS[k].email.toLowerCase()] = true; });
+  getAdminExtra().forEach(function(e){ adminSet[(e || '').toLowerCase()] = true; });
+  var adminCount = Object.keys(adminSet).length;
+  var viewers  = getViewers();
   var activity = getActivityLog();
   var errors   = getErrorLog();
   var activeToday = emails.filter(function(e){ return userStatus(users[e].lastSeen) === 'active'; });
@@ -5562,10 +5569,11 @@ function renderAdminPanel() {
 
   // KPI cards
   html += '<div class="stat-grid" style="margin-bottom:18px">';
-  html += statCard('Team members',  emails.length,        'have signed in',           'aureum');
-  html += statCard('Admins',        admins.length,        'with Admin Panel access',  'gold');
-  html += statCard('Active today',  activeToday.length,   'seen in the last 24h',     activeToday.length ? 'good' : 'gold');
-  html += statCard('Errors (7d)',   countErrors7d(errors),'logged in the last week',  countErrors7d(errors) ? 'gold' : 'good');
+  html += statCard('Team members',  emails.length,        'have signed in',                  'aureum');
+  html += statCard('Admins',        adminCount,           'managers + granted',              'gold');
+  html += statCard('Observers',     viewers.length,       'view-only · export, no editing',  viewers.length ? 'good' : '');
+  html += statCard('Active today',  activeToday.length,   'seen in the last 24h',            activeToday.length ? 'good' : 'gold');
+  html += statCard('Errors (7d)',   countErrors7d(errors),'logged in the last week',         countErrors7d(errors) ? 'gold' : 'good');
   html += '</div>';
 
   // Sub-tabs
