@@ -2898,24 +2898,79 @@ function _aureumExportMatrix() {
     row.push(Math.round(_yd(d, monthsY1, pph)), Math.round(_yd(d, monthsY2, pph)));
     rows.push(row);
   });
-  // Summary rows over the SAME (on-screen filtered) set as the detail rows, so totals reconcile.
-  var fd = deals;
-  function monthAgg(mk, mode){ return fd.reduce(function(s,d){ var hc=(d.monthlyHC||{})[mk]||0, pph=pricePerHead(d), w=getWinRateFor(d), m=getMarginFor(d);
-    return s + (mode==='hc'?hc : mode==='mrr'?hc*pph : mode==='ahc'?hc*w : mode==='amrr'?hc*pph*w : hc*pph*w*m); }, 0); }
-  function sumRow(label, mode){
+  // Summary rows from the SINGLE shared totals function (the same one the grid renders), so the
+  // exported totals match the table by construction. Each row's year total = the sum of its OWN
+  // rounded month cells, so the file is internally consistent for Finance (row total == sum of row).
+  var T = aureumTotals(deals, monthsY1, monthsY2);
+  function sumRow(label, arrY1, arrY2){
     var pre = [label]; for (var i = 0; i < 18; i++) pre.push('');   // align to first month col (19 lead cols)
-    var vals = months.map(function(mk){ return Math.round(monthAgg(mk, mode)); });
-    var y1 = vals.slice(0, monthsY1.length).reduce(function(a,b){return a+b;},0);
-    var y2 = vals.slice(monthsY1.length).reduce(function(a,b){return a+b;},0);
-    return pre.concat(vals).concat([y1, y2]);
+    var v1 = arrY1.map(function(v){ return Math.round(v); });
+    var v2 = arrY2.map(function(v){ return Math.round(v); });
+    var y1 = v1.reduce(function(a,b){ return a + b; }, 0);
+    var y2 = v2.reduce(function(a,b){ return a + b; }, 0);
+    return pre.concat(v1).concat(v2).concat([y1, y2]);
   }
   rows.push([]);
-  rows.push(sumRow('TOTAL - Gross HC / month', 'hc'));
-  rows.push(sumRow('TOTAL - Gross MRR / month', 'mrr'));
-  rows.push(sumRow('TOTAL - Adjusted HC / month (x win)', 'ahc'));
-  rows.push(sumRow('TOTAL - Adjusted MRR / month (x win)', 'amrr'));
-  rows.push(sumRow('TOTAL - Contribution $ / month (x win x margin)', 'amgn'));
+  rows.push(sumRow('TOTAL - Gross HC / month', T.hcY1, T.hcY2));
+  rows.push(sumRow('TOTAL - Gross MRR / month', T.mrrY1, T.mrrY2));
+  rows.push(sumRow('TOTAL - Adjusted HC / month (x win)', T.aHcY1, T.aHcY2));
+  rows.push(sumRow('TOTAL - Adjusted MRR / month (x win)', T.aMrrY1, T.aMrrY2));
+  rows.push(sumRow('TOTAL - Contribution $ / month (x win x margin)', T.aMgnY1, T.aMgnY2));
   return rows;
+}
+// ── Double-check for Finance: verify the export reconciles with the table, exactly. ──
+// Recomputes the platform totals (aureumTotals) and confirms (1) every monthly/yearly TOTAL cell in
+// the export equals the table, (2) each TOTAL row equals the sum of its own month cells, and (3) the
+// detail rows' monthly HC sums to the Gross HC total row. Returns {ok, diffs, deals}.
+function verifyAureumExport() {
+  var ds = aureumFilteredDeals();
+  var anchor = getAnchorMonth();
+  var aYear = parseInt(anchor.split('-')[0]), aMon = parseInt(anchor.split('-')[1]);
+  var monthsY1 = [], monthsY2 = [], k;
+  for (k = aMon; k <= 12; k++) monthsY1.push(aYear + '-' + ('0' + k).slice(-2));
+  for (k = 1; k <= 12; k++) monthsY2.push((aYear + 1) + '-' + ('0' + k).slice(-2));
+  var nMonths = monthsY1.length + monthsY2.length, nLead = 19;
+  var T = aureumTotals(ds, monthsY1, monthsY2);
+  var matrix = _aureumExportMatrix();
+  var diffs = [];
+  function row(prefix){ return matrix.find(function(r){ return typeof r[0] === 'string' && r[0].indexOf(prefix) === 0; }); }
+  function checkRow(prefix, expectArr){
+    var r = row(prefix);
+    if (!r) { diffs.push(prefix + ': total row missing'); return; }
+    var cells = r.slice(nLead, nLead + nMonths);
+    for (var i = 0; i < nMonths; i++){
+      if (Math.abs(Math.round(expectArr[i] || 0) - Number(cells[i] || 0)) > 0.5)
+        diffs.push(prefix + ' · month ' + (i + 1) + ': table ' + Math.round(expectArr[i] || 0) + ' vs export ' + Number(cells[i] || 0));
+    }
+    var yr = r.slice(nLead + nMonths);
+    var s1 = cells.slice(0, monthsY1.length).reduce(function(a,b){ return a + Number(b || 0); }, 0);
+    var s2 = cells.slice(monthsY1.length).reduce(function(a,b){ return a + Number(b || 0); }, 0);
+    if (Math.abs(Number(yr[0] || 0) - s1) > 0.5) diffs.push(prefix + ' · Y1 total (' + Number(yr[0] || 0) + ') != sum of its months (' + s1 + ')');
+    if (Math.abs(Number(yr[1] || 0) - s2) > 0.5) diffs.push(prefix + ' · Y2 total (' + Number(yr[1] || 0) + ') != sum of its months (' + s2 + ')');
+  }
+  checkRow('TOTAL - Gross HC',     T.hcY1.concat(T.hcY2));
+  checkRow('TOTAL - Gross MRR',    T.mrrY1.concat(T.mrrY2));
+  checkRow('TOTAL - Adjusted HC',  T.aHcY1.concat(T.aHcY2));
+  checkRow('TOTAL - Adjusted MRR', T.aMrrY1.concat(T.aMrrY2));
+  checkRow('TOTAL - Contribution', T.aMgnY1.concat(T.aMgnY2));
+  // Detail monthly HC must sum to the Gross HC total row (catches set/alignment drift).
+  var hcAll = T.hcY1.concat(T.hcY2);
+  var detail = matrix.filter(function(r, idx){ return idx > 0 && r.length && !(typeof r[0] === 'string' && r[0].indexOf('TOTAL') === 0); });
+  for (var j = 0; j < nMonths; j++){
+    var sd = detail.reduce(function(s, r){ return s + Number(r[nLead + j] || 0); }, 0);
+    if (Math.abs(sd - Math.round(hcAll[j] || 0)) > 0.5)
+      diffs.push('Detail HC month ' + (j + 1) + ' sums to ' + sd + ' but total row says ' + Math.round(hcAll[j] || 0));
+  }
+  return { ok: diffs.length === 0, diffs: diffs, deals: ds.length };
+}
+function runExportQc() {
+  var r = verifyAureumExport();
+  logActivity('Forecast', 'QC export vs table', r.ok ? 'OK · ' + r.deals + ' deals' : r.diffs.length + ' discrepancies');
+  if (r.ok) {
+    alert('✓ Export reconciled with the table\n\n' + r.deals + ' forecast row(s) checked.\nEvery monthly and yearly total in the export matches the platform exactly, and each total equals the sum of its own rows.\n\nSafe to send to Finance.');
+  } else {
+    alert('⚠ EXPORT DISCREPANCY (' + r.diffs.length + ' found)\n\n' + r.diffs.slice(0, 12).join('\n') + (r.diffs.length > 12 ? '\n…and ' + (r.diffs.length - 12) + ' more' : '') + '\n\nDo NOT send this to Finance — tell Carlos.');
+  }
 }
 // Reminder shown before any export: states exactly what scope will be exported (it follows the
 // on-screen Aureum filters) so nobody accidentally sends "all deals" when they meant forecast-only.
@@ -2933,6 +2988,8 @@ function _aureumExportConfirm(kindLabel) {
 }
 function downloadAureumCsv() {
   if (!_aureumExportConfirm('⬇ Download Excel')) return;
+  var _qc = verifyAureumExport();   // hard gate: a file with any discrepancy never reaches Finance
+  if (!_qc.ok) { logActivity('Forecast', 'Export BLOCKED — QC mismatch', _qc.diffs.length + ' diffs'); alert('⚠ Download blocked — the export does not match the table:\n\n' + _qc.diffs.slice(0, 8).join('\n') + '\n\nNothing was downloaded. Tell Carlos.'); return; }
   // Formatted .xls (HTML-table flavour Excel reads) — bold navy header, shaded TOTAL rows,
   // right-aligned numbers. Opens formatted in Excel AND in Google Sheets (upload to Drive).
   var rows = _aureumExportMatrix();
@@ -2968,6 +3025,8 @@ function downloadAureumCsv() {
 // columns. Smoothest path for Google Workspace (no file handling). READ-ONLY.
 function copyAureumForSheets() {
   if (!_aureumExportConfirm('📋 Copy for Google Sheets')) return;
+  var _qc = verifyAureumExport();   // hard gate: never copy a set that doesn't reconcile with the table
+  if (!_qc.ok) { logActivity('Forecast', 'Copy BLOCKED — QC mismatch', _qc.diffs.length + ' diffs'); alert('⚠ Copy blocked — the export does not match the table:\n\n' + _qc.diffs.slice(0, 8).join('\n') + '\n\nNothing was copied. Tell Carlos.'); return; }
   var rows = _aureumExportMatrix();
   var tsv = rows.map(function(r){ return r.map(function(s){ return (s == null ? '' : String(s)).replace(/[\t\n]/g, ' '); }).join('\t'); }).join('\n');
   function done(){ logActivity('Forecast', 'Copy for Sheets', Math.max(0, rows.length - 7) + ' deals'); alert('Copied ✓\n\nOpen a blank Google Sheet and paste (Ctrl+V) — it fills the columns automatically.'); }
@@ -3004,6 +3063,37 @@ function aureumFilteredDeals(deals) {
   });
   return filtered;
 }
+// SINGLE SOURCE OF TRUTH for the Aureum bottom totals. Both the grid display AND the Excel/Sheets
+// export call this, so the exported totals can never drift from what's on screen. Returns per-month
+// arrays (Y1/Y2) and year sums for gross HC, gross MRR, adjusted HC/MRR, and contribution $.
+function aureumTotals(ds, monthsY1, monthsY2) {
+  function _yd(d, mk, pph){ return mk.reduce(function(s,m){ return s + (((d.monthlyHC||{})[m]||0) * pph); }, 0); }
+  var tot = { mrr:0, arr:0, totHC:0, zohoHC:0, fcstMRR:0, y1:0, y2:0, y3:0,
+              hcY1: monthsY1.map(function(){return 0;}),  hcY2: monthsY2.map(function(){return 0;}),
+              mrrY1: monthsY1.map(function(){return 0;}), mrrY2: monthsY2.map(function(){return 0;}),
+              aHcY1: monthsY1.map(function(){return 0;}), aHcY2: monthsY2.map(function(){return 0;}),
+              aMrrY1: monthsY1.map(function(){return 0;}),aMrrY2: monthsY2.map(function(){return 0;}),
+              aMgnY1: monthsY1.map(function(){return 0;}),aMgnY2: monthsY2.map(function(){return 0;}),
+              wHC:0, y1w:0, y2w:0, y3w:0, y1c:0, y2c:0, y3c:0 };
+  ds.forEach(function(d){
+    var pph = pricePerHead(d);
+    var built = d.totalHC || sumMonths(d.monthlyHC) || 0;
+    var win = getWinRateFor(d), mgn = getMarginFor(d);
+    tot.mrr += (d.pricing || 0); tot.arr += (d.arr || 0);
+    tot.totHC  += built;
+    tot.wHC    += built * win;
+    tot.zohoHC += ((d.zoho_totalHC && d.zoho_totalHC > 0) ? d.zoho_totalHC : 0);
+    tot.fcstMRR += built * pph;
+    var y1 = _yd(d, monthsY1, pph), y2 = _yd(d, monthsY2, pph);
+    var y3 = y2 * (1 + effectiveGrowthPct(d) / 100);
+    tot.y1 += y1; tot.y2 += y2; tot.y3 += y3;
+    tot.y1w += y1 * win;       tot.y2w += y2 * win;       tot.y3w += y3 * win;
+    tot.y1c += y1 * win * mgn; tot.y2c += y2 * win * mgn; tot.y3c += y3 * win * mgn;
+    monthsY1.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY1[i] += hc; tot.mrrY1[i] += hc * pph; tot.aHcY1[i] += hc * win; tot.aMrrY1[i] += hc * pph * win; tot.aMgnY1[i] += hc * pph * win * mgn; });
+    monthsY2.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY2[i] += hc; tot.mrrY2[i] += hc * pph; tot.aHcY2[i] += hc * win; tot.aMrrY2[i] += hc * pph * win; tot.aMgnY2[i] += hc * pph * win * mgn; });
+  });
+  return tot;
+}
 function renderAureumGrid() {
   var deals  = getDeals();
   var f      = filterScope('aureum');
@@ -3035,6 +3125,7 @@ function renderAureumGrid() {
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
   html += '<button class="btn btn-ghost btn-sm" onclick="downloadAureumCsv()" title="Download a FORMATTED Excel (.xls) — bold header, shaded totals. Opens in Excel; upload to Drive to open in Google Sheets with formatting. Read-only.">⬇ Download Excel</button>';
   html += '<button class="btn btn-ghost btn-sm" onclick="copyAureumForSheets()" title="Copy the forecast to the clipboard, then paste (Ctrl+V) into a blank Google Sheet — fills the columns automatically (plain values, no formatting). Read-only.">📋 Copy for Google Sheets</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="runExportQc()" title="Double-check: confirms the Excel/Sheets export matches the table totals exactly. Runs automatically before every export too.">✓ Verify export = table</button>';
   html += '<button class="btn btn-gold btn-sm" onclick="newDealInZoho()">+ New Deal (in Zoho)</button></div></div>';
 
   // "Build & Invoice, not Close" reminder — Michael's framing for the whole model.
@@ -3217,34 +3308,9 @@ function renderAureumGrid() {
 
   // Totals row (37 + N1 columns): 7 ids + Deal Summary (12) + Spread (1) + [Y1 months + Y1 total]
   // + [Y2 months + Y2 total] + [Y3 growth + Y3 total] + actions.
-  var tot = { mrr:0, arr:0, totHC:0, zohoHC:0, fcstMRR:0, y1:0, y2:0, y3:0,
-              hcY1: monthsY1.map(function(){ return 0; }), hcY2: monthsY2.map(function(){ return 0; }),
-              // monthly forecast MRR (Σ HC×$/head) — Michael: "total MRR by month at the bottom"
-              mrrY1: monthsY1.map(function(){ return 0; }), mrrY2: monthsY2.map(function(){ return 0; }),
-              // ADJUSTED by month (Eric/John ask): HC×win, MRR×win, margin$ = MRR×win×forecast-margin.
-              aHcY1: monthsY1.map(function(){ return 0; }),  aHcY2: monthsY2.map(function(){ return 0; }),
-              aMrrY1: monthsY1.map(function(){ return 0; }), aMrrY2: monthsY2.map(function(){ return 0; }),
-              aMgnY1: monthsY1.map(function(){ return 0; }), aMgnY2: monthsY2.map(function(){ return 0; }),
-              // Probability-weighted view (summary only — deal rows stay pure):
-              //   weighted $ = Σ year$ × win% ; contribution $ = Σ year$ × win% × margin ; weighted HC = Σ HC × win%
-              wHC:0, y1w:0, y2w:0, y3w:0, y1c:0, y2c:0, y3c:0 };
-  filtered.forEach(function(d){
-    var pph = pricePerHead(d);
-    var built = d.totalHC || sumMonths(d.monthlyHC) || 0;
-    var win = getWinRateFor(d), mgn = getMarginFor(d);
-    tot.mrr += (d.pricing || 0); tot.arr += (d.arr || 0);
-    tot.totHC  += built;
-    tot.wHC    += built * win;
-    tot.zohoHC += ((d.zoho_totalHC && d.zoho_totalHC > 0) ? d.zoho_totalHC : 0);
-    tot.fcstMRR += built * pph;
-    var y1 = yearDollars(d, monthsY1, pph), y2 = yearDollars(d, monthsY2, pph);
-    var y3 = y2 * (1 + effectiveGrowthPct(d) / 100);
-    tot.y1 += y1; tot.y2 += y2; tot.y3 += y3;
-    tot.y1w += y1 * win;       tot.y2w += y2 * win;       tot.y3w += y3 * win;
-    tot.y1c += y1 * win * mgn; tot.y2c += y2 * win * mgn; tot.y3c += y3 * win * mgn;
-    monthsY1.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY1[i] += hc; tot.mrrY1[i] += hc * pph; tot.aHcY1[i] += hc * win; tot.aMrrY1[i] += hc * pph * win; tot.aMgnY1[i] += hc * pph * win * mgn; });
-    monthsY2.forEach(function(m, i){ var hc = (d.monthlyHC || {})[m] || 0; tot.hcY2[i] += hc; tot.mrrY2[i] += hc * pph; tot.aHcY2[i] += hc * win; tot.aMrrY2[i] += hc * pph * win; tot.aMgnY2[i] += hc * pph * win * mgn; });
-  });
+  // Totals come from the SINGLE shared aureumTotals() — the exact same function the export uses,
+  // so the bottom totals on screen and the exported totals are identical by construction.
+  var tot = aureumTotals(filtered, monthsY1, monthsY2);
   // Bottom summary bands — NOT sticky (plain rows in flow, so they never stack/overlap) and with a
   // subtle separator instead of harsh gold lines. `sep` is a faint vertical divider before each year.
   var sep = 'border-left:1px solid rgba(255,255,255,.18);';
