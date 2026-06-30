@@ -187,12 +187,22 @@
     <div class="h2-rule"></div>
 
     <h3>6.1 — Overview</h3>
-    <p>Your executive snapshot. KPI cards (deals, 3-month headcount, adjusted revenue, margin $), the <strong>Anchor month</strong> picker, a <strong>🔒 Lock {month} forecast</strong> button, the rolling 3-month window table, and the <strong>Forecast Reliability</strong> bands (M+0 / M+1 / M+2).</p>
+    <p>Your executive snapshot. KPI cards (deals, 3-month headcount, adjusted revenue, contribution $), the <strong>Anchor month</strong> picker, a <strong>🔒 Lock {month} forecast</strong> button, the rolling 3-month window table, and the <strong>Forecast Reliability</strong> bands (M+0 / M+1 / M+2).</p>
 
-    <h3>6.2 — Pipeline</h3>
+    <h3>6.2 — Summary (Forecast Summary Statistics)</h3>
+    <p>The investor-facing summary. Three account groups — <strong>Existing</strong>, <strong>New</strong>, and <strong>Total</strong> — each shown across three horizons (<strong>3-Month · Months 4-12 · Months 13-24</strong>) for four metrics: <strong>Headcount, MRR, Contribution $, Contribution %</strong>. Figures are <strong>monthly averages</strong> over each horizon, so a multi-month sum is never mistaken for a headcount. Months 13-24 is a <strong>top-down</strong> projection (the 4-12 average grown one year at the long-term rate).</p>
+    <p>Each metric appears in three layers, side by side:</p>
+    <ul>
+      <li><strong>Forecast</strong> — Horizon's own number, straight from what's built in Aureum (same deals, headcount, rates). Update Aureum and this updates too.</li>
+      <li><strong>PMFF</strong> — <em>Prior-Month Financial Forecast</em>: Finance / the CFO types in their own financial forecast from last month, in the same units shown (headcount, dollars, or a percent like 35). It's an input, not a Horizon calculation.</li>
+      <li><strong>B/(W)</strong> — <em>Better/(Worse)</em> = Forecast − PMFF, color-coded (green = ahead of Finance's plan, red = behind). Calculated automatically.</li>
+    </ul>
+    <p><strong>Existing vs New:</strong> an account is "Existing" when that client already has an Active/Expanding deal or a Closed Won; otherwise a pipeline deal is a "New" logo (first-pass rule — to confirm with Finance). Editing PMFF is manager/admin only; observers see it read-only. <em>Per Eric, the Existing/New split and Months 13-24 are slated to turn on for 2027, and a by-month view is planned.</em></p>
+
+    <h3>6.3 — Pipeline</h3>
     <p>The C-suite snapshot — the same kind of view investors see. Four KPI cards (Total Deals, Total Headcount, Total Pipeline MRR, Total Pipeline ARR) and a phase-by-phase breakdown table with deal count, HC, MRR, ARR, and % of total MRR. Click any phase row to focus the deal breakdown below on that single phase. The bottom cards segment deals by age: Healthy (&lt;3 mo) / Active Pipeline (3-6 mo) / Slow-moving (6-12 mo) / Critical (&gt;1 yr).</p>
 
-    <h3>6.3 — Aureum Demand Forecast (the single input)</h3>
+    <h3>6.4 — Aureum Demand Forecast (the single input)</h3>
     <p>Where everything starts — and the <strong>only place you forecast</strong>. Every Zoho deal in the allowed stages is one row, <strong>grouped by account</strong>, across a <strong>rolling 24 months</strong>: the current year (<strong>Y1</strong>) and next year (<strong>Y2</strong>) are spread month-by-month, and a third year (<strong>Y3</strong>) is a per-deal <strong>growth %</strong> applied to Y2. The <strong>Client and Deal columns are frozen</strong> so they stay visible as you scroll. <strong>Fcst HC</strong> (editable) is the total headcount you forecast; <strong>Zoho HC</strong> and <strong>Zoho $/head</strong> are read-only references, while <strong>Fcst $/head</strong> is your editable rate that drives <strong>Fcst MRR</strong> and <strong>Fcst ARR</strong>. Type headcount by month or use the <strong>⇶ Spread</strong> button to ramp it; the <strong>Close Date</strong> is editable to fix erroneous Zoho dates. Check <strong>Forecast</strong> to include a deal; Super-Deal is automatic at 100+ HC. Filter with the <strong>Forecast-only</strong> toggle and the phase / BDE / search controls. The navy band at the bottom totals everything by month and year — gross HC, gross MRR, and the <strong>win-/margin-adjusted</strong> rows (Adj. HC, Adj. MRR, Contribution $) — with the <strong>26 / 27 / 28 year totals framed in gold</strong>. <em>3 mo. revenue and 12-Month Plan are read-only outputs of this grid.</em></p>
     <table class="zebra">
       <tr><th>Column</th><th>Source</th><th>Editable</th></tr>
@@ -224,19 +234,19 @@
     <p><strong>The download is always the forecast set only</strong> — the deals with <strong>Fcst</strong> checked (Closed Won excluded), regardless of the on-screen filters — so every row counts and there are no confusing "not-in-forecast" rows. A reminder confirms the deal count before it runs, and the bottom TOTAL rows reconcile with the detail. Columns: <strong>2026</strong> month-by-month + totals, <strong>2027</strong> month-by-month + totals, and a <strong>top-down 2028</strong> total (each deal's 2027 total × its growth %).</p>
     <div class="callout gold"><span class="ct">Numbers always match the platform</span>The export and the on-screen totals are computed by the <em>same</em> function, so they can't drift. The <strong>✓ Verify export = table</strong> button double-checks the file against the platform to the dollar — and that same check runs <strong>automatically before every export</strong>, blocking the download/copy if anything doesn't reconcile. So a file that downloaded is a file that matched.</div>
 
-    <h3>6.4 — 3 mo. revenue (rolling 1-3 month forecast with Lock)</h3>
+    <h3>6.5 — 3 mo. revenue (rolling 1-3 month forecast with Lock)</h3>
     <p>Deep-dive on the next 3 months. Only deals flagged <strong>Fcst</strong> appear here. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %).</p>
     <p><strong>🔒 Lock {month} forecast</strong> — once the numbers are right, click to snapshot them as an immutable commitment. The locked snapshot is what the accuracy bands compare against when actuals roll in.</p>
     <p><strong>Apply BDE accuracy haircut</strong> — checkbox that multiplies each cell by that BDE's historical accuracy at that horizon. Falls back to the aggregate band when a BDE has no history yet.</p>
     <p>The <strong>Deal column is frozen</strong> here too, and the <strong>TOTALS bar stays pinned</strong> to the bottom as you scroll. The summary cards show the three numbers Finance cares about for the next 90 days: <strong>Billable HC</strong>, projected / adjusted revenue, and <strong>Margin $</strong>.</p>
 
-    <h3>6.5 — 12-Month Plan (months 4-12 · output)</h3>
+    <h3>6.6 — 12-Month Plan (months 4-12 · output)</h3>
     <p>A <strong>read-only output</strong> of months 4 through 12 from the rolling forecast — edit the headcount in Aureum, not here. Revenue = HC × $/head. These months use a single <strong>standard margin %</strong> and <strong>accuracy %</strong> set by a manager in Settings (defaults 30% / 15%). The Build &amp; Invoice reminder is reinforced here.</p>
 
-    <h3>6.6 — Rolling Months 13-24 (long-term outlook)</h3>
+    <h3>6.7 — Rolling Months 13-24 (long-term outlook)</h3>
     <p>No per-deal forecasting at this horizon. Take month-12 as the baseline (or the 9-month average) and a monthly growth rate (0.5%–10%); the model projects 12 months forward for the 2-year outlook Finance and the CEO use. The growth rate and baseline are <strong>manager-only</strong> controls.</p>
 
-    <h3>6.7 — Playground (Zoho vs Manual, with approve &amp; push)</h3>
+    <h3>6.8 — Playground (Zoho vs Manual, with approve &amp; push)</h3>
     <p>The scenario sandbox. Side-by-side, per deal: what Zoho says today vs what you've drafted in Aureum for <strong>Headcount</strong>, <strong>MRR</strong>, <strong>Win %</strong> and <strong>Margin %</strong>. Each diff is highlighted with a Zoho → Playground arrow.</p>
     <ol>
       <li><strong>Draft</strong> changes in Aureum — they show up here automatically.</li>
@@ -245,20 +255,20 @@
     </ol>
     <div class="callout gold"><span class="ct">Push is live · Zoho is the system of record</span>Write access is enabled, so <strong>↗ Push approved to Zoho</strong> updates the real records. Each person pushing authorizes Zoho once in their own browser (Zoho pill → Disconnect → Connect → Accept). Playground and push are <strong>manager/admin only</strong> — observers don't see the push action.</div>
 
-    <h3>6.8 — Forecast Accuracy (with embedded Trend section)</h3>
+    <h3>6.9 — Forecast Accuracy (with embedded Trend section)</h3>
     <p>Reliability bands by horizon. Lock a forecast → wait for the month to close → <strong>Enter Actuals</strong> → bands populate as <strong>mean ± standard deviation</strong> per horizon. Defaults until history builds: M+0 = 80% ±5, M+1 = 75% ±10, M+2 = 30% ±20. A <strong>manager can pin</strong> any band (accuracy and ±) so BDEs can't move the committed numbers.</p>
     <p><strong>Accuracy by BDE</strong> table breaks the bands down per person at each horizon — Michael's ask: "Don is 90% accurate one month out, 80% at two months, 50% at three."</p>
     <p><strong>Forecast Changes — Week over Week</strong> — a table comparing this week's weekly snapshot to last week's, per deal: which deals were <span class="pill pill-green">added</span>, <span class="pill pill-red">removed</span>, or had their headcount / adjusted revenue change. Don's ask: see exactly what moved in the forecast week to week.</p>
     <p><strong>📥 Backfill historical data</strong> — opens a form where you enter past months by hand to seed the accuracy bands without waiting 3+ months. One row per (month, BDE), with what was forecast at start of that month / 1 month earlier / 2 months earlier, plus the actual.</p>
     <p>At the bottom: an embedded <strong>Forecast Trend</strong> section with toggle Weekly / Monthly / Quarterly and three line charts showing Deals forecasted, Total Headcount, and Adj. Revenue over time. Solid line = forecast; dashed green line = actual (filled from Actuals + backfill). Where the lines diverge tells you where the forecast was optimistic or sandbagged.</p>
 
-    <h3>6.9 — Super-Deals</h3>
+    <h3>6.10 — Super-Deals</h3>
     <p>Qualitative assessment of programs with 100+ HC. Each program is a row with editable, color-coded dropdowns: <strong>Deal Confidence, Start Readiness, Readiness Gap, Speed Sensitivity, Ramp Duration, First Phase Timing, Phase Risk Concentration, Program Horizon, Deployment Map.</strong> Edit Peak HC / Phase 1 / Activation / Notes with the ✎ icon.</p>
 
-    <h3>6.10 — Active Customers — Actuals</h3>
+    <h3>6.11 — Active Customers — Actuals</h3>
     <p>Customers currently producing revenue (Active / Expanding / Aureum) <strong>plus Closed Won</strong>. Current HC, MRR/head, monthly $. HC falls back to the Zoho <code>Headcounts</code> field when no monthly HC is planned — marked with a small <strong>·z</strong> beside the number.</p>
 
-    <h3>6.11 — Settings (Stage Rules + Forecast Assumptions + Integrations)</h3>
+    <h3>6.12 — Settings (Stage Rules + Forecast Assumptions + Integrations)</h3>
     <p><strong>Stage Rules</strong> — the default Win % and <strong>Target margin %</strong> by stage. A deal uses its own <em>actual</em> margin when set, otherwise the stage target. Margin is calculated — it is <strong>not</strong> a Zoho field.</p>
     <p><strong>Forecast Assumptions (months 4–12)</strong> — the standard margin %, the accuracy %, and the default $/head. Manager-only controls.</p>
     <p>Plus: Zoho integration status + field mapping (<code>MRR · ARR · TCV · Contract_Term_Months · Expected_Start_Date · Headcounts · Probability · Account_Status</code>), Export / Import JSON for backup, and the <strong>↻ Replay tour</strong> button.</p>
