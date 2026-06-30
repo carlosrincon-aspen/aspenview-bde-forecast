@@ -2560,18 +2560,38 @@ function renderSummary(){
     var v = ((pmff[segKey] || {})[hzKey] || {})[metric];
     return (v === undefined || v === null || v === '') ? null : parseFloat(v);
   }
-  // Total PMFF auto-sums Existing + New when either child is entered. Contribution % is the weighted
-  // total (Σ contribution ÷ Σ MRR). Returns null when no children are entered → Total stays editable
-  // (so in the 2026 phase you can type a Total directly without the Existing/New split).
+  function monthsForHz(hzKey){ return hzKey === 'm3' ? m3 : hzKey === 'm412' ? m412 : []; }
+  // Roll monthly PMFF up to a horizon as a RUN-RATE: HC/MRR/Contribution are monthly figures, so they
+  // AVERAGE across the entered months (not a sum — summing MRR would be annual revenue, not MRR);
+  // Contribution % is the weighted average. null when no month is entered.
+  function pmffMonthAvg(segKey, monthsArr, metric){
+    if (!monthsArr.length) return null;
+    if (metric === 'contribPct'){
+      var c=0, mr=0, any=false;
+      monthsArr.forEach(function(m){ var cc=pmffVal(segKey,m,'contrib'), mm=pmffVal(segKey,m,'mrr'); if(cc!=null){c+=cc;any=true;} if(mm!=null)mr+=mm; });
+      return (any && mr) ? c/mr*100 : null;
+    }
+    var s=0, cnt=0;
+    monthsArr.forEach(function(m){ var v=pmffVal(segKey,m,metric); if(v!=null){s+=v;cnt++;} });
+    return cnt ? s/cnt : null;
+  }
+  // Effective horizon PMFF for Existing/New: the monthly roll-up if any month is entered, else the
+  // direct high-level horizon entry. {val, fromMonthly}.
+  function effPmff(segKey, hzKey, metric){
+    var a = pmffMonthAvg(segKey, monthsForHz(hzKey), metric);
+    if (a != null) return { val: a, fromMonthly: true };
+    return { val: pmffVal(segKey, hzKey, metric), fromMonthly: false };
+  }
+  // Total = Existing + New across SEGMENTS (sum; weighted for %), using each one's effective value.
   function totalPmff(hzKey, metric){
     if (metric === 'contribPct'){
-      var ec = pmffVal('existing',hzKey,'contrib'), nc = pmffVal('new',hzKey,'contrib');
-      var em = pmffVal('existing',hzKey,'mrr'),     nm = pmffVal('new',hzKey,'mrr');
+      var ec = effPmff('existing',hzKey,'contrib').val, nc = effPmff('new',hzKey,'contrib').val;
+      var em = effPmff('existing',hzKey,'mrr').val,     nm = effPmff('new',hzKey,'mrr').val;
       var tm = (em||0)+(nm||0);
       if ((ec!=null || nc!=null) && tm) return ((ec||0)+(nc||0)) / tm * 100;
       return null;
     }
-    var e = pmffVal('existing',hzKey,metric), n = pmffVal('new',hzKey,metric);
+    var e = effPmff('existing',hzKey,metric).val, n = effPmff('new',hzKey,metric).val;
     return (e!=null || n!=null) ? (e||0)+(n||0) : null;
   }
   // Per-month Total PMFF = Existing[m] + New[m] (weighted for Contribution %). For the By-month view.
@@ -2599,18 +2619,22 @@ function renderSummary(){
       horizons.forEach(function(h){
         var num = fNum(fc[h.key], mt.key);
         html += '<td class="num" style="border-left:2px solid var(--gold)">' + fTxt(num, mt.key) + '</td>';
-        var pUsed = null;
-        var derived = (seg.key === 'total') ? totalPmff(h.key, mt.key) : null;
-        if (seg.key === 'total' && derived !== null) {
-          // Total = Existing + New (auto), shown read-only.
-          pUsed = derived;
-          var dtxt = (mt.key === 'contribPct') ? derived.toFixed(1) + '%' : (mt.key === 'hc') ? (Math.round(derived*10)/10).toFixed(1) : fmt$k(derived);
-          html += '<td class="num" style="color:var(--muted)" title="Auto-sum of Existing + New">' + dtxt + '</td>';
+        var pUsed = null, roVal = null, roWhy = '';
+        if (seg.key === 'total') {
+          var derived = totalPmff(h.key, mt.key);
+          if (derived !== null) { pUsed = derived; roVal = derived; roWhy = 'Auto: Existing + New'; }
+        } else {
+          var ep = effPmff(seg.key, h.key, mt.key);
+          if (ep.fromMonthly) { pUsed = ep.val; roVal = ep.val; roWhy = 'Rolled up from the by-month PMFF (monthly average)'; }
+        }
+        if (roVal !== null) {
+          var dtxt = (mt.key === 'contribPct') ? roVal.toFixed(1) + '%' : (mt.key === 'hc') ? (Math.round(roVal*10)/10).toFixed(1) : fmt$k(roVal);
+          html += '<td class="num" style="color:var(--muted)" title="' + roWhy + '">' + dtxt + '</td>';
         } else {
           var stored = pmffVal(seg.key, h.key, mt.key);
           pUsed = stored;
           var unit = (mt.key === 'mrr' || mt.key === 'contrib') ? 'dollars' : (mt.key === 'contribPct' ? 'percent (e.g. 35)' : 'headcount');
-          html += '<td class="num"><input class="margin pmff-input" type="number" step="any" value="' + (stored != null ? stored : '') + '" placeholder="—" ' + (editable ? '' : 'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + h.key + '\',\'' + mt.key + '\', this.value)" style="width:72px" title="PMFF = CFO prior-month financial forecast. Enter in ' + unit + '.' + (seg.key === 'total' ? ' Fill Existing + New and this auto-sums.' : '') + '"></td>';
+          html += '<td class="num"><input class="margin pmff-input" type="number" step="any" value="' + (stored != null ? stored : '') + '" placeholder="—" ' + (editable ? '' : 'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + h.key + '\',\'' + mt.key + '\', this.value)" style="width:72px" title="PMFF (' + unit + '). High-level entry — or fill it month-by-month and this shows the monthly average.' + (seg.key === 'total' ? ' Total auto-sums Existing + New.' : '') + '"></td>';
         }
         if (pUsed == null) { html += '<td class="num" style="color:var(--muted)">—</td>'; }
         else {
