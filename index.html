@@ -2504,23 +2504,54 @@ function renderSummary(){
     + '<button class="btn btn-sm ' + (summaryView === 'month' ? 'btn-ghost' : 'btn-primary') + '" onclick="setSummaryView(\'horizon\')">By horizon</button>'
     + '<button class="btn btn-sm ' + (summaryView === 'month' ? 'btn-primary' : 'btn-ghost') + '" onclick="setSummaryView(\'month\')">By month</button></div>';
 
-  // ── By-month view: the monthly Forecast for the four metrics (months 13-24 are top-down, not built). ──
+  // ── By-month view: Forecast / PMFF / B(w) per month (months 13-24 are top-down, blank unless built). ──
   if (summaryView === 'month') {
-    // Full 24-month span: 3-mo window + months 4-12 + months 13-24 (the last carry build only if entered).
-    var monthsAll = m3.concat(m412).concat(rollingMonths(monthKeyAfter(anchor, 12), 12));
+    var monthsAll = m3.concat(m412).concat(rollingMonths(monthKeyAfter(anchor, 12), 12));   // 24 months
+    var unitOf  = function(mk){ return (mk==='mrr'||mk==='contrib') ? 'dollars' : (mk==='contribPct' ? 'percent (e.g. 35)' : 'headcount'); };
+    var dispVal = function(v, mk){ return v==null ? '—' : mk==='hc' ? String(Math.round(v)) : mk==='contribPct' ? (Math.round(v*10)/10).toFixed(1)+'%' : fmt$k(v); };
+    var fMonthNum = function(t, i, mk){
+      if (mk==='hc')      return t.hc[i]     ? Math.round(t.hc[i])     : null;
+      if (mk==='mrr')     return t.proj[i]   ? Math.round(t.proj[i])   : null;
+      if (mk==='contrib') return t.margin[i] ? Math.round(t.margin[i]) : null;
+      return t.proj[i] ? Math.round(t.margin[i]/t.proj[i]*1000)/10 : null;   // contribution % (points)
+    };
     segs.forEach(function(seg){
       var t = forecastTotals(monthsAll, seg.deals);
-      html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">' + esc(seg.label) + '</span><span class="card-sub">' + seg.deals.length + ' forecast deal(s) · monthly forecast</span></div>';
-      html += '<div class="scroll-x"><table class="grid-tbl"><thead><tr><th class="freeze-1">Metric</th>';
+      html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">' + esc(seg.label) + '</span><span class="card-sub">' + seg.deals.length + ' forecast deal(s) · Forecast vs PMFF by month</span></div>';
+      html += '<div class="scroll-x"><table class="grid-tbl"><thead><tr><th class="freeze-1">Metric / Layer</th>';
       monthsAll.forEach(function(m){ html += '<th class="num">' + monthLabel(m) + '</th>'; });
       html += '</tr></thead><tbody>';
-      html += '<tr><td class="freeze-1"><b>Headcount</b></td>';        monthsAll.forEach(function(m,i){ html += '<td class="num">' + (t.hc[i] ? Math.round(t.hc[i]) : '—') + '</td>'; }); html += '</tr>';
-      html += '<tr><td class="freeze-1"><b>MRR</b></td>';              monthsAll.forEach(function(m,i){ html += '<td class="num">' + (t.proj[i] ? fmt$k(t.proj[i]) : '—') + '</td>'; }); html += '</tr>';
-      html += '<tr><td class="freeze-1"><b>Contribution $</b></td>';   monthsAll.forEach(function(m,i){ html += '<td class="num">' + (t.margin[i] ? fmt$k(t.margin[i]) : '—') + '</td>'; }); html += '</tr>';
-      html += '<tr><td class="freeze-1"><b>Contribution %</b></td>';   monthsAll.forEach(function(m,i){ html += '<td class="num">' + (t.proj[i] ? (t.margin[i] / t.proj[i] * 100).toFixed(1) + '%' : '—') + '</td>'; }); html += '</tr>';
+      metrics.forEach(function(mt){
+        html += '<tr><td class="freeze-1"><b>' + mt.label + '</b> · Forecast</td>';
+        monthsAll.forEach(function(m,i){ html += '<td class="num">' + dispVal(fMonthNum(t,i,mt.key), mt.key) + '</td>'; });
+        html += '</tr>';
+        html += '<tr><td class="freeze-1" style="color:var(--muted)">' + mt.label + ' · PMFF</td>';
+        monthsAll.forEach(function(m,i){
+          if (seg.key === 'total'){
+            var tv = monthTotalPmff(m, mt.key);
+            html += '<td class="num" style="color:var(--muted)" title="Auto: Existing + New">' + (tv==null ? '—' : dispVal(tv, mt.key)) + '</td>';
+          } else {
+            var sv = pmffVal(seg.key, m, mt.key);
+            html += '<td class="num"><input class="margin pmff-input" type="number" step="any" value="' + (sv!=null?sv:'') + '" placeholder="—" ' + (editable?'':'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + m + '\',\'' + mt.key + '\', this.value)" style="width:62px" title="PMFF (' + unitOf(mt.key) + ') · ' + monthLabel(m) + '"></td>';
+          }
+        });
+        html += '</tr>';
+        html += '<tr><td class="freeze-1" style="font-size:11px;color:var(--muted)">' + mt.label + ' · B/(W)</td>';
+        monthsAll.forEach(function(m,i){
+          var f = fMonthNum(t,i,mt.key);
+          var p = (seg.key === 'total') ? monthTotalPmff(m, mt.key) : pmffVal(seg.key, m, mt.key);
+          if (f==null || p==null){ html += '<td class="num" style="color:var(--muted)">—</td>'; }
+          else {
+            var bw=f-p, good=bw>=0, a=Math.abs(bw);
+            var txt=(mt.key==='mrr'||mt.key==='contrib')?(good?'+':'-')+fmt$k(a):(mt.key==='contribPct')?(good?'+':'-')+(Math.round(a*10)/10).toFixed(1)+'pts':(good?'+':'-')+(Math.round(a*10)/10).toFixed(1);
+            html += '<td class="num" style="font-weight:600;color:' + (good?'var(--success)':'#c62828') + '">' + txt + '</td>';
+          }
+        });
+        html += '</tr>';
+      });
       html += '</tbody></table></div></div>';
     });
-    html += '<div class="legend"><span style="font-style:italic">By-month shows the <b>Forecast</b> per month (HC, MRR, Contribution $, Contribution %). Months 13-24 are a top-down projection, so they\'re not built month-by-month. The CFO\'s PMFF and Better/(Worse) live in the <b>By horizon</b> view.</span></div>';
+    html += '<div class="legend"><span style="font-style:italic">By-month: <b>Forecast</b> (from Aureum) · <b>PMFF</b> (the CFO types it per month; Total auto-sums Existing + New) · <b>B/(W)</b> per month. Months 13-24 are top-down, so blank unless built. By-month and By-horizon PMFF are separate entry modes (monthly detail vs high-level) — use whichever Finance provides.</span></div>';
     document.getElementById('mainContent').innerHTML = html;
     return;
   }
@@ -2542,6 +2573,18 @@ function renderSummary(){
     }
     var e = pmffVal('existing',hzKey,metric), n = pmffVal('new',hzKey,metric);
     return (e!=null || n!=null) ? (e||0)+(n||0) : null;
+  }
+  // Per-month Total PMFF = Existing[m] + New[m] (weighted for Contribution %). For the By-month view.
+  function monthTotalPmff(monthKey, metric){
+    if (metric === 'contribPct'){
+      var ec=pmffVal('existing',monthKey,'contrib'), nc=pmffVal('new',monthKey,'contrib');
+      var em=pmffVal('existing',monthKey,'mrr'),     nm=pmffVal('new',monthKey,'mrr');
+      var tm=(em||0)+(nm||0);
+      if((ec!=null||nc!=null)&&tm) return ((ec||0)+(nc||0))/tm*100;
+      return null;
+    }
+    var e=pmffVal('existing',monthKey,metric), n=pmffVal('new',monthKey,metric);
+    return (e!=null||n!=null)?(e||0)+(n||0):null;
   }
   segs.forEach(function(seg){
     var fc = { m3: _segForecast(seg.deals, m3, 1), m412: _segForecast(seg.deals, m412, 1), m1324: _segForecast(seg.deals, m412, growth1324) };
