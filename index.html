@@ -755,19 +755,19 @@ function userStatus(lastSeen) {
 // ONBOARDING TOUR — walks new users through every tab
 // ─────────────────────────────────────────────────────────────────────────────
 var ONBOARDING_STEPS = [
-  { tab: 'overview',   title: 'Overview',                body: 'Your starting point each session. The four KPI cards summarize the next 3 months — deal count, forecasted headcount, adjusted revenue, and margin. Below: the rolling 3-month window, a Rolling Months 4–12 block with its own accuracy, and the reliability bands (M+0 / M+1 / M+2). Managers can pin those bands.' },
-  { tab: 'summary',    title: 'Summary (Forecast Summary Statistics)', body: 'The investor-facing summary. <b>Existing / New / Total</b> accounts across three horizons (3-month · months 4-12 · months 13-24), each showing <b>Headcount, MRR, Contribution $, Contribution %</b>. Three layers side by side: our <b>Forecast</b> (straight from Aureum), the CFO\'s <b>PMFF</b> (prior-month financial forecast — typed in by Finance), and <b>B/(W)</b> = Better/(Worse) vs that plan (green ahead, red behind). The Total auto-sums Existing + New. Figures are monthly averages; months 13-24 is a top-down projection.' },
+  { tab: 'overview',   title: 'Overview',                body: 'Your starting point each session. Four KPI cards count deals — <b>Total Deals · Pipeline</b> (from Zoho), <b>Total in Forecast</b> (Fcst-checked, Closed Won excluded), and how many are billing in the <b>Next 3 Months</b> and the <b>Rest of 2026</b> — all update automatically. The <b>Forecast Summary</b> table leads with <b>Average MRR</b> (the monthly run-rate to keep in your head) and then the period <b>totals</b>: Projected Revenue, Adjusted Revenue (× win rate), <b>Contribution Margin Dollars</b> (× win × contribution margin), and Forecast Headcount — across <b>3-Month, Remainder of 2026, Full Year 2026, Full Year 2027</b> and a top-down <b>Full Year 2028</b>. Below: the month-by-month 3-month window and the reliability bands (M+0 / M+1 / M+2).' },
+  { tab: 'summary',    title: 'Summary (Forecast Summary Statistics)', body: 'The investor-facing summary. <b>Existing / New / Total</b> accounts across three horizons (3-month · months 4-12 · months 13-24), each with the four standardized outputs: <b>Headcount, MRR, Contribution $, Contribution %</b>. Three layers: our <b>Forecast</b> (straight from Aureum), the CFO\'s <b>PMFF</b> (Prior-Month Financial Forecast), and <b>B/(W)</b> = Better/(Worse) = Forecast − PMFF (green = ahead, red = behind). <b>How PMFF is filled:</b> use the <b>By month</b> toggle at the top and type each month for Existing and New accounts — the <b>By horizon</b> view then <b>totals those months automatically</b> (read-only), and the <b>Total</b> column auto-sums Existing + New. So you enter a number once, by month, and it rolls up into every total — no double entry. Months 13-24 is a top-down projection (slated to begin 2027).' },
   { tab: 'pipeline',   title: 'Pipeline',                body: 'The investor-grade view. All deals (excluding Closed Lost) grouped by the 5-phase model: SQL → Recruitment → Pricing → Legal Contracting → Closed Won. Includes a Forecast Coverage by Phase report — how much of the pipeline is actually being forecast — plus Deal Age cards (Healthy / Active / Slow / Critical) flagging what is stuck.' },
-  { tab: 'aureum',     title: 'Aureum Demand Forecast',  body: 'The single input — one row per Zoho deal, rolling 12 months. The Deal column is frozen so it stays visible as you scroll. Deal Summary (MRR, ARR, TCV, contract, $/head, win %, target vs actual margin) comes from Zoho; the Headcount Build is where you type headcount by month — or use the ⇶ Spread button to ramp it automatically. Check Forecast to include a deal; Super-Deal is automatic at 100+ headcount. 3 mo. revenue & 12-Month Plan are outputs of this grid.' },
+  { tab: 'aureum',     title: 'Aureum Demand Forecast',  body: 'The single input — one row per Zoho deal, rolling 24 months. The Client &amp; Deal columns are frozen so they stay visible as you scroll. Deal Summary (MRR, ARR, MRR $/head, win %, target vs actual contribution margin) comes from Zoho; the Headcount Build is where you type headcount by month — or use the ⇶ Spread button to ramp it automatically. The <b>summary band stays frozen at the bottom</b> as you scroll: gross HC and MRR per month, then the <b>Adjusted</b> rows (× win %) and <b>Contribution Margin Dollars</b> (× win × forecast margin), with calendar-year totals for 2026, 2027 and a top-down 2028. Check <b>Forecast</b> to include a deal (Closed Won is excluded — captured in cash flow); Super-Deal is automatic at 100+ headcount. The other forecast tabs are outputs of this grid.' },
   { tab: 'aureum',     title: 'Download to Excel / Google Sheets', body: 'Two buttons at the top of Aureum take the forecast out for Finance: <b>⬇ Download Excel</b> (a formatted .xls) and <b>📋 Copy for Google Sheets</b> (paste straight into a blank sheet). The download is always the <b>forecast set only</b> (Fcst-checked deals, Closed Won excluded), with 2026 and 2027 month-by-month plus a top-down 2028 total. A reminder confirms the scope first, and the <b>✓ Verify export = table</b> button double-checks the file matches the platform to the dollar (it also runs automatically before every export, and blocks if anything is off). Observers can export too.' },
   { tab: 'threemo',    title: '3 mo. revenue',           body: 'Deep-dive on the next 3 months. Only deals you flagged as Forecast appear here. When the numbers are right, click "🔒 Lock {month}" — that snapshot becomes immutable and is what the accuracy bands compare against when actuals roll in. The "Apply BDE accuracy haircut" checkbox discounts every cell by that BDE\'s historical accuracy.' },
-  { tab: 'midterm',    title: '12-Month Plan',           body: 'A read-only OUTPUT of months 4 through 12 — the headcount ramp you entered in Aureum Demand Forecast, with revenue computed automatically (HC × $/head). These months use a single standard margin % and accuracy %, set by a manager in Settings. Reminder: this is "Build & Invoice, NOT Close" — HC by month is when a person STARTS BILLING, not when the deal closes.' },
+  { tab: 'midterm',    title: '12-Month Plan',           body: 'A read-only OUTPUT of months 4 through 12 — the headcount ramp you entered in Aureum Demand Forecast, with revenue = HC × $/head. <b>Adjusted Revenue and Contribution Margin Dollars here are win-/margin-adjusted per deal</b> — the same method as Overview and Summary, so the overlapping months reconcile across tabs. Reminder: this is "Build &amp; Invoice, NOT Close" — HC by month is when a person STARTS BILLING, not when the deal closes.' },
   { tab: 'longterm',   title: 'Rolling Months 13–24',    body: 'The long-term outlook. No per-deal forecasting at this horizon — take month-12 as the baseline, pick a monthly growth rate, and the model projects the 2-year (24-month) outlook for Finance without forcing certainty that does not exist. The growth rate is set by a manager.' },
   { tab: 'playground', title: 'Playground', editorOnly: true, body: 'Your sandbox before touching Zoho (managers/admins only). Edit numbers freely in Aureum and come here to see the diff against what Zoho currently has — side by side. Approve the deals whose changes are ready, then click "↗ Push approved to Zoho" to send them all in one click. Zoho write access is enabled; each person pushing authorizes once in their own browser.' },
   { tab: 'accuracy',   title: 'Forecast Accuracy',       body: 'Your forecast track record. Lock a 3-month forecast → wait for the month to close → enter the actuals → the bands populate. Per-BDE table breaks accuracy down by person at M+0 / M+1 / M+2. Use "📥 Backfill historical data" to seed past months and skip the wait. Below: trend charts comparing forecast vs actual over time.' },
   { tab: 'super',      title: 'Super-Deals',             body: 'Qualitative assessment of programs with 100+ headcount. Each program is rated across 9 dimensions: deal confidence, start readiness, readiness gap, speed sensitivity, ramp duration, first phase timing, phase risk concentration, program horizon, deployment map. Edit Peak HC / Phase 1 / Activation / Notes with the pencil icon.' },
   { tab: 'active',     title: 'Active Customers — Actuals', body: 'Customers already producing revenue today: Active, Expanding, Aureum, and Closed Won deals. Shows current headcount, MRR per head, and monthly billing. Different from Pipeline — these are the deals already alive, not the ones in pursuit.' },
-  { tab: 'settings',   title: 'Settings', editorOnly: true, body: 'Configuration (managers/admins only). Stage Rules (defaults for Win % and Margin % by stage), Zoho integration status, field mapping reference, JSON export/import for backup, and the "↻ Replay tour" button. Admins also manage who can sign in — granting <b>admin</b> (full access) or <b>observer</b> (view-only) — from the ★ Admin panel in the header. Only invited @aspenview.com accounts can enter.' }
+  { tab: 'settings',   title: 'Settings', editorOnly: true, body: 'Configuration (managers/admins only). Stage Rules (defaults for Win % and Contribution Margin % by stage), the default $/head, Zoho integration status, field mapping reference, JSON export/import for backup, and the "↻ Replay tour" button. Admins also manage who can sign in — granting <b>admin</b> (full access) or <b>observer</b> (view-only) — from the ★ Admin panel in the header. Only invited @aspenview.com accounts can enter.' }
 ];
 // Tour steps are built per session so they adapt to the user's role: observers (view-only) get a
 // read-only framing on the first step and skip the editor-only tabs (Playground, Settings).
@@ -6022,6 +6022,32 @@ function mergeCleanup(ghostIdx, candidateIdx) {
 var adminSubTab = 'team';
 function setAdminSubTab(t) { adminSubTab = t; renderTab(); }
 
+// The TRUE team roster: merges the (last-write-wins) known_users doc with code-defined managers,
+// granted admins/observers, AND the activity log — so a person is never dropped when one browser's
+// known_users write overwrites another's (the shared-doc overwrite fragility). Used by BOTH the KPI
+// cards and the Team table so the two always agree (fixes "Team members 1 / Active today 0").
+function buildTeamRoster() {
+  var users = getKnownUsers();
+  var roster = {};
+  Object.keys(users).forEach(function(e) {
+    var k = e.toLowerCase(), u = users[e];
+    roster[k] = { email: u.email || e, name: u.name, role: u.role || 'bde', loginCount: u.loginCount || 0, firstSeen: u.firstSeen, lastSeen: u.lastSeen, signedIn: true };
+  });
+  Object.keys(USERS).forEach(function(kk) {
+    var m = USERS[kk], k = m.email.toLowerCase();
+    if (!roster[k]) roster[k] = { email: m.email, name: m.name, role: 'manager', loginCount: 0, signedIn: false };
+    else roster[k].role = 'manager';
+  });
+  getAdminExtra().forEach(function(e0){ var k = (e0 || '').toLowerCase(); if (k && !roster[k]) roster[k] = { email: e0, name: e0, role: 'bde', loginCount: 0, signedIn: false }; });
+  getViewers().forEach(function(e0){ var k = (e0 || '').toLowerCase(); if (k && !roster[k]) roster[k] = { email: e0, name: e0, role: 'bde', loginCount: 0, signedIn: false }; });
+  getActivityLog().forEach(function(ev) {
+    var em = (ev && ev.actor || '').toLowerCase();
+    if (!em || em === 'anon' || em.indexOf('@') < 0) return;
+    if (!roster[em]) roster[em] = { email: ev.actor, name: ev.actor, role: 'bde', loginCount: 0, signedIn: true, lastSeen: ev.ts };
+    else { roster[em].signedIn = true; if (!roster[em].lastSeen || (ev.ts || '') > roster[em].lastSeen) roster[em].lastSeen = ev.ts; }
+  });
+  return roster;
+}
 function renderAdminPanel() {
   if (!isAdmin()) {
     document.getElementById('mainContent').innerHTML = '<div class="card"><div class="empty">Admin access required. Ask a manager to grant you access from the Admin Panel → Team tab.</div></div>';
@@ -6039,14 +6065,19 @@ function renderAdminPanel() {
   var viewers  = getViewers();
   var activity = getActivityLog();
   var errors   = getErrorLog();
-  var activeToday = emails.filter(function(e){ return userStatus(users[e].lastSeen) === 'active'; });
+  // Counts come from the FULL roster (known_users + activity log), not just known_users — otherwise a
+  // shared-doc overwrite of known_users makes "Team members"/"Active today" read too low (the bug).
+  var teamRoster   = buildTeamRoster();
+  var rosterKeys   = Object.keys(teamRoster);
+  var signedInKeys = rosterKeys.filter(function(k){ return teamRoster[k].signedIn; });
+  var activeToday  = signedInKeys.filter(function(k){ return userStatus(teamRoster[k].lastSeen) === 'active'; });
 
   var html = '';
   html += '<div class="page-title"><div><h1>Admin Panel</h1><div class="sub">Operations, team, and audit — managed without code edits so the platform is not a single-person dependency.</div></div></div>';
 
   // KPI cards
   html += '<div class="stat-grid" style="margin-bottom:18px">';
-  html += statCard('Team members',  emails.length,        'have signed in',                  'aureum');
+  html += statCard('Team members',  signedInKeys.length,  'have signed in',                  'aureum');
   html += statCard('Admins',        adminCount,           'full access',                     'gold');
   html += statCard('Observers',     viewers.length,       'view-only · export, no editing',  viewers.length ? 'good' : '');
   html += statCard('Active today',  activeToday.length,   'seen in the last 24h',            activeToday.length ? 'good' : 'gold');
@@ -6057,7 +6088,7 @@ function renderAdminPanel() {
   html += '<div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px">';
   [['team','Team'],['activity','Activity'],['errors','Errors']].forEach(function(p) {
     var cls = adminSubTab === p[0] ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
-    var n = p[0] === 'activity' ? activity.length : (p[0] === 'errors' ? errors.length : emails.length);
+    var n = p[0] === 'activity' ? activity.length : (p[0] === 'errors' ? errors.length : rosterKeys.length);
     html += '<button class="' + cls + '" onclick="setAdminSubTab(\'' + p[0] + '\')">' + p[1] + ' <span style="opacity:.65;font-size:11px">(' + n + ')</span></button>';
   });
   html += '</div>';
@@ -6093,29 +6124,11 @@ function adminTeamSection(users, emails) {
   // Members table — show EVERYONE configured (code-defined managers, granted admins, observers),
   // not just those who have signed in. People who haven't signed in yet are listed too, marked
   // "not signed in yet", so the access roster is always complete and auditable.
-  var roster = {};
-  Object.keys(users).forEach(function(e) {
-    var k = e.toLowerCase(), u = users[e];
-    roster[k] = { email: u.email || e, name: u.name, role: u.role || 'bde', loginCount: u.loginCount || 0, firstSeen: u.firstSeen, lastSeen: u.lastSeen, signedIn: true };
-  });
-  Object.keys(USERS).forEach(function(kk) {
-    var m = USERS[kk], k = m.email.toLowerCase();
-    if (!roster[k]) roster[k] = { email: m.email, name: m.name, role: 'manager', loginCount: 0, signedIn: false };
-    else roster[k].role = 'manager';
-  });
-  getAdminExtra().forEach(function(e0){ var k = (e0 || '').toLowerCase(); if (k && !roster[k]) roster[k] = { email: e0, name: e0, role: 'bde', loginCount: 0, signedIn: false }; });
-  getViewers().forEach(function(e0){ var k = (e0 || '').toLowerCase(); if (k && !roster[k]) roster[k] = { email: e0, name: e0, role: 'bde', loginCount: 0, signedIn: false }; });
-  // Also seed from the activity log: anyone who has ACTED in the tool is real, even if the
-  // single-doc known_users sync dropped them (the same overwrite fragility behind earlier issues).
-  getActivityLog().forEach(function(ev) {
-    var em = (ev && ev.actor || '').toLowerCase();
-    if (!em || em === 'anon' || em.indexOf('@') < 0) return;
-    if (!roster[em]) roster[em] = { email: ev.actor, name: ev.actor, role: 'bde', loginCount: 0, signedIn: true, lastSeen: ev.ts };
-    else { roster[em].signedIn = true; if (!roster[em].lastSeen || (ev.ts || '') > roster[em].lastSeen) roster[em].lastSeen = ev.ts; }
-  });
+  var roster = buildTeamRoster();
   var rkeys = Object.keys(roster);
+  var signedInCount = rkeys.filter(function(k){ return roster[k].signedIn; }).length;
 
-  html += '<div class="card"><div class="card-header"><span class="card-title">Team members</span><span class="card-sub">' + rkeys.length + ' configured · ' + emails.length + ' have signed in</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Team members</span><span class="card-sub">' + rkeys.length + ' configured · ' + signedInCount + ' have signed in</span></div>';
   if (!rkeys.length) {
     html += '<div class="empty">No team members configured yet.</div></div>';
     return html;

@@ -187,7 +187,9 @@
     <div class="h2-rule"></div>
 
     <h3>6.1 — Overview</h3>
-    <p>Your executive snapshot. KPI cards (deals, 3-month headcount, adjusted revenue, contribution $), the <strong>Anchor month</strong> picker, a <strong>🔒 Lock {month} forecast</strong> button, the rolling 3-month window table, and the <strong>Forecast Reliability</strong> bands (M+0 / M+1 / M+2).</p>
+    <p>Your executive snapshot. Four deal-count KPI cards that update automatically — <strong>Total Deals · Pipeline</strong> (from Zoho), <strong>Total in Forecast</strong> (Fcst-checked, Closed Won excluded), <strong>Total Forecast · Next 3 Months</strong> and <strong>Total Forecast · Rest of 2026</strong> (deals billing in each window).</p>
+    <p>The <strong>Forecast Summary</strong> table leads with <strong>Average MRR</strong> (the monthly recurring revenue run-rate — the number to keep in your head) and then the period <strong>totals</strong>: <strong>Projected Revenue</strong> (gross), <strong>Adjusted Revenue</strong> (× win rate), <strong>Contribution Margin Dollars</strong> (× win × contribution margin), and <strong>Forecast Headcount</strong> (cumulative HC-months). Five calendar columns, all labelled <strong>Total</strong>: <strong>3-Month · Remainder of 2026 · Full Year 2026 · Full Year 2027 · Full Year 2028</strong> (2028 is top-down — 2027 grown by the default %). Full Year 2026 = 3-Month + Remainder, so it reconciles as the sum.</p>
+    <p>Below: the <strong>Anchor month</strong> picker, a <strong>🔒 Lock {month} forecast</strong> button, the month-by-month rolling 3-month window, and the <strong>Forecast Reliability</strong> bands (M+0 / M+1 / M+2).</p>
 
     <h3>6.2 — Summary (Forecast Summary Statistics)</h3>
     <p>The investor-facing summary. Three account groups — <strong>Existing</strong>, <strong>New</strong>, and <strong>Total</strong> — each shown across three horizons (<strong>3-Month · Months 4-12 · Months 13-24</strong>) for four metrics: <strong>Headcount, MRR, Contribution $, Contribution %</strong>. Figures are <strong>monthly averages</strong> over each horizon, so a multi-month sum is never mistaken for a headcount. Months 13-24 is a <strong>top-down</strong> projection (the 4-12 average grown one year at the long-term rate).</p>
@@ -197,7 +199,8 @@
       <li><strong>PMFF</strong> — <em>Prior-Month Financial Forecast</em>: Finance / the CFO types in their own financial forecast from last month, in the same units shown (headcount, dollars, or a percent like 35). It's an input, not a Horizon calculation.</li>
       <li><strong>B/(W)</strong> — <em>Better/(Worse)</em> = Forecast − PMFF, color-coded (green = ahead of Finance's plan, red = behind). Calculated automatically.</li>
     </ul>
-    <p><strong>Existing vs New:</strong> an account is "Existing" when that client already has an Active/Expanding deal or a Closed Won; otherwise a pipeline deal is a "New" logo (first-pass rule — to confirm with Finance). A <strong>By horizon / By month</strong> toggle at the top switches between the bucketed view and the monthly Forecast. Editing PMFF is manager/admin only — except specific observers (e.g. the CFO/CEO) who can be granted <em>Summary edit</em> in Admin → Team to fill PMFF and nothing else. <em>Per Eric, the Existing/New split and Months 13-24 are slated to turn on for 2027.</em></p>
+    <p><strong>How PMFF is filled (one entry point):</strong> use the <strong>By month</strong> toggle at the top and type the prior-month financial forecast for each month, for Existing and New accounts. The <strong>By horizon</strong> view then <strong>totals those months automatically</strong> (read-only), and the <strong>Total</strong> column auto-sums Existing + New. So a number is entered once, by month, and rolls up into every horizon and total — there is no double entry, and the Summary can never disagree with the monthly page.</p>
+    <p><strong>Existing vs New:</strong> an account is "Existing" when that client already has an Active/Expanding deal or a Closed Won; otherwise a pipeline deal is a "New" logo (first-pass rule — tell us if Finance wants a different definition). Editing PMFF is manager/admin only — except specific observers (e.g. the CFO) who can be granted <em>Summary edit</em> in Admin → Team to fill PMFF and nothing else. <em>Per Eric, the Existing/New split and Months 13-24 are slated to turn on for 2027.</em></p>
 
     <h3>6.3 — Pipeline</h3>
     <p>The C-suite snapshot — the same kind of view investors see. Four KPI cards (Total Deals, Total Headcount, Total Pipeline MRR, Total Pipeline ARR) and a phase-by-phase breakdown table with deal count, HC, MRR, ARR, and % of total MRR. Click any phase row to focus the deal breakdown below on that single phase. The bottom cards segment deals by age: Healthy (&lt;3 mo) / Active Pipeline (3-6 mo) / Slow-moving (6-12 mo) / Critical (&gt;1 yr).</p>
@@ -216,13 +219,13 @@
       <tr><td><strong>Zoho HC</strong> · <strong>Fcst HC</strong></td><td>Zoho / Manual</td><td>Zoho HC read-only; <strong>Fcst HC</strong> is editable — the total you forecast (then ⇶ Spread distributes it across the months)</td></tr>
       <tr><td><strong>Zoho $/head</strong> · <strong>Fcst $/head</strong></td><td>Auto / Manual</td><td>Zoho rate (MRR ÷ Zoho HC) read-only; <strong>Fcst $/head</strong> editable (green when you confirm it) and drives Fcst MRR/ARR</td></tr>
       <tr><td><strong>Win %</strong></td><td>Zoho <code>Probability</code> / manual</td><td>✅ Win probability used in the forecast (Zoho sets it by stage)</td></tr>
-      <tr><td><strong>Target %</strong></td><td>Stage Rules</td><td>Read-only here · the default margin by stage — edit it in Settings</td></tr>
-      <tr><td><strong>Actual %</strong></td><td>Manual</td><td>✅ Real margin once the deal is priced/closed · blank until known</td></tr>
+      <tr><td><strong>Target Contrib. Margin %</strong></td><td>Stage Rules</td><td>Read-only here · the default contribution margin by stage — edit it in Settings</td></tr>
+      <tr><td><strong>Actual Contrib. Margin %</strong></td><td>Manual</td><td>✅ Real contribution margin once the deal is priced/closed · blank until known</td></tr>
       <tr><td colspan="3" style="background:#0A1928;color:#fff;font-weight:700">— Headcount Build —</td></tr>
       <tr><td><strong>Monthly columns</strong> (12)</td><td>Manual</td><td>✅ Headcount per month — when people start billing · or use ⇶ Spread</td></tr>
       <tr><td><strong>⇶ Spread</strong> · <strong>✎ Edit</strong> · <strong>✕ Delete</strong></td><td>—</td><td>Spread total HC across months · edit the deal · remove the row</td></tr>
     </table>
-    <p style="font-size:13px;color:#5a6a7a"><strong>Margin is calculated, not pulled from Zoho.</strong> The Target % comes from the Stage Rules table (managed in Settings); the Actual % is what you enter once a deal is priced. Win % is the Zoho <code>Probability</code> field.</p>
+    <p style="font-size:13px;color:#5a6a7a"><strong>Contribution margin is calculated, not pulled from Zoho.</strong> The Target Contribution Margin % comes from the Stage Rules table (managed in Settings); the Actual Contribution Margin % is what you enter once a deal is priced. Win % is the Zoho <code>Probability</code> field.</p>
     <p><strong>+ New Deal</strong> opens Zoho's new-deal form in a new tab. New deals are always created in Zoho — never locally.</p>
 
     <h3>Exporting to Excel / Google Sheets</h3>
@@ -235,19 +238,19 @@
     <div class="callout gold"><span class="ct">Numbers always match the platform</span>The export and the on-screen totals are computed by the <em>same</em> function, so they can't drift. The <strong>✓ Verify export = table</strong> button double-checks the file against the platform to the dollar — and that same check runs <strong>automatically before every export</strong>, blocking the download/copy if anything doesn't reconcile. So a file that downloaded is a file that matched.</div>
 
     <h3>6.5 — 3 mo. revenue (rolling 1-3 month forecast with Lock)</h3>
-    <p>Deep-dive on the next 3 months. Only deals flagged <strong>Fcst</strong> appear here. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), <strong>Margin $</strong> (× Margin %).</p>
+    <p>Deep-dive on the next 3 months. Only deals flagged <strong>Fcst</strong> appear here. For each, across the 3-month window: <strong>HC</strong>, <strong>Proj. Rev</strong> (HC × MRR/head), <strong>Adj. Rev</strong> (× Win %), and <strong>Contribution Margin Dollars</strong> (× Contribution Margin %).</p>
     <p><strong>🔒 Lock {month} forecast</strong> — once the numbers are right, click to snapshot them as an immutable commitment. The locked snapshot is what the accuracy bands compare against when actuals roll in.</p>
     <p><strong>Apply BDE accuracy haircut</strong> — checkbox that multiplies each cell by that BDE's historical accuracy at that horizon. Falls back to the aggregate band when a BDE has no history yet.</p>
-    <p>The <strong>Deal column is frozen</strong> here too, and the <strong>TOTALS bar stays pinned</strong> to the bottom as you scroll. The summary cards show the three numbers Finance cares about for the next 90 days: <strong>Billable HC</strong>, projected / adjusted revenue, and <strong>Margin $</strong>.</p>
+    <p>The <strong>Deal column is frozen</strong> here too, and the <strong>TOTALS bar stays pinned</strong> to the bottom as you scroll. The summary cards show the numbers Finance cares about for the next 90 days: <strong>Billable HC</strong>, projected / adjusted revenue, and <strong>Contribution Margin Dollars</strong>.</p>
 
     <h3>6.6 — 12-Month Plan (months 4-12 · output)</h3>
-    <p>A <strong>read-only output</strong> of months 4 through 12 from the rolling forecast — edit the headcount in Aureum, not here. Revenue = HC × $/head. These months use a single <strong>standard margin %</strong> and <strong>accuracy %</strong> set by a manager in Settings (defaults 30% / 15%). The Build &amp; Invoice reminder is reinforced here.</p>
+    <p>A <strong>read-only output</strong> of months 4 through 12 from the rolling forecast — edit the headcount in Aureum, not here. Revenue = HC × $/head. <strong>Adjusted Revenue and Contribution Margin Dollars are win-/margin-adjusted per deal</strong> (× stage win %, × forecast margin) — the same method as Overview and Summary, so the overlapping months reconcile across tabs. The Build &amp; Invoice reminder is reinforced here.</p>
 
     <h3>6.7 — Rolling Months 13-24 (long-term outlook)</h3>
     <p>No per-deal forecasting at this horizon. Take month-12 as the baseline (or the 9-month average) and a monthly growth rate (0.5%–10%); the model projects 12 months forward for the 2-year outlook Finance and the CEO use. The growth rate and baseline are <strong>manager-only</strong> controls.</p>
 
     <h3>6.8 — Playground (Zoho vs Manual, with approve &amp; push)</h3>
-    <p>The scenario sandbox. Side-by-side, per deal: what Zoho says today vs what you've drafted in Aureum for <strong>Headcount</strong>, <strong>MRR</strong>, <strong>Win %</strong> and <strong>Margin %</strong>. Each diff is highlighted with a Zoho → Playground arrow.</p>
+    <p>The scenario sandbox. Side-by-side, per deal: what Zoho says today vs what you've drafted in Aureum for <strong>Headcount</strong>, <strong>MRR</strong>, <strong>Win %</strong> and <strong>Contribution Margin %</strong>. Each diff is highlighted with a Zoho → Playground arrow.</p>
     <ol>
       <li><strong>Draft</strong> changes in Aureum — they show up here automatically.</li>
       <li><strong>Approve</strong> the deals whose drafts are ready (per-row checkbox). Approval is shared with the team.</li>
@@ -269,8 +272,8 @@
     <p>Customers currently producing revenue (Active / Expanding / Aureum) <strong>plus Closed Won</strong>. Current HC, MRR/head, monthly $. HC falls back to the Zoho <code>Headcounts</code> field when no monthly HC is planned — marked with a small <strong>·z</strong> beside the number.</p>
 
     <h3>6.12 — Settings (Stage Rules + Forecast Assumptions + Integrations)</h3>
-    <p><strong>Stage Rules</strong> — the default Win % and <strong>Target margin %</strong> by stage. A deal uses its own <em>actual</em> margin when set, otherwise the stage target. Margin is calculated — it is <strong>not</strong> a Zoho field.</p>
-    <p><strong>Forecast Assumptions (months 4–12)</strong> — the standard margin %, the accuracy %, and the default $/head. Manager-only controls.</p>
+    <p><strong>Stage Rules</strong> — the default Win % and <strong>Target Contribution Margin %</strong> by stage. A deal uses its own <em>actual</em> contribution margin when set, otherwise the stage target. Contribution margin is calculated — it is <strong>not</strong> a Zoho field.</p>
+    <p><strong>Forecast Assumptions</strong> — the <strong>default $/head</strong> (used when a deal has no per-deal rate and no Zoho MRR to divide). Manager-only. <em>Note: months 4–12 are now adjusted per deal (× win % and contribution margin), so there is no longer a flat months-4–12 margin/accuracy setting.</em></p>
     <p>Plus: Zoho integration status + field mapping (<code>MRR · ARR · TCV · Contract_Term_Months · Expected_Start_Date · Headcounts · Probability · Account_Status</code>), Export / Import JSON for backup, and the <strong>↻ Replay tour</strong> button.</p>
 
     <h3>★ Admin Panel (header button, admins only)</h3>
@@ -285,11 +288,11 @@
     <div class="h2-rule"></div>
     <div class="flow">ZOHO  ──(Sync)──►  Aureum Demand Forecast  ◄──(Push approved)──┐
                    │                                              │
-   you enter:  <b>Monthly HC</b> + <b>$/head</b> (optional) + <b>Win %</b> + <b>Actual margin %</b>
+   you enter:  <b>Monthly HC</b> + <b>$/head</b> (optional) + <b>Win %</b> + <b>Actual Contribution Margin %</b>
    you check:  <b>Forecast</b> ☑      (Super = auto at 100+ HC)   │
                    │                                              │
                    ▼                                              │
-   Forecast ☑ deals ──►  <b>3 mo. revenue</b>  (HC × MRR/head × Win% × Margin%) ──►  🔒 Lock
+   Forecast ☑ deals ──►  <b>3 mo. revenue</b>  (HC × MRR/head × Win% × Contribution Margin%) ──►  🔒 Lock
                                                                        │
                                                                        ▼
                                                        <b>Forecast Accuracy</b> bands (per BDE)
@@ -300,7 +303,7 @@
                    │
                    ▼
    <b>Overview</b> + <b>Pipeline</b> (5-phase investor view)</div>
-    <p><strong>The levers you pull:</strong> Monthly HC drives projected revenue · $/head (override → MRR÷HC → default) is the price per head · Win % (Zoho <code>Probability</code>) discounts by likelihood · Margin % (target from Stage Rules, or the actual you enter) produces the cash-flow number · Anchor month slides the window · the Phase filter + Forecast checkbox decide what shows up where (Super is automatic at 100+ HC) · 🔒 Lock commits a forecast as the immutable accuracy baseline.</p>
+    <p><strong>The levers you pull:</strong> Monthly HC drives projected revenue · $/head (override → MRR÷HC → default) is the price per head · Win % (Zoho <code>Probability</code>) discounts by likelihood · Contribution Margin % (target from Stage Rules, or the actual you enter) produces the contribution number · Anchor month slides the window · the Phase filter + Forecast checkbox decide what shows up where (Super is automatic at 100+ HC) · 🔒 Lock commits a forecast as the immutable accuracy baseline.</p>
 
     <h2><span class="num">8</span>Recommended rhythm</h2>
     <div class="h2-rule"></div>
