@@ -107,6 +107,8 @@
   td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
   tr:last-child td { border-bottom: none; }
   tr:hover td { background: #fafbfc; }
+  /* Colored total / size-band bars keep their fill on hover (don't flash white). */
+  tr.pl-total:hover td { background: transparent; }
   /* Bottom summary bands keep their dark color on hover (no white flash). */
   .grid-tbl tr.sumrow:hover td { background: transparent; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -155,6 +157,11 @@
   /* Sticky TOTALS bar — stays pinned to the bottom of a scrolling grid. */
   .scroll-x table.grid-tbl tr.totals-row td { position: sticky; bottom: 0; z-index: 7; background: var(--navy); color: #fff; box-shadow: 0 -1px 0 rgba(255,255,255,0.18); }
   .scroll-x table.grid-tbl tr.totals-row td.freeze-deal { z-index: 8; }
+  /* Frozen bottom summary band (Aureum) — Michael's ask. Each summary row sticks to its OWN bottom
+     offset (--fz) so the rows stack instead of piling on bottom:0 (the prior overlap bug). --sumbg
+     paints each cell so it occludes the deal rows scrolling underneath. */
+  .scroll-x table.grid-tbl tr.sumrow.frz td { position: sticky; bottom: var(--fz, 0); z-index: 7; background: var(--sumbg, var(--navy)); height: 28px; box-sizing: border-box; }
+  .grid-tbl tr.sumrow.frz:hover td { background: var(--sumbg, var(--navy)); }
 
   .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 10.5px; color: var(--muted); margin-top: 8px; align-items: center; }
   .legend .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: middle; margin-right: 5px; }
@@ -2469,9 +2476,14 @@ function _segForecast(segDeals, monthKeys, growthMult){
   growthMult = growthMult || 1;
   var t = forecastTotals(monthKeys, segDeals);
   var n = monthKeys.length || 1;
-  var mrr = (sumArr(t.proj) / n) * growthMult;
-  var con = (sumArr(t.margin) / n) * growthMult;
-  return { hc: (sumArr(t.hc) / n) * growthMult, mrr: mrr, contrib: con, contribPct: mrr ? con / mrr : 0 };
+  var mrr  = (sumArr(t.proj)   / n) * growthMult;   // gross projected MRR (monthly avg)
+  var aMrr = (sumArr(t.adj)    / n) * growthMult;   // win-adjusted MRR (monthly avg)
+  var con  = (sumArr(t.margin) / n) * growthMult;   // contribution $ = win-adjusted MRR × margin
+  // Contribution MARGIN % is a margin ratio: contribution ÷ the revenue it was earned on (the
+  // win-adjusted MRR), so the win rate cancels and the % reads as the blended margin (~35%), NOT
+  // margin × win (~14%). Dividing by GROSS MRR baked the win rate into the %, deflating it — that
+  // was the 14% Michael flagged as impossible (nothing is forecast below ~20-25% margin).
+  return { hc: (sumArr(t.hc) / n) * growthMult, mrr: mrr, adjMrr: aMrr, contrib: con, contribPct: aMrr ? con / aMrr : 0 };
 }
 var summaryView = 'horizon';   // 'horizon' (Forecast/PMFF/B(w) by bucket) or 'month' (Forecast by month)
 function setSummaryView(v){ summaryView = v; renderSummary(); }
@@ -2498,7 +2510,7 @@ function renderSummary(){
 
   var html = '';
   html += '<div class="page-title"><div><h1>Forecast Summary Statistics</h1><div class="sub">Existing / New / Total accounts · Forecast vs Prior-Month Financial Forecast (PMFF) → Better/(Worse). Monthly averages per horizon; Months 13-24 is a top-down projection at ' + (g*100).toFixed(1) + '%/mo.</div></div></div>';
-  html += '<div style="margin:0 0 14px;padding:10px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:12px;color:var(--navy)"><b>Draft for review with Finance.</b> Headcount = avg monthly HC · MRR = avg monthly MRR · Contribution = win-/margin-adjusted · Contribution % = Contribution ÷ MRR. "Existing" = account already Active/Expanding; "New" = net-new logo. Type the CFO\'s prior-month financial forecast in the <b>PMFF</b> cells to see Better/(Worse). Use <b>By month</b> (top) for the monthly Forecast. <i>(The Existing/New split &amp; Months 13-24 are slated for 2027.)</i></div>';
+  html += '<div style="margin:0 0 14px;padding:10px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:12px;color:var(--navy)"><b>Draft for review with Finance.</b> Headcount = avg monthly HC · MRR = avg monthly MRR · Contribution $ = win-/margin-adjusted · Contribution % = Contribution ÷ <b>win-adjusted</b> MRR (so it reads as the blended contribution margin %, ~25-45% — not margin × win rate). "Existing" = account already Active/Expanding; "New" = net-new logo. The CFO enters the prior-month financial forecast (<b>PMFF</b>) in the <b>By month</b> view (toggle at top) — one entry point only. This <b>By horizon</b> view totals it up (read-only) and shows Better/(Worse). <i>(The Existing/New split &amp; Months 13-24 are slated for 2027.)</i></div>';
 
   html += '<div style="margin:0 0 12px;display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--muted);margin-right:4px">View:</span>'
     + '<button class="btn btn-sm ' + (summaryView === 'month' ? 'btn-ghost' : 'btn-primary') + '" onclick="setSummaryView(\'horizon\')">By horizon</button>'
@@ -2513,7 +2525,7 @@ function renderSummary(){
       if (mk==='hc')      return t.hc[i]     ? Math.round(t.hc[i])     : null;
       if (mk==='mrr')     return t.proj[i]   ? Math.round(t.proj[i])   : null;
       if (mk==='contrib') return t.margin[i] ? Math.round(t.margin[i]) : null;
-      return t.proj[i] ? Math.round(t.margin[i]/t.proj[i]*1000)/10 : null;   // contribution % (points)
+      return t.adj[i] ? Math.round(t.margin[i]/t.adj[i]*1000)/10 : null;   // contribution margin % = contribution ÷ win-adjusted MRR (so win cancels → blended margin, not margin × win)
     };
     segs.forEach(function(seg){
       var t = forecastTotals(monthsAll, seg.deals);
@@ -2619,22 +2631,15 @@ function renderSummary(){
       horizons.forEach(function(h){
         var num = fNum(fc[h.key], mt.key);
         html += '<td class="num" style="border-left:2px solid var(--gold)">' + fTxt(num, mt.key) + '</td>';
-        var pUsed = null, roVal = null, roWhy = '';
-        if (seg.key === 'total') {
-          var derived = totalPmff(h.key, mt.key);
-          if (derived !== null) { pUsed = derived; roVal = derived; roWhy = 'Auto: Existing + New'; }
-        } else {
-          var ep = effPmff(seg.key, h.key, mt.key);
-          if (ep.fromMonthly) { pUsed = ep.val; roVal = ep.val; roWhy = 'Rolled up from the by-month PMFF (monthly average)'; }
-        }
-        if (roVal !== null) {
-          var dtxt = (mt.key === 'contribPct') ? roVal.toFixed(1) + '%' : (mt.key === 'hc') ? (Math.round(roVal*10)/10).toFixed(1) : fmt$k(roVal);
+        // PMFF is READ-ONLY here. It's typed in the By-month view ONLY, so this By-horizon view always
+        // TOTALS from the monthly page and the two can never disagree (Michael: no double entry).
+        var pUsed = (seg.key === 'total') ? totalPmff(h.key, mt.key) : effPmff(seg.key, h.key, mt.key).val;
+        var roWhy = (seg.key === 'total') ? 'Auto: Existing + New (rolled up from the by-month PMFF)' : 'Rolled up from the by-month PMFF (monthly average)';
+        if (pUsed != null) {
+          var dtxt = (mt.key === 'contribPct') ? pUsed.toFixed(1) + '%' : (mt.key === 'hc') ? (Math.round(pUsed*10)/10).toFixed(1) : fmt$k(pUsed);
           html += '<td class="num" style="color:var(--muted)" title="' + roWhy + '">' + dtxt + '</td>';
         } else {
-          var stored = pmffVal(seg.key, h.key, mt.key);
-          pUsed = stored;
-          var unit = (mt.key === 'mrr' || mt.key === 'contrib') ? 'dollars' : (mt.key === 'contribPct' ? 'percent (e.g. 35)' : 'headcount');
-          html += '<td class="num"><input class="margin pmff-input" type="number" step="any" value="' + (stored != null ? stored : '') + '" placeholder="—" ' + (editable ? '' : 'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + h.key + '\',\'' + mt.key + '\', this.value)" style="width:72px" title="PMFF (' + unit + '). High-level entry — or fill it month-by-month and this shows the monthly average.' + (seg.key === 'total' ? ' Total auto-sums Existing + New.' : '') + '"></td>';
+          html += '<td class="num" style="color:var(--muted)" title="Enter PMFF in the By-month view (toggle at the top)">—</td>';
         }
         if (pUsed == null) { html += '<td class="num" style="color:var(--muted)">—</td>'; }
         else {
@@ -2706,11 +2711,56 @@ function renderOverview() {
     html += '<div style="margin:0 0 14px;padding:8px 14px;background:#e8f5e9;border-left:4px solid var(--success);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)"><b>🔒 ' + monthLabel(anchor) + ' forecast is locked.</b> Stamped by <b>' + esc(anchorSnap.lockedBy || '—') + '</b> on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString() + '. Accuracy will be measured against this snapshot when actuals land.</div>';
   }
 
+  // ── Calendar horizons (Michael's single summary table). 2026 in detail (3-mo / remainder / full
+  // year), then full-year totals for 2027 and a top-down 2028 — the same 3-totals structure Michael
+  // wants across every financial summary. Full Year 2026 = 3-Month + Remainder (reconciles as the sum).
+  var anchorYr = parseInt(anchor.split('-')[0]), y2 = anchorYr + 1, y3 = anchorYr + 2;
+  var fyMonths = []; var _c = anchor; var _decKey = anchorYr + '-12';
+  while (_c <= _decKey) { fyMonths.push(_c); _c = monthKeyAfter(_c, 1); }
+  var remMonths = fyMonths.filter(function(m){ return months.indexOf(m) < 0; });
+  var y2Months = []; for (var _k = 1; _k <= 12; _k++) y2Months.push(y2 + '-' + ('0' + _k).slice(-2));
+  var g = getDefaultGrowthPct() / 100;
+  // Per-horizon metrics: avg monthly MRR + period totals for adjusted revenue / contribution / HC.
+  function _mx(t, n){ return { mrr: n ? sumArr(t.proj) / n : 0, proj: sumArr(t.proj), adj: sumArr(t.adj), con: sumArr(t.margin), hc: Math.round(sumArr(t.hc)) }; }
+  var x3  = _mx(ft, months.length);
+  var xRem = _mx(forecastTotals(remMonths), remMonths.length);
+  var xFy  = _mx(forecastTotals(fyMonths), fyMonths.length);
+  var xY2  = _mx(forecastTotals(y2Months), 12);
+  // 2028 is top-down (Michael: "a flat percentage off the forecast"): 2027 × (1 + growth%); HC carried.
+  var xY3  = { mrr: xY2.mrr * (1 + g), proj: xY2.proj * (1 + g), adj: xY2.adj * (1 + g), con: xY2.con * (1 + g), hc: xY2.hc };
+  var cols = [
+    { label:'3-Month Total',                 sub: monthLabel(months[0]) + ' – ' + monthLabel(months[months.length-1]), x: x3 },
+    { label:'Remainder of ' + anchorYr + ' Total', sub: remMonths.length ? (monthLabel(remMonths[0]) + ' – ' + monthLabel(remMonths[remMonths.length-1])) : 'none left this year', x: xRem },
+    { label:'Full Year ' + anchorYr + ' Total',    sub: monthLabel(fyMonths[0]) + ' – ' + monthLabel(fyMonths[fyMonths.length-1]), x: xFy },
+    { label:'Full Year ' + y2 + ' Total',          sub: monthLabel(y2Months[0]) + ' – ' + monthLabel(y2Months[11]), x: xY2 },
+    { label:'Full Year ' + y3 + ' Total',          sub: 'top-down · +' + Math.round(g*100) + '%/yr off ' + y2, x: xY3 }
+  ];
+
+  // ── Top: deal-count KPIs (all auto-update: Total from Zoho sync; the rest from the live Fcst set). ──
+  var fset = forecastDeals();
+  function _activeIn(mks){ return fset.filter(function(d){ return mks.some(function(m){ return ((d.monthlyHC || {})[m] || 0) > 0; }); }).length; }
+  var nFcst = fset.length, n3 = _activeIn(months), nRem = _activeIn(remMonths);
   html += '<div class="stat-grid">';
-  html += statCard('Total Deals',     totalDeals,                   pipelineDeals + ' in pipeline · ' + aureumDeals + ' super-deals', 'gold');
-  html += statCard('Forecasted HC (3mo)', totalHc,                   monthLabel(months[0]) + ' → ' + monthLabel(months[2]), 'aureum');
-  html += statCard('Adj. Revenue (3mo)',  fmt$k(totalAdj),           'Win-rate-adjusted', 'good');
-  html += statCard('Contribution $ (3mo)', fmt$k(totalMargin),       'Adjusted × Contribution Margin %', 'good');
+  html += statCard('Total Deals · Pipeline', totalDeals, pipelineDeals + ' in pipeline · ' + aureumDeals + ' super-deals · from Zoho', 'gold');
+  html += statCard('Total in Forecast (Fcst)', nFcst, 'Fcst-checked in Aureum · Closed Won excluded', 'aureum');
+  html += statCard('Total Forecast · Next 3 Months', n3, monthLabel(months[0]) + ' – ' + monthLabel(months[months.length-1]) + ' · billing', 'good');
+  html += statCard('Total Forecast · Rest of ' + anchorYr, nRem, (remMonths.length ? monthLabel(remMonths[0]) + ' – ' + monthLabel(remMonths[remMonths.length-1]) : 'none left') + ' · billing', 'good');
+  html += '</div>';
+
+  // ── Single summary table. Michael: lead with the Average MRR (the number to keep in your head),
+  // then contribution dollars and headcount below, in the same table. ──
+  html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Summary — ' + anchorYr + '–' + y3 + '</span><span class="card-sub">Average MRR is monthly · Adjusted Revenue &amp; Contribution Margin Dollars are period totals · ' + y3 + ' is top-down</span></div>';
+  html += '<table><thead><tr><th>Metric</th>';
+  cols.forEach(function(c){ html += '<th class="num">' + esc(c.label) + '<div style="font-size:10px;color:var(--muted);font-weight:400">' + esc(c.sub) + '</div></th>'; });
+  html += '</tr></thead><tbody>';
+  // Lead row — Average MRR, highlighted so it is the first thing you see.
+  html += '<tr style="background:#fff8e1"><td><b>Average MRR</b> <span style="color:var(--muted);font-size:11px">(monthly recurring revenue)</span></td>' + cols.map(function(c){ return '<td class="num num-bold" style="color:var(--navy)">' + fmt$k(c.x.mrr) + '</td>'; }).join('') + '</tr>';
+  html += '<tr><td>Projected Revenue <span style="color:var(--muted);font-size:11px">(gross · period total)</span></td>' + cols.map(function(c){ return '<td class="num">' + fmt$k(c.x.proj) + '</td>'; }).join('') + '</tr>';
+  html += '<tr><td>Adjusted Revenue <span style="color:var(--muted);font-size:11px">(win-rate-adjusted · period total)</span></td>' + cols.map(function(c){ return '<td class="num">' + fmt$k(c.x.adj) + '</td>'; }).join('') + '</tr>';
+  html += '<tr><td>Contribution Margin Dollars <span style="color:var(--muted);font-size:11px">(win- &amp; margin-adjusted · period total)</span></td>' + cols.map(function(c){ return '<td class="num num-bold">' + fmt$k(c.x.con) + '</td>'; }).join('') + '</tr>';
+  html += '<tr><td>Forecast Headcount <span style="color:var(--muted);font-size:11px">(cumulative HC-months)</span></td>' + cols.map(function(c){ return '<td class="num">' + c.x.hc + '</td>'; }).join('') + '</tr>';
+  html += '</tbody></table>';
+  html += '<div style="padding:6px 14px;font-size:11px;color:var(--muted)">Full Year ' + anchorYr + ' = 3-Month + Remainder (' + monthLabel(fyMonths[0]) + ' → ' + monthLabel(fyMonths[fyMonths.length-1]) + '). Full Year ' + y2 + ' = the calendar ' + y2 + ' build. ' + y3 + ' is top-down: ' + y2 + ' grown +' + Math.round(g*100) + '%/yr (headcount carried). Set the growth % in Aureum Demand Forecast.</div>';
   html += '</div>';
 
 
@@ -2718,23 +2768,9 @@ function renderOverview() {
   html += '<table><thead><tr><th>Metric</th><th class="num">' + monthLabel(months[0]) + '</th><th class="num">' + monthLabel(months[1]) + '</th><th class="num">' + monthLabel(months[2]) + '</th><th class="num">3-mo Total</th></tr></thead><tbody>';
   html += '<tr><td>Forecasted Headcount</td>' + totals.hc.map(function(v){ return '<td class="num num-bold">' + v + '</td>'; }).join('') + '<td class="num num-bold">' + totalHc + '</td></tr>';
   html += '<tr><td>Projected MRR (monthly)</td>'   + totals.proj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totals.proj.reduce(function(s,v){return s+v;},0)) + '</td></tr>';
-  html += '<tr><td>Adj. MRR (× win rate)</td>' + totals.adj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalAdj) + '</td></tr>';
-  html += '<tr><td>Contribution $ (× contribution margin %)</td>' + totals.margin$.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalMargin) + '</td></tr>';
+  html += '<tr><td>Adj. MRR <span style="color:var(--muted);font-size:11px">(win-rate-adjusted)</span></td>' + totals.adj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalAdj) + '</td></tr>';
+  html += '<tr><td>Contribution Margin Dollars <span style="color:var(--muted);font-size:11px">(win- &amp; margin-adjusted)</span></td>' + totals.margin$.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalMargin) + '</td></tr>';
   html += '</tbody></table></div>';
-
-  // Rolling months 4–12 — the lighter horizon, with its own accuracy % and standard margin.
-  var m412 = rollingMonths(monthKeyAfter(anchor, 3), 9);
-  var ft412 = forecastTotals(m412);
-  var hc412 = sumArr(ft412.hc), proj412 = sumArr(ft412.proj);
-  var mAcc = getMidtermAccuracy(), mMar = getMidtermMargin();
-  var adj412 = proj412 * mAcc, mar412 = adj412 * mMar;
-  html += '<div class="card"><div class="card-header"><span class="card-title">Rolling Months 4–12</span><span class="card-sub">' + monthLabel(m412[0]) + ' → ' + monthLabel(m412[m412.length-1]) + ' · lighter horizon · accuracy ' + Math.round(mAcc*100) + '% · standard margin ' + Math.round(mMar*100) + '%</span></div>';
-  html += '<div class="stat-grid" style="margin-bottom:0">';
-  html += statCard('Forecasted HC (4–12)', hc412,          'cumulative HC-months (Σ monthly HC, not a headcount)');
-  html += statCard('Projected Rev (4–12)', fmt$k(proj412), '9-month TOTAL (Σ monthly MRR), not monthly');
-  html += statCard('Adj. Revenue (4–12)',  fmt$k(adj412),  '× ' + Math.round(mAcc*100) + '% accuracy', 'gold');
-  html += statCard('Contribution $ (4–12)', fmt$k(mar412), '× ' + Math.round(mMar*100) + '% standard contribution margin', 'good');
-  html += '</div></div>';
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Reliability by Horizon</span><span class="card-sub">' + (bands.m0.isDefault ? 'Default values — accumulates as snapshots build up' : 'Computed from ' + bands.m0.n + '/' + bands.m1.n + '/' + bands.m2.n + ' historical snapshots') + '</span></div>';
   html += '<div class="acc-bands">';
@@ -2873,7 +2909,7 @@ function forecastCoverageCardHtml() {
     h += '<td class="num" style="padding:9px 12px;border-left:1px solid var(--border)">'+fmt$k(r.fM)+' / '+fmt$k(r.pM)+'</td><td class="num" style="padding:9px 12px;font-weight:700;color:'+covColor(r.fM,r.pM)+'">'+pct(r.fM,r.pM)+'</td>';
     h += '</tr>';
   });
-  h += '<tr style="background:var(--navy);color:white;font-weight:700">';
+  h += '<tr class="pl-total" style="background:var(--navy);color:white;font-weight:700">';
   h += '<td style="padding:10px 12px;color:white">TOTAL — Recruitment + Pricing + Legal</td>';
   h += '<td class="num" style="padding:10px 12px;color:white;border-left:1px solid rgba(255,255,255,.25)">'+tot.fD+' / '+tot.pD+'</td><td class="num" style="padding:10px 12px;color:var(--gold)">'+pct(tot.fD,tot.pD)+'</td>';
   h += '<td class="num" style="padding:10px 12px;color:white;border-left:1px solid rgba(255,255,255,.25)">'+tot.fH.toLocaleString()+' / '+tot.pH.toLocaleString()+'</td><td class="num" style="padding:10px 12px;color:var(--gold)">'+pct(tot.fH,tot.pH)+'</td>';
@@ -3027,7 +3063,7 @@ function renderPipelineOverview() {
           var groupHC  = arr.reduce(function(s,d){return s+dealHcForRollup(d);},0);
           var groupMRR = arr.reduce(function(s,d){return s+dealMRR(d);},0);
           var groupARR = arr.reduce(function(s,d){return s+dealARR(d);},0);
-          html += '<tr style="background:' + g.bg + ';color:' + g.color + '">';
+          html += '<tr class="pl-total" style="background:' + g.bg + ';color:' + g.color + '">';
           html += '<td colspan="2" style="padding:8px 12px"><span style="padding:3px 9px;background:rgba(255,255,255,.18);border-radius:14px;font-size:10px;font-weight:700;letter-spacing:.4px;margin-right:8px">' + g.label + '</span>' + arr.length + ' DEAL' + (arr.length > 1 ? 'S' : '') + ' · ' + g.range + '</td>';
           html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + groupHC.toLocaleString() + '</td>';
           html += '<td style="text-align:right;padding:8px 12px">' + (groupHC > 0 ? fmt$k(groupMRR/groupHC) : '—') + '</td>';
@@ -3057,7 +3093,7 @@ function renderPipelineOverview() {
         });
 
         // Summary row
-        html += '<tr style="background:#3a6fb2;color:white;font-weight:700">';
+        html += '<tr class="pl-total" style="background:#3a6fb2;color:white;font-weight:700">';
         html += '<td colspan="2" style="padding:10px 12px;text-transform:uppercase;letter-spacing:.4px;font-size:11px">Summary</td>';
         html += '<td style="text-align:right;padding:10px 12px">' + stat.hc.toLocaleString() + '</td>';
         html += '<td style="text-align:right;padding:10px 12px">' + (stat.hc > 0 ? fmt$k(stat.mrr/stat.hc) : '—') + '</td>';
@@ -3232,27 +3268,53 @@ function verifyAureumExport() {
   }
   return { ok: diffs.length === 0, diffs: diffs, deals: ds.length };
 }
+// In-app modal dialogs with guaranteed-ENGLISH buttons. The native confirm()/alert() label their
+// buttons in the OS language ("Aceptar/Cancelar" on a Spanish machine — Michael flagged this on the
+// export dialog). These keep the wording in English regardless of the computer's locale.
+function _uiModal(message, buttons) {
+  var ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(10,25,40,.55);z-index:99999;display:flex;align-items:center;justify-content:center';
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#fff;max-width:480px;width:90%;border-radius:10px;padding:20px 22px;box-shadow:0 12px 44px rgba(0,0,0,.32);font-size:13px;color:var(--navy);white-space:pre-line;line-height:1.55';
+  var msg = document.createElement('div'); msg.style.marginBottom = '16px'; msg.textContent = message;
+  var row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+  box.appendChild(msg); box.appendChild(row); ov.appendChild(box); document.body.appendChild(ov);
+  function close(){ try { document.body.removeChild(ov); } catch(e) {} }
+  buttons.forEach(function(b){
+    var btn = document.createElement('button');
+    btn.className = 'btn btn-sm ' + (b.primary ? 'btn-gold' : 'btn-ghost');
+    btn.textContent = b.label;
+    btn.onclick = function(){ close(); if (b.onClick) b.onClick(); };
+    row.appendChild(btn);
+  });
+}
+function uiAlert(message, okLabel) { _uiModal(message, [{ label: okLabel || 'OK', primary: true }]); }
+function uiConfirm(message, onYes, yesLabel) {
+  _uiModal(message, [{ label: 'Cancel' }, { label: yesLabel || 'Continue', primary: true, onClick: onYes }]);
+}
 function runExportQc() {
   var r = verifyAureumExport();
   logActivity('Forecast', 'QC export vs table', r.ok ? 'OK · ' + r.deals + ' deals' : r.diffs.length + ' discrepancies');
   if (r.ok) {
-    alert('✓ Export reconciled with the table\n\n' + r.deals + ' forecast row(s) checked.\nEvery monthly and yearly total in the export matches the platform exactly, and each total equals the sum of its own rows.\n\nSafe to send to Finance.');
+    uiAlert('✓ Export reconciled with the table\n\n' + r.deals + ' forecast row(s) checked.\nEvery monthly and yearly total in the export matches the platform exactly, and each total equals the sum of its own rows.\n\nSafe to send to Finance.');
   } else {
-    alert('⚠ EXPORT DISCREPANCY (' + r.diffs.length + ' found)\n\n' + r.diffs.slice(0, 12).join('\n') + (r.diffs.length > 12 ? '\n…and ' + (r.diffs.length - 12) + ' more' : '') + '\n\nDo NOT send this to Finance — tell Carlos.');
+    uiAlert('⚠ EXPORT DISCREPANCY (' + r.diffs.length + ' found)\n\n' + r.diffs.slice(0, 12).join('\n') + (r.diffs.length > 12 ? '\n…and ' + (r.diffs.length - 12) + ' more' : '') + '\n\nDo NOT send this to Finance — tell Carlos.');
   }
 }
 // Reminder shown before any export: states exactly what scope will be exported (it follows the
 // on-screen Aureum filters) so nobody accidentally sends "all deals" when they meant forecast-only.
-function _aureumExportConfirm(kindLabel) {
+function _aureumExportConfirmText(kindLabel) {
   var ds = forecastDeals();
-  return confirm(kindLabel + '\n\nYou are about to export ' + ds.length + ' forecasted deal(s).\n' +
+  return kindLabel + '\n\nYou are about to export ' + ds.length + ' forecasted deal(s).\n' +
     'Scope: FORECAST ONLY (Fcst checked, Closed Won excluded) — the on-screen filters don\'t change this.\n' +
-    'Columns: 2026 monthly build + totals, 2027 monthly build + totals, and a top-down 2028 total.\n\nContinue?');
+    'Columns: 2026 monthly build + totals, 2027 monthly build + totals, and a top-down 2028 total.\n\nContinue?';
 }
 function downloadAureumCsv() {
-  if (!_aureumExportConfirm('⬇ Download Excel')) return;
+  uiConfirm(_aureumExportConfirmText('⬇ Download Excel'), _downloadAureumCsvGo, 'Download');
+}
+function _downloadAureumCsvGo() {
   var _qc = verifyAureumExport();   // hard gate: a file with any discrepancy never reaches Finance
-  if (!_qc.ok) { logActivity('Forecast', 'Export BLOCKED — QC mismatch', _qc.diffs.length + ' diffs'); alert('⚠ Download blocked — the export does not match the table:\n\n' + _qc.diffs.slice(0, 8).join('\n') + '\n\nNothing was downloaded. Tell Carlos.'); return; }
+  if (!_qc.ok) { logActivity('Forecast', 'Export BLOCKED — QC mismatch', _qc.diffs.length + ' diffs'); uiAlert('⚠ Download blocked — the export does not match the table:\n\n' + _qc.diffs.slice(0, 8).join('\n') + '\n\nNothing was downloaded. Tell Carlos.'); return; }
   // Formatted .xls (HTML-table flavour Excel reads) — bold navy header, shaded TOTAL rows,
   // right-aligned numbers. Opens formatted in Excel AND in Google Sheets (upload to Drive).
   var rows = _aureumExportMatrix();
@@ -3282,17 +3344,19 @@ function downloadAureumCsv() {
   a.click();
   setTimeout(function(){ try { document.body.removeChild(a); } catch(e) {} URL.revokeObjectURL(url); }, 1500);
   logActivity('Forecast', 'Download Excel', Math.max(0, rows.length - 7) + ' deals exported');
-  alert('Downloaded "' + fname + '" (formatted Excel) — check your Downloads folder. Opens in Excel; for Google Sheets, upload it to Drive and it keeps the formatting.');
+  uiAlert('Downloaded "' + fname + '" (formatted Excel) — check your Downloads folder. Opens in Excel; for Google Sheets, upload it to Drive and it keeps the formatting.');
 }
 // Copy as tab-separated text — paste straight into a blank Google Sheet (Ctrl+V) and it fills the
 // columns. Smoothest path for Google Workspace (no file handling). READ-ONLY.
 function copyAureumForSheets() {
-  if (!_aureumExportConfirm('📋 Copy for Google Sheets')) return;
+  uiConfirm(_aureumExportConfirmText('📋 Copy for Google Sheets'), _copyAureumForSheetsGo, 'Copy');
+}
+function _copyAureumForSheetsGo() {
   var _qc = verifyAureumExport();   // hard gate: never copy a set that doesn't reconcile with the table
-  if (!_qc.ok) { logActivity('Forecast', 'Copy BLOCKED — QC mismatch', _qc.diffs.length + ' diffs'); alert('⚠ Copy blocked — the export does not match the table:\n\n' + _qc.diffs.slice(0, 8).join('\n') + '\n\nNothing was copied. Tell Carlos.'); return; }
+  if (!_qc.ok) { logActivity('Forecast', 'Copy BLOCKED — QC mismatch', _qc.diffs.length + ' diffs'); uiAlert('⚠ Copy blocked — the export does not match the table:\n\n' + _qc.diffs.slice(0, 8).join('\n') + '\n\nNothing was copied. Tell Carlos.'); return; }
   var rows = _aureumExportMatrix();
   var tsv = rows.map(function(r){ return r.map(function(s){ return (s == null ? '' : String(s)).replace(/[\t\n]/g, ' '); }).join('\t'); }).join('\n');
-  function done(){ logActivity('Forecast', 'Copy for Sheets', Math.max(0, rows.length - 7) + ' deals'); alert('Copied ✓\n\nOpen a blank Google Sheet and paste (Ctrl+V) — it fills the columns automatically.'); }
+  function done(){ logActivity('Forecast', 'Copy for Sheets', Math.max(0, rows.length - 7) + ' deals'); uiAlert('Copied ✓\n\nOpen a blank Google Sheet and paste (Ctrl+V) — it fills the columns automatically.'); }
   function fallback(){ var ta = document.createElement('textarea'); ta.value = tsv; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.focus(); ta.select(); try { document.execCommand('copy'); } catch(e) {} document.body.removeChild(ta); done(); }
   if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(tsv).then(done, fallback); }
   else fallback();
@@ -3311,7 +3375,10 @@ function aureumFilteredDeals(deals) {
     if (!passMulti('aureum', 'status', d.status)) return false;
     if (!passMulti('aureum', 'stage',  d.stage))  return false;
     if (!passMulti('aureum', 'bde',    d.bde))    return false;
-    if (f.forecastOnly && !d.inForecast) return false;
+    // "Forecast only" = the SAME set as forecastDeals() everywhere else: Fcst-checked AND not Closed
+    // Won (Closed Won is captured in cash flow, never forecasted). So Aureum's count/totals reconcile
+    // with the Overview, Summary and export (all 63, not 67).
+    if (f.forecastOnly && (!d.inForecast || phaseForDeal(d) === 5)) return false;
     if (f.superOnly    && !isSuperDeal(d)) return false;
     if (f.phaseFilterOn) {
       var pid = phaseForDeal(d);
@@ -3585,7 +3652,7 @@ function renderAureumGrid() {
   var goldBox2 = 'border-left:2px solid var(--gold);border-right:2px solid var(--gold);';
   var yTotCss = 'color:var(--gold);' + goldBox + 'font-weight:800';
   // Gross HC by month (a gold top border separates the summary block from the deal rows).
-  html += '<tr class="sumrow" style="background:var(--navy);color:#fff;font-weight:700;border-top:3px solid var(--gold)">';
+  html += '<tr class="sumrow frz" style="background:var(--navy);color:#fff;font-weight:700;border-top:3px solid var(--gold);--fz:140px;--sumbg:var(--navy)">';
   html += '<td colspan="7" style="color:#fff">TOTALS (' + filtered.length + ' deals)</td>';
   html += '<td colspan="2"></td>';                                                   // Start Date + Contract
   html += '<td class="num" style="color:#fff">' + (tot.zohoHC || '—') + '</td>';      // Zoho HC
@@ -3607,7 +3674,7 @@ function renderAureumGrid() {
   html += '<td></td></tr>';
 
   // Gross MRR by month
-  html += '<tr class="sumrow" style="background:#13233b;color:var(--gold);font-weight:700">';
+  html += '<tr class="sumrow frz" style="background:#13233b;color:var(--gold);font-weight:700;--fz:112px;--sumbg:#13233b">';
   html += '<td colspan="7" style="color:var(--gold)">MRR / month (gross)</td>';
   html += '<td colspan="2"></td><td colspan="11"></td><td></td>';
   html += '<td style="color:var(--gold);font-size:10px;' + goldL2 + '">MRR / mo</td>';
@@ -3620,8 +3687,8 @@ function renderAureumGrid() {
   html += '<td></td></tr>';
 
   // ── ADJUSTED by month (Eric/John ask): win-rate- and margin-adjusted, month by month ──
-  function adjRow(label, sublabel, fg, arrY1, arrY2, t1, t2, t3, fmtFn) {
-    var h = '<tr class="sumrow" style="background:#13233b;color:' + fg + ';font-weight:700">';
+  function adjRow(label, sublabel, fg, arrY1, arrY2, t1, t2, t3, fmtFn, fz) {
+    var h = '<tr class="sumrow frz" style="background:#13233b;color:' + fg + ';font-weight:700;--fz:' + fz + 'px;--sumbg:#13233b">';
     h += '<td colspan="7" style="color:' + fg + '">' + label + '</td>';
     h += '<td colspan="2"></td><td colspan="11"></td><td></td>';
     h += '<td style="color:' + fg + ';font-size:10px;' + goldL2 + '">' + sublabel + '</td>';
@@ -3637,13 +3704,13 @@ function renderAureumGrid() {
   function _sum(a){ return a.reduce(function(s,v){ return s + v; }, 0); }
   var rnd = function(v){ return Math.round(v); };
   // Section divider (clean — no gold lines)
-  html += '<tr class="sumrow" style="background:#0A1928;color:#7fa8d8;font-weight:700"><td colspan="20" style="color:#7fa8d8;font-size:11px;text-transform:uppercase;letter-spacing:.4px">↓ Adjusted (× Win % and Forecast Margin)</td><td></td><td></td><td colspan="' + (N1 + 1) + '"></td><td colspan="13"></td><td colspan="2"></td><td></td></tr>';
+  html += '<tr class="sumrow frz" style="background:#0A1928;color:#7fa8d8;font-weight:700;--fz:84px;--sumbg:#0A1928"><td colspan="20" style="color:#7fa8d8;font-size:11px;text-transform:uppercase;letter-spacing:.4px">↓ Adjusted (× Win % and Forecast Margin)</td><td></td><td></td><td colspan="' + (N1 + 1) + '"></td><td colspan="13"></td><td colspan="2"></td><td></td></tr>';
   // Adjusted HC is probability-weighted, so it's fractional — show 1 decimal (e.g. 5.5, not 6) so
   // the weighted math reconciles with a by-hand check (Eric's ask: 3×100% + 5×50% = 5.5).
   var hcDec = function(v){ return (Math.round(v * 10) / 10).toFixed(1); };
-  html += adjRow('Adj. Headcount / month', 'Adj HC', '#9ecbff', tot.aHcY1, tot.aHcY2, _sum(tot.aHcY1), _sum(tot.aHcY2), _sum(tot.aHcY2), hcDec);
-  html += adjRow('Adj. MRR / month', 'Adj MRR', '#9ecbff', tot.aMrrY1, tot.aMrrY2, tot.y1w, tot.y2w, tot.y3w, fmt$k);
-  html += adjRow('Adj. Margin $ / month (contribution)', 'Contribution', '#aef0bd', tot.aMgnY1, tot.aMgnY2, tot.y1c, tot.y2c, tot.y3c, fmt$k);
+  html += adjRow('Adj. Headcount / month', 'Adj HC', '#9ecbff', tot.aHcY1, tot.aHcY2, _sum(tot.aHcY1), _sum(tot.aHcY2), _sum(tot.aHcY2), hcDec, 56);
+  html += adjRow('Adj. MRR / month', 'Adj MRR', '#9ecbff', tot.aMrrY1, tot.aMrrY2, tot.y1w, tot.y2w, tot.y3w, fmt$k, 28);
+  html += adjRow('Adj. Margin $ / month (contribution)', 'Contribution', '#aef0bd', tot.aMgnY1, tot.aMgnY2, tot.y1c, tot.y2c, tot.y3c, fmt$k, 0);
 
   html += '</tbody></table></div></div>';
 
@@ -4096,7 +4163,7 @@ function render3MoRevenue() {
   html += statCard('3-Mo Billable HC',   tot.hc.reduce(function(s,v){return s+v;},0),           'Total headcount billing over 90 days', 'aureum');
   html += statCard('3-Mo Projected Rev', fmt$k(tot.proj.reduce(function(s,v){return s+v;},0)), 'Raw pipeline × HC × MRR/head');
   html += statCard('3-Mo Adj. Rev',      fmt$k(tot.adj.reduce(function(s,v){return s+v;},0)),  '× Win rate', 'gold');
-  html += statCard('3-Mo Margin $',      fmt$k(tot.mar.reduce(function(s,v){return s+v;},0)),  '× Margin %', 'good');
+  html += statCard('3-Mo Contribution Margin $',      fmt$k(tot.mar.reduce(function(s,v){return s+v;},0)),  '× Contribution Margin %', 'good');
   html += '</div>';
 
   html += '<div class="legend"><span style="font-style:italic">Move the anchor month forward each month to roll the window. Only deals with the <b>Forecast</b> checkbox in Aureum Demand Forecast appear here. Click a deal name to open it in Zoho.</span></div>';
@@ -4141,10 +4208,10 @@ function renderMidtermForecast() {
   html += '<div style="font-size:12px;color:var(--muted);line-height:1.55">This is <b>when people start billing</b>, not when the deal closes. A 250-person engagement may be signed in June but ramp 35 → 70 → 70 over the following weeks — enter those headcounts in the month they bill, not the month the contract closes.</div>';
   html += '</div>';
 
-  // Months 4–12 assumptions (read-only here; admins edit them in Settings).
-  var mAcc = getMidtermAccuracy(), mMar = getMidtermMargin();
+  // Months 4–12 are adjusted PER DEAL (× stage win %, × forecast margin) — the same method as
+  // Overview, Summary and Aureum, so the overlapping months reconcile across tabs (Michael's ask).
   html += '<div style="margin:0 0 14px;padding:8px 14px;background:#eef4fb;border-left:4px solid var(--navy3);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)">';
-  html += '<b>Months 4–12 assumptions:</b> standard margin <b>' + Math.round(mMar*100) + '%</b> · accuracy <b>' + Math.round(mAcc*100) + '%</b>. ' + (canGovern() ? 'Change them in <b>Settings → Forecast Assumptions</b>.' : 'Set by a manager in Settings.');
+  html += '<b>How months 4–12 are adjusted:</b> per deal — <b>× stage win %</b> (Adjusted Revenue) and <b>× forecast margin</b> (Contribution Margin Dollars), the same method used in Overview, Summary and Aureum. <span style="color:var(--muted)">(The old flat accuracy / standard-margin haircut is no longer applied here.)</span>';
   html += '</div>';
 
   html += '<div class="toolbar">';
@@ -4210,14 +4277,16 @@ function renderMidtermForecast() {
   html += '<td class="num" style="color:var(--gold)">' + fmt$k(grandTotal) + '</td>';
   html += '</tr></tbody></table></div></div>';
 
-  // Summary cards
+  // Summary cards — adjusted PER DEAL (× stage win %, then × forecast margin), the same method as
+  // Overview / Summary / Aureum so the overlapping months reconcile across tabs (Michael's ask).
+  var ftMid = forecastTotals(months, rows);
   var avgMonthly = grandTotal / months.length;
-  var adjTotal = grandTotal * mAcc;          // × months-4–12 accuracy
-  var marTotal = adjTotal * mMar;            // × standard margin
+  var adjTotal = sumArr(ftMid.adj);        // win-rate-adjusted (per deal)
+  var marTotal = sumArr(ftMid.margin);     // win- & margin-adjusted (per deal) = contribution
   html += '<div class="stat-grid">';
   html += statCard('9-Month MRR Total', fmt$k(grandTotal),  'Raw — sum of months 4-12');
-  html += statCard('Adj. Revenue',      fmt$k(adjTotal),    '× ' + Math.round(mAcc*100) + '% accuracy (months 4–12)', 'gold');
-  html += statCard('Margin $',          fmt$k(marTotal),    '× ' + Math.round(mMar*100) + '% standard margin', 'good');
+  html += statCard('Adj. Revenue',      fmt$k(adjTotal),    'Win-rate-adjusted (per deal)', 'gold');
+  html += statCard('Contribution Margin $',          fmt$k(marTotal),    'Win- & margin-adjusted (per deal)', 'good');
   html += statCard('Avg Monthly MRR',   fmt$k(avgMonthly),  'Across the 9-month window');
   html += '</div>';
 
@@ -6314,25 +6383,17 @@ function renderSettings() {
   // Stage Rules section (formerly a standalone tab — now lives here).
   html += stageRulesSectionHtml();
 
-  // Forecast Assumptions (months 4–12) — admin-only editable, team-synced.
-  var mMar = getMidtermMargin(), mAcc = getMidtermAccuracy();
-  html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Assumptions — Months 4–12</span><span class="card-sub">Per-deal precision is reserved for months 1–3 · these drive the lighter months-4–12 numbers</span></div>';
+  // Forecast Assumptions — default $/head only. The old months-4–12 margin/accuracy haircut was
+  // retired when months 4–12 moved to the per-deal win×margin method, so it no longer drives anything.
+  html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Assumptions</span><span class="card-sub">Default $/head — used when a deal has no override and no Zoho MRR to divide</span></div>';
   if (canGovern()) {
     html += '<div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end">';
-    html += '<div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:5px">Standard margin %</div>';
-    html += '<select onchange="setMidtermMargin(parseFloat(this.value))" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12.5px;background:white;font-weight:700">';
-    [0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50].forEach(function(g){ var sel = Math.abs(g - mMar) < 0.0001 ? ' selected' : ''; html += '<option value="' + g + '"' + sel + '>' + Math.round(g*100) + '%</option>'; });
-    html += '</select></div>';
-    html += '<div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:5px">Accuracy / reliability %</div>';
-    html += '<select onchange="setMidtermAccuracy(parseFloat(this.value))" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12.5px;background:white;font-weight:700">';
-    [0.05,0.10,0.15,0.20,0.25,0.30,0.40,0.50].forEach(function(g){ var sel = Math.abs(g - mAcc) < 0.0001 ? ' selected' : ''; html += '<option value="' + g + '"' + sel + '>' + Math.round(g*100) + '%</option>'; });
-    html += '</select></div>';
     html += '<div><div style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:700;margin-bottom:5px">Default $ / head</div>';
     html += '<input type="number" min="0" value="' + getDefaultPricePerHead() + '" onchange="setDefaultPricePerHead(parseFloat(this.value)||0)" style="width:120px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12.5px;font-weight:700"></div>';
-    html += '<div style="font-size:11px;color:var(--muted);max-width:340px">Margin &amp; accuracy feed the months 4–12 figures. The default $/head is used when a deal has no override and no Zoho MRR to divide.</div>';
+    html += '<div style="font-size:11px;color:var(--muted);max-width:420px">Used when a deal has no per-deal $/head override and no Zoho MRR to derive from. Months 4–12 are adjusted per deal (× stage win % and forecast margin) — the same method as Overview, Summary and Aureum.</div>';
     html += '</div>';
   } else {
-    html += '<div style="font-size:12.5px;color:var(--navy)">Standard margin <b>' + Math.round(mMar*100) + '%</b> · accuracy <b>' + Math.round(mAcc*100) + '%</b> · default $/head <b>$' + Math.round(getDefaultPricePerHead()).toLocaleString() + '</b>. <span style="color:var(--muted)">Only a manager can change these.</span></div>';
+    html += '<div style="font-size:12.5px;color:var(--navy)">Default $/head <b>$' + Math.round(getDefaultPricePerHead()).toLocaleString() + '</b>. <span style="color:var(--muted)">Only a manager can change this.</span></div>';
   }
   html += '</div>';
 
