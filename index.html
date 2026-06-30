@@ -2414,7 +2414,23 @@ function renderTab() {
 // Forecast figures are MONTHLY AVERAGES over each horizon (so a 9-month sum never reads as a head-
 // count). 13-24 is a top-down projection of the 4-12 average grown one year at the long-term rate.
 // PMFF = Prior-Month Financial Forecast (CFO input); B(w) = Better/(Worse) = Forecast − PMFF.
-function accountSegment(d){ return /active|expand|aureum/i.test(d.status || '') ? 'existing' : 'new'; }
+// An account is "existing" if that CLIENT already has a relationship (an Active/Expanding/Aureum
+// deal or a Closed Won anywhere in the data); a pipeline deal for any other client is a "new" logo.
+// First-pass rule — to confirm with Finance.
+function existingClientSet(){
+  var set = {};
+  getDeals().forEach(function(d){
+    if (phaseForDeal(d) === 5 || /active|expand|aureum|won|current/i.test(d.status || '')) {
+      var c = (d.client || '').toLowerCase().trim(); if (c) set[c] = true;
+    }
+  });
+  return set;
+}
+function accountSegment(d, exSet){
+  exSet = exSet || existingClientSet();
+  var c = (d.client || '').toLowerCase().trim();
+  return (c && exSet[c]) ? 'existing' : 'new';
+}
 function getPmff(){ return load('pmff', {}); }
 function setPmff(p){ save('pmff', p); }
 function updatePmff(seg, hz, metric, val){
@@ -2442,9 +2458,10 @@ function renderSummary(){
   var g = getLongtermGrowthPct();                 // monthly long-term growth rate
   var growth1324 = Math.pow(1 + g, 12);           // 13-24 = 4-12 monthly avg grown one year (top-down)
   var fdeals = forecastDeals();
+  var exSet = existingClientSet();
   var segs = [
-    { key:'existing', label:'Existing Accounts', deals: fdeals.filter(function(d){ return accountSegment(d) === 'existing'; }) },
-    { key:'new',      label:'New Accounts',      deals: fdeals.filter(function(d){ return accountSegment(d) === 'new'; }) },
+    { key:'existing', label:'Existing Accounts', deals: fdeals.filter(function(d){ return accountSegment(d, exSet) === 'existing'; }) },
+    { key:'new',      label:'New Accounts',      deals: fdeals.filter(function(d){ return accountSegment(d, exSet) === 'new'; }) },
     { key:'total',    label:'Total',             deals: fdeals }
   ];
   var horizons = [ { key:'m3', label:'3-Month' }, { key:'m412', label:'Months 4-12' }, { key:'m1324', label:'Months 13-24' } ];
