@@ -729,6 +729,7 @@ function userStatus(lastSeen) {
 // ─────────────────────────────────────────────────────────────────────────────
 var ONBOARDING_STEPS = [
   { tab: 'overview',   title: 'Overview',                body: 'Your starting point each session. The four KPI cards summarize the next 3 months — deal count, forecasted headcount, adjusted revenue, and margin. Below: the rolling 3-month window, a Rolling Months 4–12 block with its own accuracy, and the reliability bands (M+0 / M+1 / M+2). Managers can pin those bands.' },
+  { tab: 'summary',    title: 'Summary (Forecast Summary Statistics)', body: 'The investor-facing summary. <b>Existing / New / Total</b> accounts across three horizons (3-month · months 4-12 · months 13-24), each showing <b>Headcount, MRR, Contribution $, Contribution %</b>. Three layers side by side: our <b>Forecast</b> (straight from Aureum), the CFO\'s <b>PMFF</b> (prior-month financial forecast — typed in by Finance), and <b>B/(W)</b> = Better/(Worse) vs that plan (green ahead, red behind). The Total auto-sums Existing + New. Figures are monthly averages; months 13-24 is a top-down projection.' },
   { tab: 'pipeline',   title: 'Pipeline',                body: 'The investor-grade view. All deals (excluding Closed Lost) grouped by the 5-phase model: SQL → Recruitment → Pricing → Legal Contracting → Closed Won. Includes a Forecast Coverage by Phase report — how much of the pipeline is actually being forecast — plus Deal Age cards (Healthy / Active / Slow / Critical) flagging what is stuck.' },
   { tab: 'aureum',     title: 'Aureum Demand Forecast',  body: 'The single input — one row per Zoho deal, rolling 12 months. The Deal column is frozen so it stays visible as you scroll. Deal Summary (MRR, ARR, TCV, contract, $/head, win %, target vs actual margin) comes from Zoho; the Headcount Build is where you type headcount by month — or use the ⇶ Spread button to ramp it automatically. Check Forecast to include a deal; Super-Deal is automatic at 100+ headcount. 3 mo. revenue & 12-Month Plan are outputs of this grid.' },
   { tab: 'aureum',     title: 'Download to Excel / Google Sheets', body: 'Two buttons at the top of Aureum take the forecast out for Finance: <b>⬇ Download Excel</b> (a formatted .xls) and <b>📋 Copy for Google Sheets</b> (paste straight into a blank sheet). The download is always the <b>forecast set only</b> (Fcst-checked deals, Closed Won excluded), with 2026 and 2027 month-by-month plus a top-down 2028 total. A reminder confirms the scope first, and the <b>✓ Verify export = table</b> button double-checks the file matches the platform to the dollar (it also runs automatically before every export, and blocks if anything is off). Observers can export too.' },
@@ -2476,6 +2477,24 @@ function renderSummary(){
   html += '<div class="page-title"><div><h1>Forecast Summary Statistics</h1><div class="sub">Existing / New / Total accounts · Forecast vs Prior-Month Financial Forecast (PMFF) → Better/(Worse). Monthly averages per horizon; Months 13-24 is a top-down projection at ' + (g*100).toFixed(1) + '%/mo.</div></div></div>';
   html += '<div style="margin:0 0 14px;padding:10px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:12px;color:var(--navy)"><b>Draft for review with Finance.</b> Headcount = avg monthly HC · MRR = avg monthly MRR · Contribution = win-/margin-adjusted · Contribution % = Contribution ÷ MRR. "Existing" = account already Active/Expanding; "New" = net-new logo. Type the CFO\'s prior-month financial forecast in the <b>PMFF</b> cells to see Better/(Worse). <i>(Eric\'s template also asks for a by-month view; the Existing/New split &amp; Months 13-24 are slated for 2027.)</i></div>';
 
+  function pmffVal(segKey, hzKey, metric){
+    var v = ((pmff[segKey] || {})[hzKey] || {})[metric];
+    return (v === undefined || v === null || v === '') ? null : parseFloat(v);
+  }
+  // Total PMFF auto-sums Existing + New when either child is entered. Contribution % is the weighted
+  // total (Σ contribution ÷ Σ MRR). Returns null when no children are entered → Total stays editable
+  // (so in the 2026 phase you can type a Total directly without the Existing/New split).
+  function totalPmff(hzKey, metric){
+    if (metric === 'contribPct'){
+      var ec = pmffVal('existing',hzKey,'contrib'), nc = pmffVal('new',hzKey,'contrib');
+      var em = pmffVal('existing',hzKey,'mrr'),     nm = pmffVal('new',hzKey,'mrr');
+      var tm = (em||0)+(nm||0);
+      if ((ec!=null || nc!=null) && tm) return ((ec||0)+(nc||0)) / tm * 100;
+      return null;
+    }
+    var e = pmffVal('existing',hzKey,metric), n = pmffVal('new',hzKey,metric);
+    return (e!=null || n!=null) ? (e||0)+(n||0) : null;
+  }
   segs.forEach(function(seg){
     var fc = { m3: _segForecast(seg.deals, m3, 1), m412: _segForecast(seg.deals, m412, 1), m1324: _segForecast(seg.deals, m412, growth1324) };
     html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">' + esc(seg.label) + '</span><span class="card-sub">' + seg.deals.length + ' forecast deal(s)</span></div>';
@@ -2488,16 +2507,23 @@ function renderSummary(){
       html += '<tr><td><b>' + mt.label + '</b></td>';
       horizons.forEach(function(h){
         var num = fNum(fc[h.key], mt.key);
-        var pv  = ((pmff[seg.key] || {})[h.key] || {});
-        var pRaw = pv[mt.key];
-        var hasP = (pRaw !== undefined && pRaw !== null && pRaw !== '');
-        var p = hasP ? parseFloat(pRaw) : null;
         html += '<td class="num" style="border-left:2px solid var(--gold)">' + fTxt(num, mt.key) + '</td>';
-        var unit = (mt.key === 'mrr' || mt.key === 'contrib') ? 'dollars' : (mt.key === 'contribPct' ? 'percent (e.g. 35)' : 'headcount');
-        html += '<td class="num"><input class="margin" type="number" step="any" value="' + (hasP ? p : '') + '" placeholder="—" ' + (editable ? '' : 'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + h.key + '\',\'' + mt.key + '\', this.value)" style="width:72px" title="PMFF = CFO prior-month financial forecast. Enter in ' + unit + '."></td>';
-        if (!hasP) { html += '<td class="num" style="color:var(--muted)">—</td>'; }
+        var pUsed = null;
+        var derived = (seg.key === 'total') ? totalPmff(h.key, mt.key) : null;
+        if (seg.key === 'total' && derived !== null) {
+          // Total = Existing + New (auto), shown read-only.
+          pUsed = derived;
+          var dtxt = (mt.key === 'contribPct') ? derived.toFixed(1) + '%' : (mt.key === 'hc') ? (Math.round(derived*10)/10).toFixed(1) : fmt$k(derived);
+          html += '<td class="num" style="color:var(--muted)" title="Auto-sum of Existing + New">' + dtxt + '</td>';
+        } else {
+          var stored = pmffVal(seg.key, h.key, mt.key);
+          pUsed = stored;
+          var unit = (mt.key === 'mrr' || mt.key === 'contrib') ? 'dollars' : (mt.key === 'contribPct' ? 'percent (e.g. 35)' : 'headcount');
+          html += '<td class="num"><input class="margin" type="number" step="any" value="' + (stored != null ? stored : '') + '" placeholder="—" ' + (editable ? '' : 'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + h.key + '\',\'' + mt.key + '\', this.value)" style="width:72px" title="PMFF = CFO prior-month financial forecast. Enter in ' + unit + '.' + (seg.key === 'total' ? ' Fill Existing + New and this auto-sums.' : '') + '"></td>';
+        }
+        if (pUsed == null) { html += '<td class="num" style="color:var(--muted)">—</td>'; }
         else {
-          var bw = num - p, good = bw >= 0, a = Math.abs(bw);
+          var bw = num - pUsed, good = bw >= 0, a = Math.abs(bw);
           var txt = (mt.key === 'mrr' || mt.key === 'contrib') ? (good ? '+' : '-') + fmt$k(a)
                   : (mt.key === 'contribPct') ? (good ? '+' : '-') + (Math.round(a*10)/10).toFixed(1) + ' pts'
                   : (good ? '+' : '-') + (Math.round(a*10)/10).toFixed(1);
