@@ -230,6 +230,14 @@
     cursor: not-allowed !important;
     border-color: #e3e7eb !important;
   }
+  /* Summary-editors (CFO/CEO) keep the PMFF cells editable even though they're observers. */
+  body.pmff-allowed table input.pmff-input {
+    pointer-events: auto !important;
+    background: #fff !important;
+    color: var(--navy) !important;
+    cursor: text !important;
+    border: 1px solid var(--border) !important;
+  }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
@@ -509,9 +517,10 @@ function save(k, v) {
   // observer's sign-ins and exports are still recorded. Remote sync application sets
   // fbSuppressPush, so updates from teammates always apply. This single data-layer check is the
   // robust integrity guard for the Observer role — independent of any UI button or input.
-  if (VIEWER_PROTECTED_KEYS.indexOf(k) >= 0 && !fbSuppressPush && currentUser && typeof canEdit === 'function' && !canEdit()) {
-    console.warn('Read-only (observer or un-invited): blocked write to shared key "' + k + '".');
-    return;
+  if (VIEWER_PROTECTED_KEYS.indexOf(k) >= 0 && !fbSuppressPush && currentUser && typeof canEdit === 'function') {
+    // 'pmff' is editable by Summary-editors (CFO/CEO) too; every other protected key needs full edit.
+    var allowed = (k === 'pmff') ? (typeof canEditPmff === 'function' && canEditPmff()) : canEdit();
+    if (!allowed) { console.warn('Read-only: blocked write to shared key "' + k + '".'); return; }
   }
   localStorage.setItem('bde_' + k, JSON.stringify(v));
   if (FB_SYNCED_KEYS.indexOf(k) >= 0) fbSchedulePush();
@@ -592,6 +601,9 @@ function getAdminExtra()   { return load('admin_extra', []); }
 function setAdminExtra(a)  { save('admin_extra', a); }
 function getViewers()      { return load('viewers', []); }
 function setViewers(v)     { save('viewers', v); }
+// Observers who may ALSO edit the Summary tab's PMFF cells (e.g. the CFO/CEO) — and nothing else.
+function getPmffEditors()  { return load('pmff_editors', []); }
+function setPmffEditors(v) { save('pmff_editors', v); }
 function getKnownUsers()   { return load('known_users', {}); }
 function setKnownUsers(u)  { save('known_users', u); }
 function getActivityLog()  { return load('activity_log', []); }
@@ -625,6 +637,14 @@ function isInvited(u) {
 }
 // True when the user may edit/persist shared state: invited AND not an observer. So managers and
 // granted admins can edit; observers and un-invited users cannot.
+// May edit the Summary PMFF cells: any editor (manager/admin) OR an observer explicitly granted
+// "Summary edits" (the CFO/CEO). This is the ONLY thing such observers can edit; all else stays read-only.
+function canEditPmff(u) {
+  u = u || currentUser;
+  if (!u) return false;
+  if (canEdit(u)) return true;
+  return getPmffEditors().indexOf((u.email || '').toLowerCase()) >= 0;
+}
 function canEdit(u) {
   u = u || currentUser;
   return !!u && isInvited(u) && !isViewer(u);
@@ -883,10 +903,10 @@ function maybeStartOnboarding() {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff','pmff_editors'];
 // Shared keys an Observer may NOT write (forecast + governance data). Excludes the audit/telemetry
 // keys (known_users, activity_log, error_log) so an observer's sign-ins and exports are still recorded.
-var VIEWER_PROTECTED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff'];
+var VIEWER_PROTECTED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff','pmff_editors'];
 // NOTE: 'active_phases' is intentionally NOT synced — the phase filter is a PERSONAL view control,
 // so each person browsing on their own PC filters without changing anyone else's screen.
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
@@ -2398,6 +2418,7 @@ function selectTab(id) {
 var _suppressScrollRestore = false;
 function renderTab() {
   try { document.body.classList.toggle('viewer-readonly', typeof isViewer === 'function' && isViewer()); } catch (e) {}
+  try { document.body.classList.toggle('pmff-allowed', typeof canEditPmff === 'function' && canEditPmff()); } catch (e) {}
   var main = document.querySelector('.main');
   var sx   = document.querySelector('.scroll-x');
   var mainTop = main ? main.scrollTop : 0;
@@ -2467,7 +2488,7 @@ function renderSummary(){
   ];
   var horizons = [ { key:'m3', label:'3-Month' }, { key:'m412', label:'Months 4-12' }, { key:'m1324', label:'Months 13-24' } ];
   var metrics  = [ { key:'hc', label:'Headcount' }, { key:'mrr', label:'MRR' }, { key:'contrib', label:'Contribution $' }, { key:'contribPct', label:'Contribution %' } ];
-  var pmff = getPmff(), editable = (typeof canEdit === 'function') ? canEdit() : true;
+  var pmff = getPmff(), editable = (typeof canEditPmff === 'function') ? canEditPmff() : true;
 
   // forecast display number (per metric) + a formatter
   function fNum(raw, mk){ return mk === 'hc' ? Math.round(raw.hc*10)/10 : mk === 'contribPct' ? Math.round(raw.contribPct*1000)/10 : Math.round(mk === 'mrr' ? raw.mrr : raw.contrib); }
@@ -2519,7 +2540,7 @@ function renderSummary(){
           var stored = pmffVal(seg.key, h.key, mt.key);
           pUsed = stored;
           var unit = (mt.key === 'mrr' || mt.key === 'contrib') ? 'dollars' : (mt.key === 'contribPct' ? 'percent (e.g. 35)' : 'headcount');
-          html += '<td class="num"><input class="margin" type="number" step="any" value="' + (stored != null ? stored : '') + '" placeholder="—" ' + (editable ? '' : 'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + h.key + '\',\'' + mt.key + '\', this.value)" style="width:72px" title="PMFF = CFO prior-month financial forecast. Enter in ' + unit + '.' + (seg.key === 'total' ? ' Fill Existing + New and this auto-sums.' : '') + '"></td>';
+          html += '<td class="num"><input class="margin pmff-input" type="number" step="any" value="' + (stored != null ? stored : '') + '" placeholder="—" ' + (editable ? '' : 'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + h.key + '\',\'' + mt.key + '\', this.value)" style="width:72px" title="PMFF = CFO prior-month financial forecast. Enter in ' + unit + '.' + (seg.key === 'total' ? ' Fill Existing + New and this auto-sums.' : '') + '"></td>';
         }
         if (pUsed == null) { html += '<td class="num" style="color:var(--muted)">—</td>'; }
         else {
@@ -5969,7 +5990,11 @@ function adminTeamSection(users, emails) {
       html += '<button class="btn btn-ghost btn-sm" onclick="revokeAdmin(\'' + esc(u.email) + '\')">Revoke admin</button>';
     } else if (isUserViewer) {
       html += '<button class="btn btn-ghost btn-sm" onclick="revokeViewer(\'' + esc(u.email) + '\')">Revoke observer</button> ';
-      html += '<button class="btn btn-ghost btn-sm" onclick="grantAdmin(\'' + esc(u.email) + '\')">Make admin</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="grantAdmin(\'' + esc(u.email) + '\')">Make admin</button> ';
+      var isPmffEd = getPmffEditors().indexOf(e) >= 0;
+      html += isPmffEd
+        ? '<button class="btn btn-ghost btn-sm" onclick="revokePmffEditor(\'' + esc(u.email) + '\')" title="Remove this observer\'s ability to edit the Summary (PMFF) cells">− Summary edit</button>'
+        : '<button class="btn btn-ghost btn-sm" onclick="grantPmffEditor(\'' + esc(u.email) + '\')" title="Let this observer edit ONLY the Summary (PMFF) cells — e.g. the CFO/CEO. Everything else stays read-only.">+ Summary edit</button>';
     } else {
       html += '<button class="btn btn-ghost btn-sm" onclick="grantAdmin(\'' + esc(u.email) + '\')">Grant admin</button> ';
       html += '<button class="btn btn-ghost btn-sm" onclick="grantViewer(\'' + esc(u.email) + '\')">Make observer</button>';
@@ -6038,9 +6063,23 @@ function revokeViewer(email) {
   email = email.toLowerCase();
   if (!confirm('Remove view-only access for ' + email + '?\n\nThey will then sign in as a regular BDE — able to EDIT the forecast.')) return;
   setViewers(getViewers().filter(function(x){ return x !== email; }));
+  setPmffEditors(getPmffEditors().filter(function(x){ return x !== email; }));   // lose Summary-edit too
   logActivity('Admin', 'Revoke observer', email);
   renderTab();
   renderTopNav();
+}
+function grantPmffEditor(email){
+  email = email.toLowerCase();
+  var l = getPmffEditors();
+  if (l.indexOf(email) < 0) { l.push(email); setPmffEditors(l); }
+  logActivity('Admin', 'Grant Summary edit', email);
+  renderTab();
+}
+function revokePmffEditor(email){
+  email = email.toLowerCase();
+  setPmffEditors(getPmffEditors().filter(function(x){ return x !== email; }));
+  logActivity('Admin', 'Revoke Summary edit', email);
+  renderTab();
 }
 
 function sourceClass(source) {
