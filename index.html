@@ -360,6 +360,7 @@ var USERS = {
 
 var TABS = [
   { id: 'overview',    label: 'Overview' },
+  { id: 'summary',     label: 'Summary' },
   { id: 'pipeline',    label: 'Pipeline' },
   { id: 'aureum',      label: 'Aureum Demand Forecast' },
   { id: 'threemo',     label: '3 mo. revenue' },
@@ -881,10 +882,10 @@ function maybeStartOnboarding() {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff'];
 // Shared keys an Observer may NOT write (forecast + governance data). Excludes the audit/telemetry
 // keys (known_users, activity_log, error_log) so an observer's sign-ins and exports are still recorded.
-var VIEWER_PROTECTED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions'];
+var VIEWER_PROTECTED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff'];
 // NOTE: 'active_phases' is intentionally NOT synced — the phase filter is a PERSONAL view control,
 // so each person browsing on their own PC filters without changing anyone else's screen.
 var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
@@ -2407,8 +2408,94 @@ function renderTab() {
   var sx2 = document.querySelector('.scroll-x');
   if (sx2) { sx2.scrollTop = sxTop; sx2.scrollLeft = sxLeft; }
 }
+// ── Forecast Summary Statistics (Eric's EAB template) ──────────────────────────────────────────
+// Existing / New / Total accounts × 3 horizons (3-mo, Months 4-12, Months 13-24) × three layers
+// {Forecast · PMFF · B(w)} × four metrics (Headcount, MRR, Contribution $, Contribution %).
+// Forecast figures are MONTHLY AVERAGES over each horizon (so a 9-month sum never reads as a head-
+// count). 13-24 is a top-down projection of the 4-12 average grown one year at the long-term rate.
+// PMFF = Prior-Month Financial Forecast (CFO input); B(w) = Better/(Worse) = Forecast − PMFF.
+function accountSegment(d){ return /active|expand|aureum/i.test(d.status || '') ? 'existing' : 'new'; }
+function getPmff(){ return load('pmff', {}); }
+function setPmff(p){ save('pmff', p); }
+function updatePmff(seg, hz, metric, val){
+  var p = getPmff();
+  p[seg] = p[seg] || {}; p[seg][hz] = p[seg][hz] || {};
+  var s = String(val).replace(/[^0-9.\-]/g, '');
+  if (s === '') delete p[seg][hz][metric]; else p[seg][hz][metric] = parseFloat(s);
+  setPmff(p);
+  logActivity('Forecast', 'Edit PMFF', seg + ' · ' + hz + ' · ' + metric + ' = ' + (s === '' ? '—' : s));
+  renderSummary();
+}
+// Monthly-average Forecast metrics for a set of deals over a set of months (× optional growth).
+function _segForecast(segDeals, monthKeys, growthMult){
+  growthMult = growthMult || 1;
+  var t = forecastTotals(monthKeys, segDeals);
+  var n = monthKeys.length || 1;
+  var mrr = (sumArr(t.proj) / n) * growthMult;
+  var con = (sumArr(t.margin) / n) * growthMult;
+  return { hc: (sumArr(t.hc) / n) * growthMult, mrr: mrr, contrib: con, contribPct: mrr ? con / mrr : 0 };
+}
+function renderSummary(){
+  var anchor = getAnchorMonth();
+  var m3   = rollingMonths(anchor, 3);
+  var m412 = rollingMonths(monthKeyAfter(anchor, 3), 9);
+  var g = getLongtermGrowthPct();                 // monthly long-term growth rate
+  var growth1324 = Math.pow(1 + g, 12);           // 13-24 = 4-12 monthly avg grown one year (top-down)
+  var fdeals = forecastDeals();
+  var segs = [
+    { key:'existing', label:'Existing Accounts', deals: fdeals.filter(function(d){ return accountSegment(d) === 'existing'; }) },
+    { key:'new',      label:'New Accounts',      deals: fdeals.filter(function(d){ return accountSegment(d) === 'new'; }) },
+    { key:'total',    label:'Total',             deals: fdeals }
+  ];
+  var horizons = [ { key:'m3', label:'3-Month' }, { key:'m412', label:'Months 4-12' }, { key:'m1324', label:'Months 13-24' } ];
+  var metrics  = [ { key:'hc', label:'Headcount' }, { key:'mrr', label:'MRR' }, { key:'contrib', label:'Contribution $' }, { key:'contribPct', label:'Contribution %' } ];
+  var pmff = getPmff(), editable = (typeof canEdit === 'function') ? canEdit() : true;
+
+  // forecast display number (per metric) + a formatter
+  function fNum(raw, mk){ return mk === 'hc' ? Math.round(raw.hc*10)/10 : mk === 'contribPct' ? Math.round(raw.contribPct*1000)/10 : Math.round(mk === 'mrr' ? raw.mrr : raw.contrib); }
+  function fTxt(num, mk){ return mk === 'hc' ? num.toFixed(1) : mk === 'contribPct' ? num.toFixed(1) + '%' : fmt$k(num); }
+
+  var html = '';
+  html += '<div class="page-title"><div><h1>Forecast Summary Statistics</h1><div class="sub">Existing / New / Total accounts · Forecast vs Prior-Month Financial Forecast (PMFF) → Better/(Worse). Monthly averages per horizon; Months 13-24 is a top-down projection at ' + (g*100).toFixed(1) + '%/mo.</div></div></div>';
+  html += '<div style="margin:0 0 14px;padding:10px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:12px;color:var(--navy)"><b>Draft for review with Finance.</b> Headcount = avg monthly HC · MRR = avg monthly MRR · Contribution = win-/margin-adjusted · Contribution % = Contribution ÷ MRR. "Existing" = account already Active/Expanding; "New" = net-new logo. Type the CFO\'s prior-month financial forecast in the <b>PMFF</b> cells to see Better/(Worse). <i>(Eric\'s template also asks for a by-month view; the Existing/New split &amp; Months 13-24 are slated for 2027.)</i></div>';
+
+  segs.forEach(function(seg){
+    var fc = { m3: _segForecast(seg.deals, m3, 1), m412: _segForecast(seg.deals, m412, 1), m1324: _segForecast(seg.deals, m412, growth1324) };
+    html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">' + esc(seg.label) + '</span><span class="card-sub">' + seg.deals.length + ' forecast deal(s)</span></div>';
+    html += '<table><thead><tr><th rowspan="2">Metric</th>';
+    horizons.forEach(function(h){ html += '<th class="num" colspan="3" style="border-left:2px solid var(--gold)">' + h.label + '</th>'; });
+    html += '</tr><tr>';
+    horizons.forEach(function(){ html += '<th class="num" style="border-left:2px solid var(--gold);font-size:10px">Forecast</th><th class="num" style="font-size:10px">PMFF</th><th class="num" style="font-size:10px">B/(W)</th>'; });
+    html += '</tr></thead><tbody>';
+    metrics.forEach(function(mt){
+      html += '<tr><td><b>' + mt.label + '</b></td>';
+      horizons.forEach(function(h){
+        var num = fNum(fc[h.key], mt.key);
+        var pv  = ((pmff[seg.key] || {})[h.key] || {});
+        var pRaw = pv[mt.key];
+        var hasP = (pRaw !== undefined && pRaw !== null && pRaw !== '');
+        var p = hasP ? parseFloat(pRaw) : null;
+        html += '<td class="num" style="border-left:2px solid var(--gold)">' + fTxt(num, mt.key) + '</td>';
+        var unit = (mt.key === 'mrr' || mt.key === 'contrib') ? 'dollars' : (mt.key === 'contribPct' ? 'percent (e.g. 35)' : 'headcount');
+        html += '<td class="num"><input class="margin" type="number" step="any" value="' + (hasP ? p : '') + '" placeholder="—" ' + (editable ? '' : 'disabled ') + 'onchange="updatePmff(\'' + seg.key + '\',\'' + h.key + '\',\'' + mt.key + '\', this.value)" style="width:72px" title="PMFF = CFO prior-month financial forecast. Enter in ' + unit + '."></td>';
+        if (!hasP) { html += '<td class="num" style="color:var(--muted)">—</td>'; }
+        else {
+          var bw = num - p, good = bw >= 0, a = Math.abs(bw);
+          var txt = (mt.key === 'mrr' || mt.key === 'contrib') ? (good ? '+' : '-') + fmt$k(a)
+                  : (mt.key === 'contribPct') ? (good ? '+' : '-') + (Math.round(a*10)/10).toFixed(1) + ' pts'
+                  : (good ? '+' : '-') + (Math.round(a*10)/10).toFixed(1);
+          html += '<td class="num" style="font-weight:700;color:' + (good ? 'var(--success)' : '#c62828') + '">' + txt + '</td>';
+        }
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+  });
+  document.getElementById('mainContent').innerHTML = html;
+}
 function _renderTabDispatch() {
   if (currentTab === 'overview')    return renderOverview();
+  if (currentTab === 'summary')     return renderSummary();
   if (currentTab === 'pipeline')    return renderPipelineOverview();
   if (currentTab === 'aureum')      return renderAureumGrid();
   if (currentTab === 'threemo')     return render3MoRevenue();
@@ -2472,8 +2559,8 @@ function renderOverview() {
   html += '<div class="card"><div class="card-header"><span class="card-title">Rolling 3-Month Window</span><span class="card-sub">' + monthLabel(months[0]) + ' &middot; ' + monthLabel(months[1]) + ' &middot; ' + monthLabel(months[2]) + '</span></div>';
   html += '<table><thead><tr><th>Metric</th><th class="num">' + monthLabel(months[0]) + '</th><th class="num">' + monthLabel(months[1]) + '</th><th class="num">' + monthLabel(months[2]) + '</th><th class="num">3-mo Total</th></tr></thead><tbody>';
   html += '<tr><td>Forecasted Headcount</td>' + totals.hc.map(function(v){ return '<td class="num num-bold">' + v + '</td>'; }).join('') + '<td class="num num-bold">' + totalHc + '</td></tr>';
-  html += '<tr><td>Projected Revenue</td>'   + totals.proj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totals.proj.reduce(function(s,v){return s+v;},0)) + '</td></tr>';
-  html += '<tr><td>Adj. Revenue (× win rate)</td>' + totals.adj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalAdj) + '</td></tr>';
+  html += '<tr><td>Projected MRR (monthly)</td>'   + totals.proj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totals.proj.reduce(function(s,v){return s+v;},0)) + '</td></tr>';
+  html += '<tr><td>Adj. MRR (× win rate)</td>' + totals.adj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalAdj) + '</td></tr>';
   html += '<tr><td>Contribution $ (× contribution margin %)</td>' + totals.margin$.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalMargin) + '</td></tr>';
   html += '</tbody></table></div>';
 
@@ -2485,8 +2572,8 @@ function renderOverview() {
   var adj412 = proj412 * mAcc, mar412 = adj412 * mMar;
   html += '<div class="card"><div class="card-header"><span class="card-title">Rolling Months 4–12</span><span class="card-sub">' + monthLabel(m412[0]) + ' → ' + monthLabel(m412[m412.length-1]) + ' · lighter horizon · accuracy ' + Math.round(mAcc*100) + '% · standard margin ' + Math.round(mMar*100) + '%</span></div>';
   html += '<div class="stat-grid" style="margin-bottom:0">';
-  html += statCard('Forecasted HC (4–12)', hc412,          '9-month build');
-  html += statCard('Projected Rev (4–12)', fmt$k(proj412), 'HC × MRR $/head');
+  html += statCard('Forecasted HC (4–12)', hc412,          'cumulative HC-months (Σ monthly HC, not a headcount)');
+  html += statCard('Projected Rev (4–12)', fmt$k(proj412), '9-month TOTAL (Σ monthly MRR), not monthly');
   html += statCard('Adj. Revenue (4–12)',  fmt$k(adj412),  '× ' + Math.round(mAcc*100) + '% accuracy', 'gold');
   html += statCard('Contribution $ (4–12)', fmt$k(mar412), '× ' + Math.round(mMar*100) + '% standard contribution margin', 'good');
   html += '</div></div>';
