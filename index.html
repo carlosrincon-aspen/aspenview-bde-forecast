@@ -2473,6 +2473,8 @@ function _segForecast(segDeals, monthKeys, growthMult){
   var con = (sumArr(t.margin) / n) * growthMult;
   return { hc: (sumArr(t.hc) / n) * growthMult, mrr: mrr, contrib: con, contribPct: mrr ? con / mrr : 0 };
 }
+var summaryView = 'horizon';   // 'horizon' (Forecast/PMFF/B(w) by bucket) or 'month' (Forecast by month)
+function setSummaryView(v){ summaryView = v; renderSummary(); }
 function renderSummary(){
   var anchor = getAnchorMonth();
   var m3   = rollingMonths(anchor, 3);
@@ -2497,6 +2499,31 @@ function renderSummary(){
   var html = '';
   html += '<div class="page-title"><div><h1>Forecast Summary Statistics</h1><div class="sub">Existing / New / Total accounts · Forecast vs Prior-Month Financial Forecast (PMFF) → Better/(Worse). Monthly averages per horizon; Months 13-24 is a top-down projection at ' + (g*100).toFixed(1) + '%/mo.</div></div></div>';
   html += '<div style="margin:0 0 14px;padding:10px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:12px;color:var(--navy)"><b>Draft for review with Finance.</b> Headcount = avg monthly HC · MRR = avg monthly MRR · Contribution = win-/margin-adjusted · Contribution % = Contribution ÷ MRR. "Existing" = account already Active/Expanding; "New" = net-new logo. Type the CFO\'s prior-month financial forecast in the <b>PMFF</b> cells to see Better/(Worse). <i>(Eric\'s template also asks for a by-month view; the Existing/New split &amp; Months 13-24 are slated for 2027.)</i></div>';
+
+  html += '<div style="margin:0 0 12px;display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--muted);margin-right:4px">View:</span>'
+    + '<button class="btn btn-sm ' + (summaryView === 'month' ? 'btn-ghost' : 'btn-primary') + '" onclick="setSummaryView(\'horizon\')">By horizon</button>'
+    + '<button class="btn btn-sm ' + (summaryView === 'month' ? 'btn-primary' : 'btn-ghost') + '" onclick="setSummaryView(\'month\')">By month</button></div>';
+
+  // ── By-month view: the monthly Forecast for the four metrics (months 13-24 are top-down, not built). ──
+  if (summaryView === 'month') {
+    // Full 24-month span: 3-mo window + months 4-12 + months 13-24 (the last carry build only if entered).
+    var monthsAll = m3.concat(m412).concat(rollingMonths(monthKeyAfter(anchor, 12), 12));
+    segs.forEach(function(seg){
+      var t = forecastTotals(monthsAll, seg.deals);
+      html += '<div class="card" style="margin-bottom:16px"><div class="card-header"><span class="card-title">' + esc(seg.label) + '</span><span class="card-sub">' + seg.deals.length + ' forecast deal(s) · monthly forecast</span></div>';
+      html += '<div class="scroll-x"><table class="grid-tbl"><thead><tr><th class="freeze-1">Metric</th>';
+      monthsAll.forEach(function(m){ html += '<th class="num">' + monthLabel(m) + '</th>'; });
+      html += '</tr></thead><tbody>';
+      html += '<tr><td class="freeze-1"><b>Headcount</b></td>';        monthsAll.forEach(function(m,i){ html += '<td class="num">' + (t.hc[i] ? Math.round(t.hc[i]) : '—') + '</td>'; }); html += '</tr>';
+      html += '<tr><td class="freeze-1"><b>MRR</b></td>';              monthsAll.forEach(function(m,i){ html += '<td class="num">' + (t.proj[i] ? fmt$k(t.proj[i]) : '—') + '</td>'; }); html += '</tr>';
+      html += '<tr><td class="freeze-1"><b>Contribution $</b></td>';   monthsAll.forEach(function(m,i){ html += '<td class="num">' + (t.margin[i] ? fmt$k(t.margin[i]) : '—') + '</td>'; }); html += '</tr>';
+      html += '<tr><td class="freeze-1"><b>Contribution %</b></td>';   monthsAll.forEach(function(m,i){ html += '<td class="num">' + (t.proj[i] ? (t.margin[i] / t.proj[i] * 100).toFixed(1) + '%' : '—') + '</td>'; }); html += '</tr>';
+      html += '</tbody></table></div></div>';
+    });
+    html += '<div class="legend"><span style="font-style:italic">By-month shows the <b>Forecast</b> per month (HC, MRR, Contribution $, Contribution %). Months 13-24 are a top-down projection, so they\'re not built month-by-month. The CFO\'s PMFF and Better/(Worse) live in the <b>By horizon</b> view.</span></div>';
+    document.getElementById('mainContent').innerHTML = html;
+    return;
+  }
 
   function pmffVal(segKey, hzKey, metric){
     var v = ((pmff[segKey] || {})[hzKey] || {})[metric];
