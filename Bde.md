@@ -225,6 +225,28 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-06-29 — Zoho push enabled · roles & invite-only · export integrity · Eric's Summary tab
+Huge session. All live on GitHub Pages (commits through `4298668`). Highlights:
+
+**1) Zoho Push-to-Zoho is LIVE.** The OAuth client `1000.IDIKQZQT1WD4JUK97IYAFVWKEFSAPC` ("AspenView BDE Forecast" app, US DC) now grants `Deals.READ + Deals.WRITE + Accounts.READ`. Carlos re-authorized (Disconnect→Connect→Accept) and a real Playground push succeeded ("1 deal updated"). Token is per-user/per-browser — Michael & Don must each re-auth before they push. The big push of Don's forecast still waits on Don/Michael sign-off.
+
+**2) Permanent audit log.** Every `logActivity` event now also mirrors to a standalone, uncapped Firestore collection **`activity_archive`** (the in-doc log stays capped at 200 for the recovery tools). "📜 Load full history" in Admin → Activity reads it. ⚠ Requires a Firestore security rule for `activity_archive` (same condition as `dashboard`) — Carlos published it.
+
+**3) Roles + invite-only access.**
+- New **Observer** (view-only) role: browse + export, but can't edit/lock/approve/push. Enforced at the data layer (`save()` blocks `VIEWER_PROTECTED_KEYS` writes for non-editors) + read-only CSS on in-table inputs.
+- **Invite-only:** only code-defined managers + granted admins + granted observers can sign in (`isInvited`); any other @aspenview.com is denied (`denyAccess` after Firestore loads; managers hardcoded so never locked out). There is no open BDE-editor anymore — to edit, you're admin/manager.
+- **Admin → Team** now shows the FULL roster (managers + granted + observers + activity-log actors), not just signed-in; ROLE column dropped (Access shows ADMIN/OBSERVER/Editor); Observers KPI card; admins/observers managed with Grant/Make/Revoke buttons (mutually exclusive). John Scott + Eric Berg set as **observers**.
+
+**4) Export integrity (Finance-grade).** Single source of truth `aureumTotals()` feeds BOTH the grid totals and the Excel/Sheets export → can't drift. Export is **forecast-only always** (Michael's call) + a **top-down 2028 column** (2027 × growth %). Labels per Eric: **Contribution Margin**, **MRR $/head**, **Contribution $**. **Adjusted HC shows 1 decimal** (weighted math reconciles by hand). A scope reminder + **"✓ Verify export = table"** button reconcile to the dollar and **block** export on any mismatch. Aureum summary: gold-framed 26/27/28 totals (both sides); the HC row shows headcount totals (not $).
+
+**5) Eric's "Summary" tab (EAB template).** New tab: Forecast Summary Statistics. **Existing / New / Total** accounts × **3 horizons** (3-mo, 4-12, 13-24) × **Forecast / PMFF / B(w)** × **4 metrics** (Headcount, MRR, Contribution $, Contribution %). Forecast = monthly averages (so a sum never reads as a headcount); 13-24 = 4-12 avg grown one year top-down. **PMFF** = Prior-Month Financial Forecast (CFO input, typed in); **B(w)** = Better/(Worse) = Forecast − PMFF (color-coded). **Total auto-sums Existing + New** (Contribution % weighted). Existing/New classified by client relationship (Active/Expanding/Closed-Won client = existing). **PMFF-editor capability:** specific observers (CFO/CEO = John, Eric) can edit ONLY the PMFF cells (`canEditPmff`, `pmff_editors` list, `body.pmff-allowed input.pmff-input` CSS, `save()` lets them write only `pmff`); grant via Admin → Team "+ Summary edit".
+
+**6) Overview label clarity (Eric's calc question).** The "$4.2M (4-12) seems too small" was NOT a bug — it's the 9-month TOTAL and 679 is cumulative HC-months, not a headcount. Relabeled both; Projected/Adj Revenue now say "MRR".
+
+**7) Guide + tour.** Guide EN refreshed for Horizon (roles, invite-only, export forecast-only + 2028, Summary §6.2, backups). Tour is role-aware (observers skip editor-only tabs) and has new Export + Summary steps.
+
+**Open / to decide with Michael & Eric (live, point-by-point):** monthly-average vs period-total in Summary · official "existing vs new" definition · timing (Eric: Existing/New split + 13-24 in 2027) · whether Contribution is win-adjusted · **uploading** the CFO's PMFF as a file (today typed in; by-month Forecast view is now built via the By horizon/By month toggle). New synced keys this session: `viewers`, `pmff`, `pmff_editors`.
+
 ### 2026-06-26 — Eric/John change-set, a data-loss incident + recovery, and hardening
 Big day. All live on GitHub Pages (commits through `e893763`). Order of events:
 
