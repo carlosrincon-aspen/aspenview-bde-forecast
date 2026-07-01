@@ -225,6 +225,13 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-01 (PM-3) — UX consolidation: one Lock home, recovery tools tucked into Admin (nothing deleted)
+Carlos: "consolidate so it doesn't confuse, but don't delete anything useful." Reorganized/relabeled — **zero functions removed** (all still callable; buttons just relocated). JS validated.
+- **Lock is now a SINGLE action, in the Aureum action bar.** The duplicate 🔒 Lock buttons on **Overview** and **3 mo. revenue** became **read-only status pills** ("🔒 {month} locked" / "🔓 not locked — lock it in Aureum"). Also removed the duplicate "🔒 Lock current forecast" from the Forecast Accuracy toolbar. `lockForecast` is no longer wired to any loose button — only via the Aureum `aureumLockForecast`. (The lock+push-to-Zoho **one-step** merge is the next A build — needs push-semantics design.)
+- **Recovery/power tools moved to Admin Panel → new "Recovery & data" sub-tab:** ⟲ Full rebuild from log · ↩ Reconstruct (typed cells only) · 🔎 Audit log — plus a Backups & versions summary. They were cluttering Forecast Accuracy. The **per-snapshot ↩ Recover** stays on each Historical Snapshots row (contextual); Export/Import stays in Settings.
+- **Auto-backups relabeled** in the Versions modal: "🔒 auto safety backup — never changes your forecast" (kills Don's fear that the automatic daily update was overwriting his work — it's purely additive; the real overwrite was the now-fixed Zoho sync).
+- Left intact: Save version, Versions, Aureum Lock + Push to Zoho (single place), Playground push (admin diff), all recovery functions.
+
 ### 2026-07-01 (PM-2) — Mike-call punch-list · batch 1: Pipeline TCV + en-US number format + Monthly MRR label
 From Carlos↔Michael call. **Michael has the final word on Horizon; internal guardrail = map & save ALL manual adjustments (drives the lockdown/version work).** This batch = the unblocked, low-risk items; the rest of the punch-list is tracked below. JS validated (`node --check`); column counts reconcile (Pipeline 7 cols).
 

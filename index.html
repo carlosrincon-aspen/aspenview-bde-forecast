@@ -2396,7 +2396,8 @@ function openVersionsModal() {
     html += '<div style="max-height:46vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--navy);color:white"><th style="text-align:left;padding:7px 10px">Version</th><th style="text-align:left;padding:7px 10px">Saved</th><th class="num" style="padding:7px 10px">Deals · HC</th><th style="text-align:left;padding:7px 10px">Note</th><th style="padding:7px 10px"></th></tr></thead><tbody>';
     versions.forEach(function(v){
       var sm = v.summary || {};
-      html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px"><b>' + esc(v.label) + '</b></td>';
+      var autoBadge = v.auto ? ' <span class="pill pill-gray" style="font-size:9px" title="Automatic daily safety backup — it only ADDS this restore point, it never changed your forecast">🔒 auto safety backup — never changes your forecast</span>' : '';
+      html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px"><b>' + esc(v.label) + '</b>' + autoBadge + '</td>';
       html += '<td style="padding:7px 10px;color:var(--muted)">' + new Date(v.savedAt).toLocaleString('en-US') + '<br><span style="font-size:10px">by ' + esc(v.savedBy || '—') + '</span></td>';
       html += '<td class="num" style="padding:7px 10px;color:var(--muted)">' + (sm.deals != null ? sm.deals + ' · ' + sm.fcstHC : '—') + '</td>';
       html += '<td style="padding:7px 10px;color:var(--muted)">' + (esc(v.note) || '—') + '</td>';
@@ -2810,10 +2811,12 @@ function renderOverview() {
   var html = '';
   html += '<div class="page-title"><div><h1>Overview</h1><div class="sub">Anchor month: <b>' + monthLabel(anchor) + '</b> &middot; Rolling 3-month window</div></div>';
   html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + ' ';
+  // Locking is a SINGLE action, done from the action bar in Aureum Demand Forecast. Here we only
+  // SHOW the month's lock status (read-only) — a duplicate Lock button in every tab confused people.
   if (anchorLocked) {
-    html += '<button class="btn btn-ghost btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + ' on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString('en-US') + '">🔒 Locked · Re-lock</button>';
+    html += '<span class="pill pill-green" style="font-size:11px" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + ' on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString('en-US') + '">🔒 ' + monthLabel(anchor) + ' locked</span>';
   } else {
-    html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Lock this forecast — the snapshot becomes immutable and powers the accuracy bands when actuals come in">🔒 Lock ' + monthLabel(anchor) + ' forecast</button>';
+    html += '<span style="font-size:11px;color:var(--muted)" title="Lock the month from the action bar at the bottom of Aureum Demand Forecast">🔓 ' + monthLabel(anchor) + ' not locked — lock it in Aureum</span>';
   }
   html += '</div></div>';
   if (anchorLocked) {
@@ -4199,10 +4202,11 @@ function render3MoRevenue() {
   html += '<div class="page-title"><div><h1>3 mo. revenue</h1><div class="sub">Rolling 3-month window · only deals flagged <b>Forecast</b> in Aureum Demand Forecast</div></div>';
   html += '<div style="display:flex;gap:8px;align-items:center">';
   html += '<label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + ' ';
+  // Read-only lock status — the Lock action lives in Aureum Demand Forecast (single place).
   if (anchorLocked) {
-    html += '<button class="btn btn-ghost btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + '">🔒 Locked · Re-lock</button>';
+    html += '<span class="pill pill-green" style="font-size:11px" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + '">🔒 ' + monthLabel(anchor) + ' locked</span>';
   } else {
-    html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Lock this 3-month forecast — immutable for accuracy tracking">🔒 Lock ' + monthLabel(anchor) + '</button>';
+    html += '<span style="font-size:11px;color:var(--muted)" title="Lock the month from the action bar at the bottom of Aureum Demand Forecast">🔓 ' + monthLabel(anchor) + ' not locked — lock it in Aureum</span>';
   }
   html += '</div></div>';
   // Build & Invoice reminder — same framing as Aureum tab.
@@ -4671,7 +4675,9 @@ function renderForecastAccuracy() {
   if (backfillN) sourceBits.push('<b>' + backfillN + ' backfilled month' + (backfillN === 1 ? '' : 's') + '</b>');
   var sourceLabel = sourceBits.length ? 'Computed from ' + sourceBits.join(' + ') : 'Computed from auto-snapshots — lock a forecast or backfill historical data to base accuracy on explicit commitments instead';
   html += '<div class="page-title"><div><h1>Forecast Accuracy</h1><div class="sub">Reliability bands by horizon · ' + sourceLabel + '</div></div>';
-  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-ghost btn-sm" onclick="openBackfillModal()" title="Enter historical forecast + actual pairs to populate the accuracy bands without waiting for the natural cycle">📥 Backfill historical data</button> <button class="btn btn-gold btn-sm" onclick="lockForecast()">🔒 Lock current forecast</button> <button class="btn btn-ghost btn-sm" onclick="pullActualsFromZoho()" title="Pull actuals from Zoho Closed Won deals (grouped by owner). Non-destructive — manual entries are kept.">↻ Pull actuals from Zoho</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button> <button class="btn btn-gold btn-sm" onclick="rebuildFromActivityLog()" title="Most complete recovery — replays every spread + typed cell from the log and pins the exact 3-month lock">⟲ Full rebuild from log</button> <button class="btn btn-ghost btn-sm" onclick="reconstructFromActivityLog()" title="Lighter recovery — replays only the per-month HC cells typed by hand (not spreads)">↩ Reconstruct (typed cells only)</button> <button class="btn btn-ghost btn-sm" onclick="openForecastAuditModal()" title="See every forecast action one by one (HC edits, spreads, locks) to review and rebuild">🔎 Audit log</button></div></div>';
+  html += '<div><button class="btn btn-ghost btn-sm" onclick="forceSnapshot()">+ Force Snapshot Now</button> <button class="btn btn-ghost btn-sm" onclick="openBackfillModal()" title="Enter historical forecast + actual pairs to populate the accuracy bands without waiting for the natural cycle">📥 Backfill historical data</button> <button class="btn btn-ghost btn-sm" onclick="pullActualsFromZoho()" title="Pull actuals from Zoho Closed Won deals (grouped by owner). Non-destructive — manual entries are kept.">↻ Pull actuals from Zoho</button> <button class="btn btn-gold btn-sm" onclick="openActualsModal()">Enter Actuals</button></div></div>';
+  // Note: the month is locked from the action bar in Aureum Demand Forecast (single place). The
+  // heavy recovery tools (Full rebuild / Reconstruct / Audit log) moved to Admin Panel → Recovery & data.
 
   html += '<div class="acc-bands">';
   html += accCard('m0', 'Current Month (M0)', bands.m0);
@@ -4704,8 +4710,7 @@ function renderForecastAccuracy() {
     html += '</tbody></table></div>';
   }
 
-  html += '<div class="card"><div class="card-header"><span class="card-title">Historical Snapshots</span><span class="card-sub">' + snaps.length + ' total · ' + lockedSnaps.length + ' locked · ↩ Recover restores a snapshot\'s 3-month build</span>';
-  html += '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="reconstructFromActivityLog()" title="Rebuild the forecast from the Activity log — recovers every per-month HC cell typed by hand, across all months (not spread-built months)">↩ Reconstruct from Activity log</button></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Historical Snapshots</span><span class="card-sub">' + snaps.length + ' total · ' + lockedSnaps.length + ' locked · ↩ Recover restores a snapshot\'s 3-month build</span></div>';
   if (!snaps.length) {
     html += '<div class="empty">No snapshots yet. One will be auto-taken on your first session each month, or click "Lock current forecast" above to capture an immutable snapshot now.</div>';
   } else {
@@ -6209,16 +6214,17 @@ function renderAdminPanel() {
 
   // Sub-tabs
   html += '<div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px">';
-  [['team','Team'],['activity','Activity'],['errors','Errors']].forEach(function(p) {
+  [['team','Team'],['activity','Activity'],['errors','Errors'],['recovery','Recovery & data']].forEach(function(p) {
     var cls = adminSubTab === p[0] ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm';
-    var n = p[0] === 'activity' ? activity.length : (p[0] === 'errors' ? errors.length : rosterKeys.length);
-    html += '<button class="' + cls + '" onclick="setAdminSubTab(\'' + p[0] + '\')">' + p[1] + ' <span style="opacity:.65;font-size:11px">(' + n + ')</span></button>';
+    var n = p[0] === 'activity' ? activity.length : (p[0] === 'errors' ? errors.length : (p[0] === 'team' ? rosterKeys.length : null));
+    html += '<button class="' + cls + '" onclick="setAdminSubTab(\'' + p[0] + '\')">' + p[1] + (n !== null ? ' <span style="opacity:.65;font-size:11px">(' + n + ')</span>' : '') + '</button>';
   });
   html += '</div>';
 
   if (adminSubTab === 'team')     html += adminTeamSection(users, emails);
   if (adminSubTab === 'activity') html += adminActivitySection(activity);
   if (adminSubTab === 'errors')   html += adminErrorsSection(errors);
+  if (adminSubTab === 'recovery') html += adminRecoverySection();
 
   document.getElementById('mainContent').innerHTML = html;
 }
@@ -6226,6 +6232,30 @@ function renderAdminPanel() {
 function countErrors7d(errors) {
   var weekAgo = Date.now() - 7 * 86400000;
   return errors.filter(function(e){ return new Date(e.ts).getTime() >= weekAgo; }).length;
+}
+
+// Recovery & data tools — safety net, moved out of the day-to-day tabs (Forecast Accuracy) so they
+// don't clutter Don's workflow. Nothing here is deleted — it's the same functions, just relocated.
+// None of these push to Zoho.
+function adminRecoverySection() {
+  var versions = getForecastVersions();
+  var autos = versions.filter(function(v){ return v.auto; }).length;
+  var html = '';
+  html += '<div class="card" style="margin-bottom:14px"><div class="card-header"><span class="card-title">Recovery tools</span><span class="card-sub">Safety net — you normally don\'t need these. They rebuild the forecast from the audit trail if data was ever lost, or let you inspect exactly what changed. None of them push to Zoho.</span></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:4px">';
+  html += '<button class="btn btn-gold btn-sm" onclick="rebuildFromActivityLog()" title="Most complete recovery — replays every spread + typed cell from the log and pins the exact 3-month lock">⟲ Full rebuild from log</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="reconstructFromActivityLog()" title="Lighter recovery — replays only the per-month HC cells typed by hand (not spreads)">↩ Reconstruct (typed cells only)</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="openForecastAuditModal()" title="See every forecast action one by one (HC edits, spreads, locks)">🔎 Audit log</button>';
+  html += '</div>';
+  html += '<div style="font-size:11px;color:var(--muted);padding:8px 4px 0">Per-snapshot restore (↩ Recover) lives on each row in <b>Forecast Accuracy → Historical Snapshots</b>. The full JSON backup <b>Export / Import</b> is in <b>Settings</b>.</div>';
+  html += '</div>';
+  // Backups & versions summary
+  html += '<div class="card"><div class="card-header"><span class="card-title">Backups &amp; versions</span><span class="card-sub">Automatic daily safety backups are additive — they NEVER change the forecast; they only add a restore point you can roll back to.</span></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:4px;align-items:center">';
+  html += '<span style="font-size:12px;color:var(--muted)"><b style="color:var(--navy)">' + versions.length + '</b> saved versions · <b style="color:var(--navy)">' + autos + '</b> automatic safety backups</span>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="openVersionsModal()">🗂 Open versions</button>';
+  html += '</div></div>';
+  return html;
 }
 
 function adminTeamSection(users, emails) {
