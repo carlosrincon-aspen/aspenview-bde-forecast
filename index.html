@@ -1354,7 +1354,15 @@ function syncZohoDeals() {
         // Zoho commercial-design target margin (Target_Margin_Band). Source of truth for margin.
         zohoMargin:            parseMarginBand(r[ZOHO_MARGIN_FIELD]),
         zohoMarginBand:        (r[ZOHO_MARGIN_FIELD] !== undefined && r[ZOHO_MARGIN_FIELD] !== null) ? String(r[ZOHO_MARGIN_FIELD]) : '',
-        marginOverride:        p.marginOverride
+        marginOverride:        p.marginOverride,
+        // ── Don's MANUAL per-deal overrides — MUST be carried across a Zoho sync or they are WIPED.
+        //    This block was missing, so every "Sync from Zoho" rebuilt the deal without them and
+        //    reverted the forecast close date, Fcst $/head, Fcst/actual margin and 2028 growth %.
+        forecastClosingDate:   p.forecastClosingDate || '',
+        dollarPerHead:         p.dollarPerHead,
+        forecastMargin:        p.forecastMargin,
+        actualMargin:          p.actualMargin,
+        growthPct:             p.growthPct
       };
     });
 
@@ -1369,7 +1377,7 @@ function syncZohoDeals() {
               '  • ' + seedMatched + ' new deals matched the Excel seed by name\n' +
               '  • ' + rec.merged + ' prior manual deals reconciled into their Zoho record\n' +
               '  • ' + rec.flagged + ' deals not found in Zoho (kept & flagged for review)\n\n' +
-              'Replace the deal list with this reconciled set? Your HC / $-per-head / margin / flags are preserved.';
+              'Replace the deal list with this reconciled set? Your manual edits are preserved — monthly HC, Fcst HC, Fcst $/head, Fcst & actual margins, forecast close dates, 2028 growth %, win % overrides and the Forecast/Super flags.';
     if (!confirm(msg)) return;
     var finalDeals = mapped.concat(rec.kept);
     backfillOwners(finalDeals);
