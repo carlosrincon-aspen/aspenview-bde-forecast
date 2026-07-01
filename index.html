@@ -1052,18 +1052,22 @@ function touchPresence(){
     var now = new Date().getTime();
     if (now - _lastPresenceWrite < 15000) return;   // throttle writes to once / 15s
     _lastPresenceWrite = now;
-    fbDb.collection('presence').doc(_presenceKey(currentUser.email)).set({
-      email: currentUser.email, name: currentUser.name || currentUser.email, ts: new Date().toISOString()
-    }).catch(function(){});
+    // ONE doc in the already-permitted 'dashboard' collection, written with merge:true so each user
+    // only updates their OWN key — never clobbers others' entries, never touches the state doc, and
+    // needs NO new Firestore rule. A failure here is caught and ignored (can't affect forecast data).
+    var entry = {}; entry[_presenceKey(currentUser.email)] = { name: currentUser.name || currentUser.email, email: currentUser.email, ts: new Date().toISOString() };
+    fbDb.collection('dashboard').doc('presence').set(entry, { merge: true }).catch(function(){});
   } catch(e){}
 }
 function readPresence(){
   try {
+    if (document.hidden) return;
     if (!fbDb || !fbAuth || !fbAuth.currentUser || !currentUser) return;
-    fbDb.collection('presence').get().then(function(snap){
+    fbDb.collection('dashboard').doc('presence').get().then(function(doc){
+      var map = doc.exists ? (doc.data() || {}) : {};
       var now = new Date().getTime(), others = [], mine = (currentUser.email || '').toLowerCase();
-      snap.forEach(function(doc){
-        var p = doc.data(); if (!p || !p.ts) return;
+      Object.keys(map).forEach(function(k){
+        var p = map[k]; if (!p || !p.ts) return;
         if ((p.email || '').toLowerCase() === mine) return;
         if (now - new Date(p.ts).getTime() < 120000) others.push(p.name || p.email);   // active in last 2 min
       });
@@ -1086,8 +1090,8 @@ function initPresence(){
   if (_presenceInited) return;
   _presenceInited = true;
   readPresence();
-  setInterval(readPresence, 20000);                          // refresh who's active every 20s
-  window.addEventListener('focus', function(){ touchPresence(); readPresence(); });
+  setInterval(readPresence, 30000);            // refresh who's actively editing every 30s (1 read)
+  window.addEventListener('focus', readPresence);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
