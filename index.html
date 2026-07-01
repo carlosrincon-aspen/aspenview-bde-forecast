@@ -6582,10 +6582,42 @@ function openModal(html)  { document.getElementById('modal').innerHTML = html; d
 function closeModal()     { document.getElementById('modalOverlay').style.display = 'none'; }
 document.getElementById('modalOverlay').addEventListener('click', function(e) { if (e.target.id === 'modalOverlay') closeModal(); });
 
+// ── Auto-update check: detect a newer deployed version and offer a one-click refresh, so nobody
+// keeps working in a STALE tab. (Stale code running the old Zoho sync is what wiped Don's overrides —
+// this makes sure everyone gets nudged to reload after each deploy, without anyone chasing people.)
+// Bump version.txt on every deploy for this to fire.
+var _appVersion = null;
+function _fetchAppVersion(cb) {
+  try {
+    fetch('version.txt?cb=' + new Date().getTime(), { cache: 'no-store' })
+      .then(function(r){ return r.ok ? r.text() : null; })
+      .then(function(t){ cb(t ? t.trim() : null); })
+      .catch(function(){ cb(null); });
+  } catch (e) { cb(null); }
+}
+function showUpdateBanner() {
+  if (document.getElementById('updateBanner')) return;
+  var b = document.createElement('div');
+  b.id = 'updateBanner';
+  b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:100000;background:#FEC219;color:#0C1A28;padding:12px 18px;text-align:center;font-family:inherit;font-size:13px;font-weight:700;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
+  b.innerHTML = '🔄 A new version of Horizon is available — refresh to load it (working in a stale tab can revert data). ' +
+    '<button onclick="location.reload()" style="margin-left:10px;padding:6px 16px;border:none;border-radius:6px;background:#0C1A28;color:#fff;font-weight:700;cursor:pointer;font-family:inherit">Refresh now</button>';
+  document.body.appendChild(b);
+}
+function initVersionCheck() {
+  _fetchAppVersion(function(v){ if (v) _appVersion = v; });   // remember the version we loaded with
+  function check() {
+    if (document.hidden) return;
+    _fetchAppVersion(function(v){ if (v && _appVersion && v !== _appVersion) showUpdateBanner(); });
+  }
+  setInterval(check, 180000);               // re-check every 3 minutes
+  window.addEventListener('focus', check);  // and whenever the tab regains focus
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // BOOT
 // ─────────────────────────────────────────────────────────────────────────────
 checkZohoTokenFromUrl();
+initVersionCheck();
 fbInit();  // Firebase auth state — fires loginAs automatically if user has a session.
 // Degrade-mode: if Firebase SDK didn't load at all, fall back to localStorage-only.
 setTimeout(function() {
