@@ -2211,6 +2211,7 @@ function _pushVersion(note) {
     savedBy: (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'auto',
     note: (note || '').trim(),
     anchor: getAnchorMonth(),
+    schemaV: 2,   // captures forecastMargin + forecastClosingDate (added 2026-07-01)
     items: _captureForecastItems(),
     summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) }
   });
@@ -2243,6 +2244,7 @@ function ensureDailyBackupVersion() {
     savedBy: 'auto-backup',
     note: 'Automatic daily safety backup',
     anchor: getAnchorMonth(),
+    schemaV: 2,   // captures forecastMargin + forecastClosingDate (added 2026-07-01)
     items: _captureForecastItems(),
     summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) },
     auto: true, day: today
@@ -2268,9 +2270,14 @@ function restoreForecastVersion(id) {
     if (it.dollarPerHead === undefined) delete d.dollarPerHead; else d.dollarPerHead = it.dollarPerHead;
     if (it.winRateAdj === undefined)    delete d.winRateAdj;    else d.winRateAdj = it.winRateAdj;
     if (it.actualMargin === undefined)  delete d.actualMargin;  else d.actualMargin = it.actualMargin;
-    if (it.forecastMargin === undefined)      delete d.forecastMargin;      else d.forecastMargin = it.forecastMargin;
-    if (it.forecastClosingDate === undefined) delete d.forecastClosingDate; else d.forecastClosingDate = it.forecastClosingDate;
     if (it.growthPct === undefined)     delete d.growthPct;     else d.growthPct = it.growthPct;
+    // forecastMargin / forecastClosingDate were added to version capture on 2026-07-01. Apply them
+    // ONLY from versions that actually captured them (schemaV >= 2), so restoring an OLDER version
+    // never WIPES a forecast margin / close date it never recorded.
+    if ((v.schemaV || 1) >= 2) {
+      if (it.forecastMargin === undefined || it.forecastMargin === '')           delete d.forecastMargin;      else d.forecastMargin = it.forecastMargin;
+      if (it.forecastClosingDate === undefined || it.forecastClosingDate === '') delete d.forecastClosingDate; else d.forecastClosingDate = it.forecastClosingDate;
+    }
     d.inForecast = !!it.inForecast;
   });
   setDeals(deals);
