@@ -974,6 +974,7 @@ function fbInitDataSync() {
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
       ensureDailyBackupVersion();   // automatic daily restore point — never lose data again
+      initPresence();               // live editing-presence banner (isolated; safe if the rule is absent)
       renderTab();
     } else {
       fbReady = true;
@@ -987,6 +988,7 @@ function fbInitDataSync() {
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
       ensureDailyBackupVersion();   // automatic daily restore point — never lose data again
+      initPresence();               // live editing-presence banner (isolated; safe if the rule is absent)
       fbPushNow();
       renderTab();
     }
@@ -1018,6 +1020,7 @@ function fbSchedulePush() {
 }
 function fbPushNow() {
   if (!fbReady || !fbDocRef) return;
+  touchPresence();   // mark "I'm actively editing" so others get the live coordination banner
   var payload = { updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: (fbAuth.currentUser && fbAuth.currentUser.email) || '' };
   FB_SYNCED_KEYS.forEach(function(k) { payload[k] = load(k, null); });
   fbDocRef.set(payload, { merge: false }).then(function() {
@@ -1033,6 +1036,58 @@ function fbSignOut() {
   fbDocRef = null;
   if (fbPushTimer) clearTimeout(fbPushTimer);
   setFbPill('off', 'Sync · Off');
+}
+
+// ── Live editing presence (concurrency safety net) ─────────────────────────────────────────────
+// When someone makes an edit, we stamp their name in a dedicated 'presence' collection. Everyone
+// else sees a banner "X is editing Horizon now — coordinate before editing the same deals", so two
+// people don't overwrite each other in the one sub-second window the shared-doc model allows.
+// FULLY ISOLATED from the forecast data (its own collection, all writes wrapped) — a failure here
+// can NEVER touch a deal. Needs a one-time Firestore rule for /presence (degrades silently without).
+var _presenceInited = false, _lastPresenceWrite = 0;
+function _presenceKey(email){ return String(email || '').toLowerCase().replace(/[^a-z0-9]+/g, '_'); }
+function touchPresence(){
+  try {
+    if (!fbDb || !fbAuth || !fbAuth.currentUser || !currentUser || !currentUser.email) return;
+    var now = new Date().getTime();
+    if (now - _lastPresenceWrite < 15000) return;   // throttle writes to once / 15s
+    _lastPresenceWrite = now;
+    fbDb.collection('presence').doc(_presenceKey(currentUser.email)).set({
+      email: currentUser.email, name: currentUser.name || currentUser.email, ts: new Date().toISOString()
+    }).catch(function(){});
+  } catch(e){}
+}
+function readPresence(){
+  try {
+    if (!fbDb || !fbAuth || !fbAuth.currentUser || !currentUser) return;
+    fbDb.collection('presence').get().then(function(snap){
+      var now = new Date().getTime(), others = [], mine = (currentUser.email || '').toLowerCase();
+      snap.forEach(function(doc){
+        var p = doc.data(); if (!p || !p.ts) return;
+        if ((p.email || '').toLowerCase() === mine) return;
+        if (now - new Date(p.ts).getTime() < 120000) others.push(p.name || p.email);   // active in last 2 min
+      });
+      renderPresenceBanner(others);
+    }).catch(function(){});
+  } catch(e){}
+}
+function renderPresenceBanner(others){
+  var el = document.getElementById('presenceBanner');
+  if (!others || !others.length){ if (el) el.parentNode && el.parentNode.removeChild(el); return; }
+  if (!el){
+    el = document.createElement('div'); el.id = 'presenceBanner';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99998;background:#1B3244;color:#fff;padding:7px 16px;text-align:center;font-family:inherit;font-size:12.5px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,.25)';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '👥 <b>' + esc(others.join(', ')) + '</b> ' + (others.length > 1 ? 'are' : 'is') +
+    ' editing Horizon right now — to avoid overwriting each other, coordinate before editing the same deals.';
+}
+function initPresence(){
+  if (_presenceInited) return;
+  _presenceInited = true;
+  readPresence();
+  setInterval(readPresence, 20000);                          // refresh who's active every 20s
+  window.addEventListener('focus', function(){ touchPresence(); readPresence(); });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
