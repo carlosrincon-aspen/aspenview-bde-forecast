@@ -2184,13 +2184,15 @@ function _captureForecastItems() {
   var items = {};
   getDeals().forEach(function(d){
     items[_dealKey(d)] = {
-      monthlyHC:     JSON.parse(JSON.stringify(d.monthlyHC || {})),
-      totalHC:       d.totalHC || 0,
-      dollarPerHead: d.dollarPerHead,
-      winRateAdj:    d.winRateAdj,
-      actualMargin:  d.actualMargin,
-      growthPct:     d.growthPct,
-      inForecast:    !!d.inForecast
+      monthlyHC:           JSON.parse(JSON.stringify(d.monthlyHC || {})),
+      totalHC:             d.totalHC || 0,
+      dollarPerHead:       d.dollarPerHead,
+      winRateAdj:          d.winRateAdj,
+      actualMargin:        d.actualMargin,
+      forecastMargin:      d.forecastMargin,
+      forecastClosingDate: d.forecastClosingDate,
+      growthPct:           d.growthPct,
+      inForecast:          !!d.inForecast
     };
   });
   return items;
@@ -2266,6 +2268,8 @@ function restoreForecastVersion(id) {
     if (it.dollarPerHead === undefined) delete d.dollarPerHead; else d.dollarPerHead = it.dollarPerHead;
     if (it.winRateAdj === undefined)    delete d.winRateAdj;    else d.winRateAdj = it.winRateAdj;
     if (it.actualMargin === undefined)  delete d.actualMargin;  else d.actualMargin = it.actualMargin;
+    if (it.forecastMargin === undefined)      delete d.forecastMargin;      else d.forecastMargin = it.forecastMargin;
+    if (it.forecastClosingDate === undefined) delete d.forecastClosingDate; else d.forecastClosingDate = it.forecastClosingDate;
     if (it.growthPct === undefined)     delete d.growthPct;     else d.growthPct = it.growthPct;
     d.inForecast = !!it.inForecast;
   });
