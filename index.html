@@ -6301,10 +6301,60 @@ function _activityFilterBox(tableId) {
     'style="flex:1;max-width:420px;padding:7px 11px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:12.5px">' +
     '<span id="' + tableId + '_count" style="font-size:11px;color:var(--muted)"></span></div>';
 }
+// One-time recovery: re-apply Don's manual forecast close dates from the PERMANENT audit trail
+// (activity_archive). They were wiped by an older Zoho sync that didn't preserve overrides (since
+// fixed). Reads the archive newest-first, takes the LATEST "Edit forecastClosingDate" value per deal,
+// matches to current deals by normalized name, and writes it back. Saves a reversible version first.
+function recoverCloseDatesFromAudit() {
+  if (!fbDb || !fbAuth || !fbAuth.currentUser) { uiAlert('Connect / sign in to Firestore first, then try again.'); return; }
+  fbDb.collection('activity_archive').orderBy('ts', 'desc').limit(1500).get().then(function(snap) {
+    var latest = {};   // normName -> { name, date }  (first seen = newest, since ordered desc)
+    snap.forEach(function(doc) {
+      var e = doc.data();
+      if (!e || e.action !== 'Edit forecastClosingDate') return;
+      var det = String(e.details || '');
+      var parts = det.split(' → ');            // "<deal>: <old> → <new>"
+      if (parts.length < 2) return;
+      var nv = parts[parts.length - 1].trim();
+      var left = parts.slice(0, -1).join(' → ');
+      var ci = left.lastIndexOf(': ');
+      if (ci < 0) return;
+      var name = left.substring(0, ci).trim();
+      var key = normDealName(name);
+      if (!key || latest[key]) return;              // keep only the newest per deal
+      latest[key] = { name: name, date: nv };
+    });
+    var keys = Object.keys(latest);
+    if (!keys.length) { uiAlert('No forecast close-date history found in the audit trail.'); return; }
+    var deals = getDeals(), byNorm = {};
+    deals.forEach(function(d){ byNorm[normDealName(d.dealName)] = d; });
+    var apply = [], noMatch = [];
+    keys.forEach(function(k){
+      var t = latest[k];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(t.date)) return;     // only real dates (skip cleared "—")
+      if (byNorm[k]) apply.push({ d: byNorm[k], date: t.date }); else noMatch.push(t.name);
+    });
+    if (!apply.length) { uiAlert('Found ' + keys.length + ' logged close-date change(s), but none match a current deal name.'); return; }
+    uiConfirm('Restore Don\'s forecast close dates from the audit trail?\n\n' + apply.length + ' deal(s) will get their forecast close date back.' +
+      (noMatch.length ? '\n' + noMatch.length + ' logged deal(s) no longer match the current list (skipped).' : '') +
+      '\n\nA safety version is saved first (reversible). Nothing is pushed to Zoho.',
+      function() {
+        _pushVersion('Auto-save before restoring forecast close dates');
+        var n = 0;
+        apply.forEach(function(x){ x.d.forecastClosingDate = x.date; n++; });
+        setDeals(deals);
+        logActivity('Forecast', 'Restore close dates from audit', n + ' deal(s)');
+        uiAlert('✓ Restored forecast close dates on ' + n + ' deal(s). They now persist across syncs.\n\nOpen Aureum → Close Date to review, then 💾 Save a version.');
+        renderTab();
+      }, 'Restore ' + apply.length + ' dates');
+  }).catch(function(err){ uiAlert('Could not read the audit trail: ' + (err && err.message || err) + '\n\n(The activity_archive Firestore rule may be needed.)'); });
+}
 function adminActivitySection(activity) {
   var html = '';
   html += '<div class="card"><div class="card-header"><span class="card-title"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2e7d32;animation:pulse 1.6s infinite;vertical-align:middle;margin-right:6px"></span>Activity Stream</span><span class="card-sub">Last ' + Math.min(activity.length, 50) + ' events · live view</span>';
-  html += ' <button class="btn btn-ghost btn-sm" style="margin-left:10px" onclick="loadFullActivityHistory()" title="Load the complete, uncapped audit trail from Firestore (the permanent record — beyond the last 200 shown here)">📜 Load full history</button></div>';
+  html += ' <button class="btn btn-ghost btn-sm" style="margin-left:10px" onclick="loadFullActivityHistory()" title="Load the complete, uncapped audit trail from Firestore (the permanent record — beyond the last 200 shown here)">📜 Load full history</button>';
+  if (typeof canGovern === 'function' && canGovern()) html += ' <button class="btn btn-gold btn-sm" onclick="recoverCloseDatesFromAudit()" title="One-time recovery: re-apply Don\'s forecast close dates from the permanent audit trail (an older sync wiped them; now fixed). Saves a reversible version first; nothing is pushed to Zoho.">↩ Restore forecast close dates</button>';
+  html += '</div>';
   // Results render here, directly under the header/button (NOT below the 50-row table, where it
   // would be off-screen). Empty until the button is clicked.
   html += '<div id="fullActivityHistory"></div>';
