@@ -1366,11 +1366,12 @@ function syncZohoDeals() {
         client:                acctName,
         stage:                 r.Stage,
         bde:                   (r.Owner && r.Owner.name) || p.bde || '',
-        // Status: Zoho Account_Status wins; else prior local; else seed; else default.
-        status:                zohoStatus || p.status || (seed && seed.status) || 'Pipeline Account',
+        // Status: a hand-set status (d._manual.status) wins; else Zoho Account_Status; else prior; else seed; else default.
+        status:                (p._manual && p._manual.status && p.status) ? p.status : (zohoStatus || p.status || (seed && seed.status) || 'Pipeline Account'),
         location:              p.location || (seed && seed.location) || 'LATAM',
-        firstBillableMonth:    r.Closing_Date || p.firstBillableMonth || (seed && seed.firstBillableMonth) || '',
-        activationMonth:       r.Closing_Date || p.activationMonth || (seed && seed.activationMonth) || '',
+        // firstBillableMonth / activationMonth: a hand-entered value wins; otherwise track the Zoho close date.
+        firstBillableMonth:    (p._manual && p._manual.firstBillableMonth && p.firstBillableMonth) ? p.firstBillableMonth : (r.Closing_Date || p.firstBillableMonth || (seed && seed.firstBillableMonth) || ''),
+        activationMonth:       (p._manual && p._manual.activationMonth && p.activationMonth) ? p.activationMonth : (r.Closing_Date || p.activationMonth || (seed && seed.activationMonth) || ''),
         closingDate:           r.Closing_Date || p.closingDate || '',
         createdAt:             r.Created_Time || p.createdAt || '',
         // Close-date "push" tracking (Don's ask): each time Zoho's close date moves LATER than
@@ -1406,7 +1407,7 @@ function syncZohoDeals() {
         // HC plan: local if any, else seed (Zoho doesn't track monthly HC)
         monthlyHC:             hasLocalHc ? localHc : (seedSum > 0 ? JSON.parse(JSON.stringify(seedHc)) : {}),
         totalHC:               p.totalHC || seedSum || 0,
-        commercialDescription: r.Description || p.commercialDescription || '',
+        commercialDescription: (p._manual && p._manual.commercialDescription && p.commercialDescription) ? p.commercialDescription : (r.Description || p.commercialDescription || ''),
         // Flags: if user has touched this deal before, respect their flag; else use seed default
         inForecast:            prior ? !!p.inForecast  : (seed ? !!seed.inForecast  : false),
         isSuperDeal:           prior ? !!p.isSuperDeal : (seed ? !!seed.isSuperDeal : false),
@@ -1421,7 +1422,9 @@ function syncZohoDeals() {
         dollarPerHead:         p.dollarPerHead,
         forecastMargin:        p.forecastMargin,
         actualMargin:          p.actualMargin,
-        growthPct:             p.growthPct
+        growthPct:             p.growthPct,
+        // Per-field "user edited this by hand" markers — kept so the manual-wins rule above survives the sync.
+        _manual:               p._manual
       };
     });
 
@@ -1789,6 +1792,14 @@ function mergeSeedData(dst, src) {
     dst.monthlyHC = JSON.parse(JSON.stringify(src.monthlyHC));
     dst.totalHC = sumMonths(dst.monthlyHC);
   }
+  // Carry the ghost's MANUAL overrides across the merge so reconciling a hand-edited not-in-Zoho
+  // deal into its Zoho record never DROPS them. Only fill fields the Zoho record doesn't already
+  // carry — the Zoho-linked deal's own prior overrides win on a genuine conflict.
+  var _has = function(v){ return v !== undefined && v !== null && v !== ''; };
+  ['dollarPerHead','winRateAdj','forecastMargin','actualMargin','marginOverride','growthPct','forecastClosingDate'].forEach(function(f){
+    if (!_has(dst[f]) && _has(src[f])) dst[f] = src[f];
+  });
+  if ((!dst.totalHC || dst.totalHC === 0) && src.totalHC > 0) dst.totalHC = src.totalHC;
   if (src.inForecast  && !dst.inForecast)  dst.inForecast  = true;
   if (src.isSuperDeal && !dst.isSuperDeal) dst.isSuperDeal = true;
   dst.inExcel = true;  // src always comes from Don's Excel seed/ghost
@@ -2248,6 +2259,7 @@ function _captureForecastItems() {
       dollarPerHead:       d.dollarPerHead,
       winRateAdj:          d.winRateAdj,
       actualMargin:        d.actualMargin,
+      marginOverride:      d.marginOverride,
       forecastMargin:      d.forecastMargin,
       forecastClosingDate: d.forecastClosingDate,
       growthPct:           d.growthPct,
@@ -2270,8 +2282,11 @@ function _pushVersion(note) {
     savedBy: (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'auto',
     note: (note || '').trim(),
     anchor: getAnchorMonth(),
-    schemaV: 2,   // captures forecastMargin + forecastClosingDate (added 2026-07-01)
+    schemaV: 3,   // v2: +forecastMargin/forecastClosingDate · v3: +marginOverride, +Summary PMFF, +Super-Deal assessments, +margin rules (2026-07-01)
     items: _captureForecastItems(),
+    pmff: getPmff(),                 // Summary manual input (CFO/CEO) — so a restore point covers Summary too
+    superPrograms: getSuperPrograms(),// Super-Deal qualitative assessments + notes
+    marginRules: getMarginRules(),   // stage Win%/Margin% rules
     summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) }
   });
   setForecastVersions(versions);
@@ -2303,8 +2318,11 @@ function ensureDailyBackupVersion() {
     savedBy: 'auto-backup',
     note: 'Automatic daily safety backup',
     anchor: getAnchorMonth(),
-    schemaV: 2,   // captures forecastMargin + forecastClosingDate (added 2026-07-01)
+    schemaV: 3,   // v2: +forecastMargin/forecastClosingDate · v3: +marginOverride, +Summary PMFF, +Super-Deal assessments, +margin rules (2026-07-01)
     items: _captureForecastItems(),
+    pmff: getPmff(),                 // Summary manual input (CFO/CEO)
+    superPrograms: getSuperPrograms(),// Super-Deal qualitative assessments + notes
+    marginRules: getMarginRules(),   // stage Win%/Margin% rules
     summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) },
     auto: true, day: today
   });
@@ -2319,7 +2337,8 @@ function ensureDailyBackupVersion() {
 function restoreForecastVersion(id) {
   var v = getForecastVersions().find(function(x){ return x.id === id; });
   if (!v) return;
-  if (!confirm('Restore working version ' + v.label + ' (saved ' + new Date(v.savedAt).toLocaleString() + ' by ' + (v.savedBy || '—') + ')?\n\nThis loads that version\'s forecast back in so you can review / revise it. Your current unsaved edits will be replaced — save them first if you want to keep them.')) return;
+  var alsoSummary = (v.schemaV || 1) >= 3 ? '\n\nThis version also restores the Summary PMFF and Super-Deal assessments captured at that time.' : '';
+  if (!confirm('Restore working version ' + v.label + ' (saved ' + new Date(v.savedAt).toLocaleString() + ' by ' + (v.savedBy || '—') + ')?\n\nThis loads that version\'s forecast back in so you can review / revise it. Your current unsaved edits will be replaced — save them first if you want to keep them.' + alsoSummary)) return;
   var deals = getDeals();
   deals.forEach(function(d){
     var it = v.items[_dealKey(d)];
@@ -2337,9 +2356,21 @@ function restoreForecastVersion(id) {
       if (it.forecastMargin === undefined || it.forecastMargin === '')           delete d.forecastMargin;      else d.forecastMargin = it.forecastMargin;
       if (it.forecastClosingDate === undefined || it.forecastClosingDate === '') delete d.forecastClosingDate; else d.forecastClosingDate = it.forecastClosingDate;
     }
+    // marginOverride (legacy actual-margin alias) captured from schemaV >= 3 only.
+    if ((v.schemaV || 1) >= 3) {
+      if (it.marginOverride === undefined || it.marginOverride === '') delete d.marginOverride; else d.marginOverride = it.marginOverride;
+    }
     d.inForecast = !!it.inForecast;
   });
   setDeals(deals);
+  // Summary PMFF + Super-Deal assessments + margin rules were added to version capture on
+  // 2026-07-01 (schemaV >= 3). Restore them only when the version actually recorded them, so
+  // restoring an OLDER draft never wipes the current Summary / Super-Deal data.
+  if ((v.schemaV || 1) >= 3) {
+    if (v.pmff)          setPmff(v.pmff);
+    if (v.superPrograms) setSuperPrograms(v.superPrograms);
+    if (v.marginRules)   setMarginRules(v.marginRules);
+  }
   logActivity('Forecast', 'Restore working version', v.label);
   closeModal();
   alert('Restored ' + v.label + '. Revise as needed, then Save a new version, or apply the Official lock when you\'re ready for Finance.');
@@ -4006,6 +4037,10 @@ function saveDeal(idx) {
   d.actualMargin = mo === '' ? undefined : (parseFloat(mo) || 0) / 100;
   d.activationMonth = document.getElementById('m_activation').value.trim();
   d.commercialDescription = document.getElementById('m_desc').value;
+  // Mark the Zoho-mirrored fields the user just set by hand so the next Zoho sync PRESERVES them
+  // instead of reverting to Zoho's value. Untouched deals keep tracking Zoho (see syncZohoDeals).
+  d._manual = d._manual || {};
+  ['status','firstBillableMonth','activationMonth','commercialDescription'].forEach(function(f){ d._manual[f] = true; });
   if (idx === null) deals.push(d);
   setDeals(deals);
   closeModal();
@@ -6602,27 +6637,70 @@ function renderSettings() {
   document.getElementById('mainContent').innerHTML = html;
 }
 function exportData() {
-  var dump = { deals: getDeals(), margin_rules: getMarginRules(), snapshots: getSnapshots(), actuals: getActuals(), anchor_month: getAnchorMonth(),
-    activity_log: getActivityLog(), forecast_versions: getForecastVersions(), exportedAt: new Date().toISOString() };
+  // FULL-FIDELITY BACKUP: dump EVERY synced key so the downloaded file can restore the ENTIRE
+  // platform — deals + all Aureum manual overrides, Summary PMFF, Super-Deal assessments, working
+  // versions, snapshots, actuals, settings, per-deal overrides AND the access roster. Iterating
+  // FB_SYNCED_KEYS means any future synced key is included automatically (no more silent gaps like
+  // the old export, which quietly dropped pmff + super_programs). Each key sits at top level so an
+  // older build's importer still finds the fields it knows.
+  var dump = { _schema: 3, _app: 'Horizon BDE Forecast', exportedAt: new Date().toISOString() };
+  FB_SYNCED_KEYS.forEach(function(k){
+    var v = load(k, null);
+    if (v !== null && v !== undefined) dump[k] = v;
+  });
   var blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'aspenview-bde-forecast-' + new Date().toISOString().slice(0,10) + '.json';
+  a.download = 'aspenview-bde-forecast-FULL-' + new Date().toISOString().slice(0,10) + '.json';
   a.click();
+  var nKeys = Object.keys(dump).filter(function(k){ return k[0] !== '_' && k !== 'exportedAt'; }).length;
+  try { logActivity('Settings', 'Export full backup', nKeys + ' keys'); } catch(e){}
+}
+// Roster keys are UNION-merged on import (restoring an old backup must never remove someone's
+// access); every other synced key is fully restored from the backup.
+var IMPORT_ROSTER_KEYS = ['known_users','viewers','pmff_editors','admin_extra'];
+function _importRosterMerge(k, imported) {
+  var isObj = (k === 'known_users');
+  var cur = load(k, isObj ? {} : []);
+  if (isObj) {
+    var out = {};
+    Object.keys(imported || {}).forEach(function(e){ out[e] = imported[e]; });   // seed from backup
+    Object.keys(cur || {}).forEach(function(e){ out[e] = cur[e]; });             // current wins on conflict; current-only preserved
+    save(k, out);
+  } else {
+    var seen = {}, out2 = [];
+    (Array.isArray(cur) ? cur : []).concat(Array.isArray(imported) ? imported : []).forEach(function(e){
+      var key = String(e || '').toLowerCase();
+      if (e && !seen[key]) { seen[key] = 1; out2.push(e); }
+    });
+    save(k, out2);
+  }
 }
 function importData(file) {
   if (!file) return;
+  if (!canEdit()) return denyEdit();
   var r = new FileReader();
   r.onload = function() {
     try {
       var data = JSON.parse(r.result);
-      if (!confirm('Replace all current data with imported data? Cannot be undone.')) return;
-      if (data.deals)        setDeals(data.deals);
-      if (data.margin_rules) setMarginRules(data.margin_rules);
-      if (data.snapshots)    setSnapshots(data.snapshots);
-      if (data.actuals)      setActuals(data.actuals);
-      if (data.anchor_month) setAnchorMonth(data.anchor_month);
-      alert('Imported successfully.');
+      if (!confirm('Restore the ENTIRE platform from this backup?\n\nThis replaces deals + all Aureum manual overrides, Summary PMFF, Super-Deal assessments, working versions, snapshots, actuals and settings with the backup\'s values. Access/roles are MERGED — nobody loses access.\n\nA safety version of the current state is saved first, so this is reversible.')) return;
+      _pushVersion('Auto-save before importing a backup');   // reversible restore point
+      var safetyVersions = getForecastVersions();            // includes the safety version just pushed
+      var restored = 0;
+      FB_SYNCED_KEYS.forEach(function(k){
+        if (!(k in data)) return;
+        if (IMPORT_ROSTER_KEYS.indexOf(k) >= 0) { _importRosterMerge(k, data[k]); restored++; return; }
+        save(k, data[k]);
+        restored++;
+      });
+      // The backup may have overwritten forecast_versions with its own list — re-append the
+      // pre-import safety version(s) so the restore stays reversible.
+      var after = getForecastVersions(), ids = {};
+      after.forEach(function(v){ ids[v.id] = 1; });
+      safetyVersions.forEach(function(v){ if (!ids[v.id]) after.push(v); });
+      setForecastVersions(after);
+      try { logActivity('Settings', 'Import full backup', restored + ' keys restored'); } catch(e){}
+      alert('Imported successfully — restored ' + restored + ' data areas. The whole platform state is back (roles merged, nobody locked out).');
       renderTab();
     } catch (e) { alert('Import failed: ' + e.message); }
   };
