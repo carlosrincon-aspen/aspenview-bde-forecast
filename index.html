@@ -6463,7 +6463,8 @@ function renderSettings() {
   document.getElementById('mainContent').innerHTML = html;
 }
 function exportData() {
-  var dump = { deals: getDeals(), margin_rules: getMarginRules(), snapshots: getSnapshots(), actuals: getActuals(), anchor_month: getAnchorMonth(), exportedAt: new Date().toISOString() };
+  var dump = { deals: getDeals(), margin_rules: getMarginRules(), snapshots: getSnapshots(), actuals: getActuals(), anchor_month: getAnchorMonth(),
+    activity_log: getActivityLog(), forecast_versions: getForecastVersions(), exportedAt: new Date().toISOString() };
   var blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
