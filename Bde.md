@@ -225,6 +225,9 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-01 (PM-5) — A closed: Lockdown vs. Current view
+Closes item A. New **`lockdownVsCurrentCardHtml()`** on the Forecast Accuracy tab (right under the accuracy bands): takes the anchor month's locked snapshot (else the most recent locked), rebuilds a current snapshot for the same month via `buildPerDealSnapshot`, and shows **Locked vs Current** for Deals · HC (3-mo) · Adjusted revenue (3-mo) · Contribution margin $ (3-mo) with a **Better/(Worse)** delta, plus a deal-level list of what was **ADDED / REMOVED / CHANGED** since the lock (HC + Adj deltas). Header labels the lockdown ("Locked {month} by X on …") — the per-month lockdown version Michael wanted. Empty state guides to lock in Aureum. Accuracy is still measured against the locked snapshot; this is the human-readable drift view. JS validated; `version.txt`→`-lockdown-vs-current`.
+
 ### 2026-07-01 (PM-4) — Lockdown model: Lock month → push to Zoho in ONE step (item A core)
 Built Michael's forecast-lifecycle core. **⚠ Writes to the real Zoho CRM — must be tested live (Zoho auth can't run headless); test on ONE deal before a full push.** JS validated. Deployed, commit pending, `version.txt`→`-lockdown-push`.
 - **New `lockAndPushForecast()`** — the single Aureum action bar button **"🔒 Lock {month} → Zoho"** (replaces the separate "Official lock" + "Push to Zoho"). In one step it: saves a reversible version → locks the month (silent) → pushes to Zoho. Requires an active Zoho connection (else blocks with a clear message — Michael: "won't accept a lockdown unless it pushes"). Shows a confirm with a per-deal preview + count first.

@@ -4762,6 +4762,76 @@ function pushedDealsCardHtml() {
   h += '</tbody></table></div>';
   return h;
 }
+// ── Lockdown vs. Current (Michael's ask) ────────────────────────────────────────────────────────
+// The official LOCKED forecast for a month vs. what the forecast looks like RIGHT NOW. Don keeps
+// refining after a lock (until the next monthly lock), so this shows the drift: totals delta +
+// which deals were added / removed / changed since the lock. Accuracy is still measured against the
+// locked version; this is the human-readable "how far have we moved" view.
+function lockdownVsCurrentCardHtml() {
+  var anchor = getAnchorMonth();
+  var snaps  = getSnapshots();
+  // Prefer the anchor month's locked snapshot; else the most recently locked one.
+  var snap = snaps.find(function(s){ return s.snapshotMonth === anchor && s.locked; });
+  if (!snap) {
+    snap = snaps.filter(function(s){ return s.locked; })
+                .sort(function(a,b){ return (a.lockedAt || a.takenAt) < (b.lockedAt || b.takenAt) ? 1 : -1; })[0];
+  }
+  var html = '<div class="card"><div class="card-header"><span class="card-title">Lockdown vs. Current</span><span class="card-sub">The official locked forecast for a month vs. what it looks like right now — the drift since the lock. Accuracy is measured against the locked version.</span></div>';
+  if (!snap) {
+    html += '<div class="empty" style="padding:16px">No locked forecast yet. Lock a month from the action bar in <b>Aureum Demand Forecast</b> (🔒 Lock → Zoho) to start tracking lockdown vs. current.</div></div>';
+    return html;
+  }
+  var mk = snap.snapshotMonth;
+  var current = buildPerDealSnapshot(getDeals(), mk);
+  function sum3(perDeal, field) {
+    var t = 0; Object.keys(perDeal).forEach(function(k){ var p = perDeal[k]; if (p && p[field]) t += (p[field].m0 || 0) + (p[field].m1 || 0) + (p[field].m2 || 0); }); return t;
+  }
+  var lHC = sum3(snap.perDeal,'hc'),      cHC = sum3(current,'hc');
+  var lAdj = sum3(snap.perDeal,'adjRev'), cAdj = sum3(current,'adjRev');
+  var lMar = sum3(snap.perDeal,'margin$'),cMar = sum3(current,'margin$');
+  var lDeals = Object.keys(snap.perDeal).length, cDeals = Object.keys(current).length;
+  function bw(cur, lock, money) {
+    var d = cur - lock, near = money ? 0.5 : 0.05;
+    var color = Math.abs(d) < near ? 'var(--muted)' : (d > 0 ? 'var(--success)' : '#c0392b');
+    var v = money ? fmt$k(Math.abs(d)) : (Math.round(Math.abs(d) * 10) / 10);
+    return '<span style="color:' + color + ';font-weight:700">' + (Math.abs(d) < near ? '—' : (d > 0 ? '+' : '−') + v) + '</span>';
+  }
+  html += '<div style="padding:6px 4px 12px;font-size:11.5px;color:var(--muted)">Locked <b style="color:var(--navy)">' + monthLabel(mk) + '</b> by <b>' + esc(snap.lockedBy || '—') + '</b> on ' + new Date(snap.lockedAt || snap.takenAt).toLocaleString('en-US') + ' · 3-month window (' + monthLabel(mk) + '–' + monthLabel(monthKeyAfter(mk,2)) + ')</div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--navy);color:white"><th style="text-align:left;padding:8px 12px">Metric</th><th class="num" style="padding:8px 12px">Locked</th><th class="num" style="padding:8px 12px">Current</th><th class="num" style="padding:8px 12px">Better / (Worse)</th></tr></thead><tbody>';
+  function r(label, lock, cur, money) {
+    return '<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px">' + label + '</td><td class="num" style="padding:8px 12px">' + (money ? fmt$k(lock) : Math.round(lock)) + '</td><td class="num" style="padding:8px 12px">' + (money ? fmt$k(cur) : Math.round(cur)) + '</td><td class="num" style="padding:8px 12px">' + bw(cur, lock, money) + '</td></tr>';
+  }
+  html += r('Deals in forecast', lDeals, cDeals, false);
+  html += r('Headcount (3-mo)', lHC, cHC, false);
+  html += r('Adjusted revenue (3-mo)', lAdj, cAdj, true);
+  html += r('Contribution margin $ (3-mo)', lMar, cMar, true);
+  html += '</tbody></table>';
+  // Deal-level changes since the lock
+  var changes = [];
+  Object.keys(current).forEach(function(k){
+    if (!snap.perDeal[k]) { changes.push({ name:k, type:'added' }); return; }
+    var lc = snap.perDeal[k], cc = current[k];
+    var lh = (lc.hc.m0||0)+(lc.hc.m1||0)+(lc.hc.m2||0), ch = (cc.hc.m0||0)+(cc.hc.m1||0)+(cc.hc.m2||0);
+    var la = (lc.adjRev.m0||0)+(lc.adjRev.m1||0)+(lc.adjRev.m2||0), ca = (cc.adjRev.m0||0)+(cc.adjRev.m1||0)+(cc.adjRev.m2||0);
+    if (Math.abs(ch-lh) > 0.5 || Math.abs(ca-la) > 1) changes.push({ name:k, type:'changed', lh:lh, ch:ch, la:la, ca:ca });
+  });
+  Object.keys(snap.perDeal).forEach(function(k){ if (!current[k]) changes.push({ name:k, type:'removed' }); });
+  if (changes.length) {
+    html += '<div style="padding:10px 4px 4px;font-size:11.5px;color:var(--muted)"><b style="color:var(--navy)">' + changes.length + '</b> deal(s) changed since the lock:</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>';
+    changes.slice(0,50).forEach(function(c){
+      var tag = c.type==='added' ? '<span class="pill pill-green" style="font-size:9px">ADDED</span>' : (c.type==='removed' ? '<span class="pill pill-red" style="font-size:9px">REMOVED</span>' : '<span class="pill pill-gold" style="font-size:9px">CHANGED</span>');
+      var detail = c.type==='changed' ? ('HC ' + Math.round(c.lh) + '→' + Math.round(c.ch) + ' · Adj ' + fmt$k(c.la) + '→' + fmt$k(c.ca)) : '';
+      html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 12px;width:84px">' + tag + '</td><td style="padding:6px 12px">' + esc(c.name) + '</td><td class="num" style="padding:6px 12px;color:var(--muted)">' + detail + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    if (changes.length > 50) html += '<div style="font-size:11px;color:var(--muted);padding:6px 12px">…and ' + (changes.length - 50) + ' more</div>';
+  } else {
+    html += '<div style="padding:8px 12px;font-size:11.5px;color:var(--success)">✓ No changes since the lock — the current forecast still matches the locked version.</div>';
+  }
+  html += '</div>';
+  return html;
+}
 function renderForecastAccuracy() {
   var snaps    = getSnapshots();
   var actuals  = getActuals();
@@ -4786,6 +4856,9 @@ function renderForecastAccuracy() {
   html += accCard('m1', '+1 Month (M+1)',     bands.m1);
   html += accCard('m2', '+2 Months (M+2)',    bands.m2);
   html += '</div>';
+
+  // Lockdown vs. Current (Michael's ask) — the drift since the official monthly lock.
+  html += lockdownVsCurrentCardHtml();
 
   // Week-over-week forecast changes (Don's ask).
   html += weekOverWeekCardHtml();
