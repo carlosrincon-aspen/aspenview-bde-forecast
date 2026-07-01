@@ -375,7 +375,6 @@ var USERS = {
 
 var TABS = [
   { id: 'overview',    label: 'Overview' },
-  { id: 'summary',     label: 'Summary' },
   { id: 'pipeline',    label: 'Pipeline' },
   { id: 'aureum',      label: 'Aureum Demand Forecast' },
   { id: 'threemo',     label: '3 mo. revenue' },
@@ -385,7 +384,10 @@ var TABS = [
   { id: 'accuracy',    label: 'Forecast Accuracy' },   // absorbs Forecast Trend as a section
   { id: 'super',       label: 'Super-Deals' },
   { id: 'active',      label: 'Active Customers - Actuals' },
-  { id: 'settings',    label: 'Settings' }              // absorbs Stage Rules as a section
+  { id: 'settings',    label: 'Settings' },             // absorbs Stage Rules as a section
+  // Financial Model (Eric's "Summary") is the CFO's model — kept at the FAR RIGHT, on its own.
+  // Only the PMFF cells are editable there; the forecast numbers are locked (computed outputs).
+  { id: 'summary',     label: 'Financial Model' }
   // 'admin' tab opens from the ★ Admin button in the top-right header (admins only).
 ];
 
@@ -552,6 +554,23 @@ function getSnapshots()    { return load('snapshots', []); }
 function setSnapshots(s)   { save('snapshots', s); }
 function getActuals()      { return load('actuals', {}); }
 function setActuals(a)     { save('actuals', a); }
+// Deal-count history — one entry per Zoho sync, so "we keep losing deals" is visible/traceable
+// over time instead of a mystery. Kept small (last 30).
+function getDealCountHistory()  { return load('deal_count_history', []); }
+function recordDealCount(reason) {
+  var h = getDealCountHistory();
+  var all = getDeals();
+  var entry = {
+    ts: new Date().toISOString(),
+    total: all.length,
+    forecast: all.filter(function(d){ return d.inForecast && phaseForDeal(d) !== 5; }).length,
+    lost: getLostDeals().length,
+    reason: reason || ''
+  };
+  h.push(entry);
+  if (h.length > 30) h = h.slice(h.length - 30);
+  save('deal_count_history', h);
+}
 function defaultAnchorMonth() { return monthKeyAfter(currentMonthKey(), 1); }
 function getAnchorMonth() {
   var saved = load('anchor_month', null);
@@ -910,7 +929,7 @@ function maybeStartOnboarding() {
 // NOTE: seed_applied_* flags are NOT synced — kept local so each browser independently
 // runs its migration once after Firestore fetch completes (otherwise Firestore overwrites
 // the flag back to false and migration races with fetch).
-var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff','pmff_editors'];
+var FB_SYNCED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','known_users','activity_log','error_log','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff','pmff_editors','deal_count_history'];
 // Shared keys an Observer may NOT write (forecast + governance data). Excludes the audit/telemetry
 // keys (known_users, activity_log, error_log) so an observer's sign-ins and exports are still recorded.
 var VIEWER_PROTECTED_KEYS = ['deals','margin_rules','snapshots','actuals','anchor_month','last_zoho_sync','super_programs','trend_snapshots','admin_extra','viewers','longterm_growth_pct','longterm_base','historical_accuracy','midterm_margin','midterm_accuracy','accuracy_overrides','default_price_per_head','default_growth_pct','forecast_versions','pmff','pmff_editors'];
@@ -1445,6 +1464,7 @@ function syncZohoDeals() {
     backfillOwners(finalDeals);
     setDeals(finalDeals);
     save('last_zoho_sync', new Date().toISOString());
+    recordDealCount('Zoho sync');   // track the deal count over time so drops are visible/traceable
     ensureZohoActuals();   // refresh actuals from the freshly-synced Closed Won deals
     renderTab();
     var warn = window._zohoFieldWarning ? '\n\n⚠ ' + window._zohoFieldWarning : '';
@@ -2621,7 +2641,7 @@ function renderSummary(){
   function fTxt(num, mk){ return mk === 'hc' ? num.toFixed(1) : mk === 'contribPct' ? num.toFixed(1) + '%' : fmt$k(num); }
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Forecast Summary Statistics</h1><div class="sub">Existing / New / Total accounts · Forecast vs Prior-Month Financial Forecast (PMFF) → Better/(Worse). Monthly averages per horizon; Months 13-24 is a top-down projection at ' + (g*100).toFixed(1) + '%/mo.</div></div></div>';
+  html += '<div class="page-title"><div><h1>Financial Model <span style="color:var(--muted);font-weight:400">— Forecast Summary Statistics</span></h1><div class="sub">The CFO\'s financial model · Existing / New / Total accounts · Forecast vs Prior-Month Financial Forecast (PMFF) → Better/(Worse). Monthly averages per horizon; Months 13-24 is a top-down projection at ' + (g*100).toFixed(1) + '%/mo. <b>All forecast numbers here are locked (read-only) — only the PMFF is editable.</b></div></div></div>';
   html += '<div style="margin:0 0 14px;padding:10px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:12px;color:var(--navy)"><b>Draft for review with Finance.</b> Headcount = avg monthly HC · MRR = avg monthly MRR · Contribution $ = win-/margin-adjusted · Contribution % = Contribution ÷ <b>win-adjusted</b> MRR (so it reads as the blended contribution margin %, ~25-45% — not margin × win rate). "Existing" = account already Active/Expanding; "New" = net-new logo. The CFO enters the prior-month financial forecast (<b>PMFF</b>) in the <b>By month</b> view (toggle at top) — one entry point only. This <b>By horizon</b> view totals it up (read-only) and shows Better/(Worse). <i>(The Existing/New split &amp; Months 13-24 are slated for 2027.)</i></div>';
 
   html += '<div style="margin:0 0 12px;display:flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--muted);margin-right:4px">View:</span>'
@@ -2811,7 +2831,7 @@ function renderOverview() {
   var anchorLocked = !!(anchorSnap && anchorSnap.locked);
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Overview</h1><div class="sub">Anchor month: <b>' + monthLabel(anchor) + '</b> &middot; Rolling 3-month window</div></div>';
+  html += '<div class="page-title"><div><h1>Overview</h1><div class="sub">Anchor month: <b>' + monthLabel(anchor) + '</b> &middot; Current quarter + rolling horizons</div></div>';
   html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + ' ';
   // Locking is a SINGLE action, done from the action bar in Aureum Demand Forecast. Here we only
   // SHOW the month's lock status (read-only) — a duplicate Lock button in every tab confused people.
@@ -2842,7 +2862,14 @@ function renderOverview() {
   var xY2  = _mx(forecastTotals(y2Months), 12);
   // 2028 is top-down (Michael: "a flat percentage off the forecast"): 2027 × (1 + growth%); HC carried.
   var xY3  = { mrr: xY2.mrr * (1 + g), proj: xY2.proj * (1 + g), adj: xY2.adj * (1 + g), con: xY2.con * (1 + g), hc: xY2.hc };
+  // Current calendar quarter — the quarter we're actually IN (independent of the anchor, which can
+  // roll past the current month). For the sales "win the quarter" tracking (Michael).
+  function _qMonths(){ var ck = currentMonthKey(), yy = parseInt(ck.split('-')[0]), mm = parseInt(ck.split('-')[1]), qs = Math.floor((mm-1)/3)*3 + 1; return [0,1,2].map(function(i){ return yy + '-' + ('0' + (qs+i)).slice(-2); }); }
+  function _qLabel(){ var ck = currentMonthKey(), mm = parseInt(ck.split('-')[1]); return 'Q' + (Math.floor((mm-1)/3)+1) + ' ' + ck.split('-')[0]; }
+  var qMonths = _qMonths();
+  var xQ = _mx(forecastTotals(qMonths), 3);
   var cols = [
+    { label:'Current Quarter · ' + _qLabel(),  sub: monthLabel(qMonths[0]) + ' – ' + monthLabel(qMonths[2]), x: xQ },
     { label:'3-Month Total',                 sub: monthLabel(months[0]) + ' – ' + monthLabel(months[months.length-1]), x: x3 },
     { label:'Remainder of ' + anchorYr + ' Total', sub: remMonths.length ? (monthLabel(remMonths[0]) + ' – ' + monthLabel(remMonths[remMonths.length-1])) : 'none left this year', x: xRem },
     { label:'Full Year ' + anchorYr + ' Total',    sub: monthLabel(fyMonths[0]) + ' – ' + monthLabel(fyMonths[fyMonths.length-1]), x: xFy },
@@ -2852,24 +2879,48 @@ function renderOverview() {
 
   // ── Top: deal-count KPIs (all auto-update: Total from Zoho sync; the rest from the live Fcst set). ──
   var fset = forecastDeals();
-  function _activeIn(mks){ return fset.filter(function(d){ return mks.some(function(m){ return ((d.monthlyHC || {})[m] || 0) > 0; }); }).length; }
-  var nFcst = fset.length, n3 = _activeIn(months), nRem = _activeIn(remMonths);
+  var nFcst = fset.length;
+  // Partition each forecast deal by the FIRST month it bills (its billing start) so the buckets
+  // reconcile to the total (Michael: 43 next-3mo + 13 rest-of-26 + 7 in 27 = 63, with 28 = 0).
+  function _firstBill(d){ var ms = Object.keys(d.monthlyHC || {}).filter(function(m){ return (d.monthlyHC[m] || 0) > 0; }).sort(); return ms[0] || null; }
+  var y2Str = String(y2), y3Str = String(y3);
+  var cnt = { n3: 0, rem: 0, y2: 0, y3plus: 0, none: 0 };
+  fset.forEach(function(d){
+    var fb = _firstBill(d);
+    if (!fb)                              cnt.none++;
+    else if (months.indexOf(fb) >= 0)     cnt.n3++;
+    else if (remMonths.indexOf(fb) >= 0)  cnt.rem++;
+    else if (fb.slice(0,4) === y2Str)     cnt.y2++;
+    else if (fb.slice(0,4) >= y3Str)      cnt.y3plus++;
+    else                                  cnt.rem++;   // any earlier straggler → near term
+  });
+  // Deal-count drift since the last Zoho sync (Michael: "we keep losing deals") — surfaced so it's
+  // traceable, not a mystery. A drop usually means deals went Closed Lost or were removed in Zoho.
+  var dch = getDealCountHistory();
+  var deltaStr = '';
+  if (dch.length >= 2) {
+    var dd = dch[dch.length-1].total - dch[dch.length-2].total;
+    if (dd !== 0) deltaStr = ' · ' + (dd > 0 ? '▲ +' + dd : '▼ ' + dd) + ' since last sync';
+  }
   html += '<div class="stat-grid">';
-  html += statCard('Total Deals · Pipeline', totalDeals, pipelineDeals + ' in pipeline · ' + aureumDeals + ' super-deals · from Zoho', 'gold');
-  html += statCard('Total in Forecast (Fcst)', nFcst, 'Fcst-checked in Aureum · Closed Won excluded', 'aureum');
-  html += statCard('Total Forecast · Next 3 Months', n3, monthLabel(months[0]) + ' – ' + monthLabel(months[months.length-1]) + ' · billing', 'good');
-  html += statCard('Total Forecast · Rest of ' + anchorYr, nRem, (remMonths.length ? monthLabel(remMonths[0]) + ' – ' + monthLabel(remMonths[remMonths.length-1]) : 'none left') + ' · billing', 'good');
+  html += statCard('Total Deals · Pipeline', totalDeals, pipelineDeals + ' in pipeline · ' + aureumDeals + ' super-deals · from Zoho' + deltaStr, 'gold');
+  html += statCard('Total in Forecast (Fcst)', nFcst, 'Fcst-checked in Aureum · Closed Won excluded' + (cnt.none ? ' · ' + cnt.none + ' unscheduled' : ''), 'aureum');
+  html += statCard('Forecast · Next 3 Months', cnt.n3, monthLabel(months[0]) + ' – ' + monthLabel(months[months.length-1]) + ' · billing starts', 'good');
+  html += statCard('Forecast · Rest of ' + anchorYr, cnt.rem, (remMonths.length ? monthLabel(remMonths[0]) + ' – ' + monthLabel(remMonths[remMonths.length-1]) : 'none left') + ' · billing starts', 'good');
+  html += statCard('Forecast · ' + y2, cnt.y2, 'billing starts in ' + y2, cnt.y2 ? 'good' : '');
+  html += statCard('Forecast · ' + y3, cnt.y3plus, 'billing starts ' + y3 + '+', cnt.y3plus ? 'good' : '');
   html += '</div>';
+  html += '<div style="margin:-6px 0 16px;font-size:11.5px;color:var(--muted)">Forecast deals by billing start: <b style="color:var(--navy)">' + cnt.n3 + '</b> next 3 mo + <b style="color:var(--navy)">' + cnt.rem + '</b> rest of ' + anchorYr + ' + <b style="color:var(--navy)">' + cnt.y2 + '</b> in ' + y2 + ' + <b style="color:var(--navy)">' + cnt.y3plus + '</b> in ' + y3 + '+' + (cnt.none ? ' + <b style="color:var(--navy)">' + cnt.none + '</b> unscheduled' : '') + ' = <b style="color:var(--navy)">' + nFcst + '</b> total.</div>';
 
   // ── Single summary table. Michael: lead with the Average MRR (the number to keep in your head),
   // then contribution dollars and headcount below, in the same table. ──
-  html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Summary — ' + anchorYr + '–' + y3 + '</span><span class="card-sub">Average MRR is monthly · Adjusted Revenue &amp; Contribution Margin Dollars are period totals · ' + y3 + ' is top-down</span></div>';
+  html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Summary — ' + anchorYr + '–' + y3 + '</span><span class="card-sub"><b>Average MRR / month</b> is a monthly average; <b>every other row is a period total</b> (the sum over that column\'s months). ' + y3 + ' is top-down.</span></div>';
   html += '<table><thead><tr><th>Metric</th>';
   cols.forEach(function(c){ html += '<th class="num">' + esc(c.label) + '<div style="font-size:10px;color:var(--muted);font-weight:400">' + esc(c.sub) + '</div></th>'; });
   html += '</tr></thead><tbody>';
   // Lead row — Average MRR, highlighted so it is the first thing you see.
-  html += '<tr style="background:#fff8e1"><td><b>Average MRR</b> <span style="color:var(--muted);font-size:11px">(monthly recurring revenue)</span></td>' + cols.map(function(c){ return '<td class="num num-bold" style="color:var(--navy)">' + fmt$k(c.x.mrr) + '</td>'; }).join('') + '</tr>';
-  html += '<tr><td>Projected Revenue <span style="color:var(--muted);font-size:11px">(gross · period total)</span></td>' + cols.map(function(c){ return '<td class="num">' + fmt$k(c.x.proj) + '</td>'; }).join('') + '</tr>';
+  html += '<tr style="background:#fff8e1"><td><b>Average MRR / month</b> <span style="color:var(--muted);font-size:11px">(gross MRR ÷ months in the period)</span></td>' + cols.map(function(c){ return '<td class="num num-bold" style="color:var(--navy)">' + fmt$k(c.x.mrr) + '</td>'; }).join('') + '</tr>';
+  html += '<tr><td>Total Projected MRR <span style="color:var(--muted);font-size:11px">(gross · sum over the period)</span></td>' + cols.map(function(c){ return '<td class="num">' + fmt$k(c.x.proj) + '</td>'; }).join('') + '</tr>';
   html += '<tr><td>Adjusted Revenue <span style="color:var(--muted);font-size:11px">(win-rate-adjusted · period total)</span></td>' + cols.map(function(c){ return '<td class="num">' + fmt$k(c.x.adj) + '</td>'; }).join('') + '</tr>';
   html += '<tr><td>Contribution Margin Dollars <span style="color:var(--muted);font-size:11px">(win- &amp; margin-adjusted · period total)</span></td>' + cols.map(function(c){ return '<td class="num num-bold">' + fmt$k(c.x.con) + '</td>'; }).join('') + '</tr>';
   html += '<tr><td>Forecast Headcount <span style="color:var(--muted);font-size:11px">(cumulative HC-months)</span></td>' + cols.map(function(c){ return '<td class="num">' + c.x.hc + '</td>'; }).join('') + '</tr>';
@@ -2878,12 +2929,16 @@ function renderOverview() {
   html += '</div>';
 
 
-  html += '<div class="card"><div class="card-header"><span class="card-title">Rolling 3-Month Window</span><span class="card-sub">' + monthLabel(months[0]) + ' &middot; ' + monthLabel(months[1]) + ' &middot; ' + monthLabel(months[2]) + '</span></div>';
-  html += '<table><thead><tr><th>Metric</th><th class="num">' + monthLabel(months[0]) + '</th><th class="num">' + monthLabel(months[1]) + '</th><th class="num">' + monthLabel(months[2]) + '</th><th class="num">3-mo Total</th></tr></thead><tbody>';
-  html += '<tr><td>Forecasted Headcount</td>' + totals.hc.map(function(v){ return '<td class="num num-bold">' + v + '</td>'; }).join('') + '<td class="num num-bold">' + totalHc + '</td></tr>';
-  html += '<tr><td>Projected MRR (monthly)</td>'   + totals.proj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totals.proj.reduce(function(s,v){return s+v;},0)) + '</td></tr>';
-  html += '<tr><td>Adj. MRR <span style="color:var(--muted);font-size:11px">(win-rate-adjusted)</span></td>' + totals.adj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalAdj) + '</td></tr>';
-  html += '<tr><td>Contribution Margin Dollars <span style="color:var(--muted);font-size:11px">(win- &amp; margin-adjusted)</span></td>' + totals.margin$.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(totalMargin) + '</td></tr>';
+  // Current Quarter (month by month) — the quarter we're actually in, so the CURRENT month never
+  // drops off the view the way a rolling anchor window does (Michael). Feeds the sales "win the quarter".
+  var qt = forecastTotals(qMonths);
+  var qHc = sumArr(qt.hc), qAdj = sumArr(qt.adj), qMar = sumArr(qt.margin);
+  html += '<div class="card"><div class="card-header"><span class="card-title">Current Quarter · ' + _qLabel() + '</span><span class="card-sub">' + monthLabel(qMonths[0]) + ' &middot; ' + monthLabel(qMonths[1]) + ' &middot; ' + monthLabel(qMonths[2]) + ' — the quarter we\'re in (independent of the anchor). Sales "win the quarter" view.</span></div>';
+  html += '<table><thead><tr><th>Metric</th><th class="num">' + monthLabel(qMonths[0]) + '</th><th class="num">' + monthLabel(qMonths[1]) + '</th><th class="num">' + monthLabel(qMonths[2]) + '</th><th class="num">' + _qLabel() + ' Total</th></tr></thead><tbody>';
+  html += '<tr><td>Forecasted Headcount</td>' + qt.hc.map(function(v){ return '<td class="num num-bold">' + Math.round(v) + '</td>'; }).join('') + '<td class="num num-bold">' + Math.round(qHc) + '</td></tr>';
+  html += '<tr><td>Projected MRR (monthly)</td>'   + qt.proj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(sumArr(qt.proj)) + '</td></tr>';
+  html += '<tr><td>Adj. MRR <span style="color:var(--muted);font-size:11px">(win-rate-adjusted)</span></td>' + qt.adj.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(qAdj) + '</td></tr>';
+  html += '<tr><td>Contribution Margin Dollars <span style="color:var(--muted);font-size:11px">(win- &amp; margin-adjusted)</span></td>' + qt.margin.map(function(v){ return '<td class="num">' + fmt$k(v) + '</td>'; }).join('') + '<td class="num num-bold">' + fmt$k(qMar) + '</td></tr>';
   html += '</tbody></table></div>';
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Forecast Reliability by Horizon</span><span class="card-sub">' + (bands.m0.isDefault ? 'Default values — accumulates as snapshots build up' : 'Computed from ' + bands.m0.n + '/' + bands.m1.n + '/' + bands.m2.n + ' historical snapshots') + '</span></div>';
