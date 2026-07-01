@@ -2050,7 +2050,7 @@ function lockForecast(monthKey) {
   var existing = snaps.find(function(s){ return s.snapshotMonth === monthKey; });
   var lockedBy = (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'anon';
   if (existing) {
-    if (existing.locked && !confirm(monthLabel(monthKey) + ' is already locked by ' + (existing.lockedBy || '—') + ' on ' + new Date(existing.lockedAt || existing.takenAt).toLocaleString() + '.\n\nRe-lock with the current numbers? This overwrites the previous lock.')) return;
+    if (existing.locked && !confirm(monthLabel(monthKey) + ' is already locked by ' + (existing.lockedBy || '—') + ' on ' + new Date(existing.lockedAt || existing.takenAt).toLocaleString('en-US') + '.\n\nRe-lock with the current numbers? This overwrites the previous lock.')) return;
     existing.takenAt = new Date().toISOString();
     existing.perDeal = buildPerDealSnapshot(deals, monthKey);
     existing.locked  = true;
@@ -2231,10 +2231,10 @@ function openForecastAuditModal() {
   else {
     html += '<div style="max-height:48vh;overflow:auto;border:1px solid var(--border);border-radius:6px"><table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead style="position:sticky;top:0;background:var(--navy);color:white"><tr><th style="text-align:left;padding:5px 8px">When</th><th style="text-align:left;padding:5px 8px">Who</th><th style="text-align:left;padding:5px 8px">Action</th><th style="text-align:left;padding:5px 8px">Detail</th></tr></thead><tbody>';
     log.forEach(function(e){
-      html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:4px 8px;color:var(--muted);white-space:nowrap">' + new Date(e.ts).toLocaleString() + '</td><td style="padding:4px 8px;color:var(--muted)">' + esc((e.actor || '').split('@')[0]) + '</td><td style="padding:4px 8px"><b>' + esc(e.action) + '</b></td><td style="padding:4px 8px">' + esc(e.details) + '</td></tr>';
+      html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:4px 8px;color:var(--muted);white-space:nowrap">' + new Date(e.ts).toLocaleString('en-US') + '</td><td style="padding:4px 8px;color:var(--muted)">' + esc((e.actor || '').split('@')[0]) + '</td><td style="padding:4px 8px"><b>' + esc(e.action) + '</b></td><td style="padding:4px 8px">' + esc(e.details) + '</td></tr>';
     });
     html += '</tbody></table></div>';
-    var dump = log.map(function(e){ return new Date(e.ts).toLocaleString() + '\t' + (e.actor || '') + '\t' + e.action + '\t' + e.details; }).join('\n');
+    var dump = log.map(function(e){ return new Date(e.ts).toLocaleString('en-US') + '\t' + (e.actor || '') + '\t' + e.action + '\t' + e.details; }).join('\n');
     html += '<div style="margin-top:10px"><div style="font-size:11px;color:var(--muted);margin-bottom:4px">Copy all ' + log.length + ' entries (click to select):</div><textarea readonly style="width:100%;height:90px;font-size:10.5px;font-family:monospace" onclick="this.select()">' + esc(dump) + '</textarea></div>';
   }
   html += '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Close</button></div>';
@@ -2338,7 +2338,7 @@ function restoreForecastVersion(id) {
   var v = getForecastVersions().find(function(x){ return x.id === id; });
   if (!v) return;
   var alsoSummary = (v.schemaV || 1) >= 3 ? '\n\nThis version also restores the Summary PMFF and Super-Deal assessments captured at that time.' : '';
-  if (!confirm('Restore working version ' + v.label + ' (saved ' + new Date(v.savedAt).toLocaleString() + ' by ' + (v.savedBy || '—') + ')?\n\nThis loads that version\'s forecast back in so you can review / revise it. Your current unsaved edits will be replaced — save them first if you want to keep them.' + alsoSummary)) return;
+  if (!confirm('Restore working version ' + v.label + ' (saved ' + new Date(v.savedAt).toLocaleString('en-US') + ' by ' + (v.savedBy || '—') + ')?\n\nThis loads that version\'s forecast back in so you can review / revise it. Your current unsaved edits will be replaced — save them first if you want to keep them.' + alsoSummary)) return;
   var deals = getDeals();
   deals.forEach(function(d){
     var it = v.items[_dealKey(d)];
@@ -2397,7 +2397,7 @@ function openVersionsModal() {
     versions.forEach(function(v){
       var sm = v.summary || {};
       html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:7px 10px"><b>' + esc(v.label) + '</b></td>';
-      html += '<td style="padding:7px 10px;color:var(--muted)">' + new Date(v.savedAt).toLocaleString() + '<br><span style="font-size:10px">by ' + esc(v.savedBy || '—') + '</span></td>';
+      html += '<td style="padding:7px 10px;color:var(--muted)">' + new Date(v.savedAt).toLocaleString('en-US') + '<br><span style="font-size:10px">by ' + esc(v.savedBy || '—') + '</span></td>';
       html += '<td class="num" style="padding:7px 10px;color:var(--muted)">' + (sm.deals != null ? sm.deals + ' · ' + sm.fcstHC : '—') + '</td>';
       html += '<td style="padding:7px 10px;color:var(--muted)">' + (esc(v.note) || '—') + '</td>';
       html += '<td style="padding:7px 10px;white-space:nowrap;text-align:right"><button class="btn btn-ghost btn-sm" onclick="restoreForecastVersion(\'' + v.id + '\')">↩ Restore</button> <button class="btn btn-danger btn-sm" onclick="deleteForecastVersion(\'' + v.id + '\')">✕</button></td></tr>';
@@ -2811,13 +2811,13 @@ function renderOverview() {
   html += '<div class="page-title"><div><h1>Overview</h1><div class="sub">Anchor month: <b>' + monthLabel(anchor) + '</b> &middot; Rolling 3-month window</div></div>';
   html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + ' ';
   if (anchorLocked) {
-    html += '<button class="btn btn-ghost btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + ' on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString() + '">🔒 Locked · Re-lock</button>';
+    html += '<button class="btn btn-ghost btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Locked by ' + esc(anchorSnap.lockedBy || '—') + ' on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString('en-US') + '">🔒 Locked · Re-lock</button>';
   } else {
     html += '<button class="btn btn-gold btn-sm" onclick="lockForecast(\'' + anchor + '\')" title="Lock this forecast — the snapshot becomes immutable and powers the accuracy bands when actuals come in">🔒 Lock ' + monthLabel(anchor) + ' forecast</button>';
   }
   html += '</div></div>';
   if (anchorLocked) {
-    html += '<div style="margin:0 0 14px;padding:8px 14px;background:#e8f5e9;border-left:4px solid var(--success);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)"><b>🔒 ' + monthLabel(anchor) + ' forecast is locked.</b> Stamped by <b>' + esc(anchorSnap.lockedBy || '—') + '</b> on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString() + '. Accuracy will be measured against this snapshot when actuals land.</div>';
+    html += '<div style="margin:0 0 14px;padding:8px 14px;background:#e8f5e9;border-left:4px solid var(--success);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)"><b>🔒 ' + monthLabel(anchor) + ' forecast is locked.</b> Stamped by <b>' + esc(anchorSnap.lockedBy || '—') + '</b> on ' + new Date(anchorSnap.lockedAt || anchorSnap.takenAt).toLocaleString('en-US') + '. Accuracy will be measured against this snapshot when actuals land.</div>';
   }
 
   // ── Calendar horizons (Michael's single summary table). 2026 in detail (3-mo / remainder / full
@@ -3014,14 +3014,14 @@ function forecastCoverageCardHtml() {
     h += '<tr style="background:'+bg+';border-bottom:1px solid var(--border)">';
     h += '<td style="padding:9px 12px">'+phasePill(r.p.id)+'</td>';
     h += '<td class="num" style="padding:9px 12px;border-left:1px solid var(--border)">'+r.fD+' / '+r.pD+'</td><td class="num" style="padding:9px 12px;font-weight:700;color:'+covColor(r.fD,r.pD)+'">'+pct(r.fD,r.pD)+'</td>';
-    h += '<td class="num" style="padding:9px 12px;border-left:1px solid var(--border)">'+r.fH.toLocaleString()+' / '+r.pH.toLocaleString()+'</td><td class="num" style="padding:9px 12px;font-weight:700;color:'+covColor(r.fH,r.pH)+'">'+pct(r.fH,r.pH)+'</td>';
+    h += '<td class="num" style="padding:9px 12px;border-left:1px solid var(--border)">'+r.fH.toLocaleString('en-US')+' / '+r.pH.toLocaleString('en-US')+'</td><td class="num" style="padding:9px 12px;font-weight:700;color:'+covColor(r.fH,r.pH)+'">'+pct(r.fH,r.pH)+'</td>';
     h += '<td class="num" style="padding:9px 12px;border-left:1px solid var(--border)">'+fmt$k(r.fM)+' / '+fmt$k(r.pM)+'</td><td class="num" style="padding:9px 12px;font-weight:700;color:'+covColor(r.fM,r.pM)+'">'+pct(r.fM,r.pM)+'</td>';
     h += '</tr>';
   });
   h += '<tr class="pl-total" style="background:var(--navy);color:white;font-weight:700">';
   h += '<td style="padding:10px 12px;color:white">TOTAL — Recruitment + Pricing + Legal</td>';
   h += '<td class="num" style="padding:10px 12px;color:white;border-left:1px solid rgba(255,255,255,.25)">'+tot.fD+' / '+tot.pD+'</td><td class="num" style="padding:10px 12px;color:var(--gold)">'+pct(tot.fD,tot.pD)+'</td>';
-  h += '<td class="num" style="padding:10px 12px;color:white;border-left:1px solid rgba(255,255,255,.25)">'+tot.fH.toLocaleString()+' / '+tot.pH.toLocaleString()+'</td><td class="num" style="padding:10px 12px;color:var(--gold)">'+pct(tot.fH,tot.pH)+'</td>';
+  h += '<td class="num" style="padding:10px 12px;color:white;border-left:1px solid rgba(255,255,255,.25)">'+tot.fH.toLocaleString('en-US')+' / '+tot.pH.toLocaleString('en-US')+'</td><td class="num" style="padding:10px 12px;color:var(--gold)">'+pct(tot.fH,tot.pH)+'</td>';
   h += '<td class="num" style="padding:10px 12px;color:white;border-left:1px solid rgba(255,255,255,.25)">'+fmt$k(tot.fM)+' / '+fmt$k(tot.pM)+'</td><td class="num" style="padding:10px 12px;color:var(--gold)">'+pct(tot.fM,tot.pM)+'</td>';
   h += '</tr>';
   h += '</tbody></table></div>';
@@ -3045,21 +3045,23 @@ function renderPipelineOverview() {
 
   // Per-phase aggregates
   var perPhase = {};
-  PHASES.forEach(function(p){ perPhase[p.id] = { deals:[], hc:0, mrr:0, arr:0 }; });
+  PHASES.forEach(function(p){ perPhase[p.id] = { deals:[], hc:0, mrr:0, arr:0, tcv:0 }; });
   deals.forEach(function(d){
     var pid = phaseForDeal(d);
     perPhase[pid].deals.push(d);
     perPhase[pid].hc  += dealHcForRollup(d);
     perPhase[pid].mrr += dealMRR(d);
     perPhase[pid].arr += dealARR(d);
+    perPhase[pid].tcv += (d.tcv || 0);   // Total Contract Value from Zoho (API field "TCV"); 0 if not set
   });
 
-  var totalDeals = 0, totalHC = 0, totalMRR = 0, totalARR = 0;
+  var totalDeals = 0, totalHC = 0, totalMRR = 0, totalARR = 0, totalTCV = 0;
   Object.keys(perPhase).forEach(function(k){
     totalDeals += perPhase[k].deals.length;
     totalHC    += perPhase[k].hc;
     totalMRR   += perPhase[k].mrr;
     totalARR   += perPhase[k].arr;
+    totalTCV   += perPhase[k].tcv;
   });
 
   var html = '';
@@ -3079,10 +3081,11 @@ function renderPipelineOverview() {
 
   // ─── KPI strip ───
   html += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:22px">';
-  html += pipelineKpiCard('Total Deals',          totalDeals.toLocaleString(),    'Across all 5 phases',     'navy');
-  html += pipelineKpiCard('Total Headcount',      totalHC.toLocaleString(),       'Active resources',         'blue');
+  html += pipelineKpiCard('Total Deals',          totalDeals.toLocaleString('en-US'),    'Across all 5 phases',     'navy');
+  html += pipelineKpiCard('Total Headcount',      totalHC.toLocaleString('en-US'),       'Active resources',         'blue');
   html += pipelineKpiCard('Total Pipeline MRR',   fmt$k(totalMRR),                'Monthly recurring',        'gold');
-  html += pipelineKpiCard('Total Pipeline ARR',   fmt$k(totalARR),                'Annual recurring',         'teal');
+  html += pipelineKpiCard('Total Pipeline ARR',   fmt$k(totalARR),                'Annual recurring (MRR×12)', 'teal');
+  html += pipelineKpiCard('Total Pipeline TCV',   totalTCV > 0 ? fmt$k(totalTCV) : '—', 'Total contract value (Zoho)', 'navy');
   html += '</div>';
 
   // ─── Forecast Coverage by Phase (Michael's idea) ───
@@ -3097,6 +3100,7 @@ function renderPipelineOverview() {
   html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">HC</th>';
   html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">MRR</th>';
   html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">ARR</th>';
+  html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">TCV</th>';
   html += '<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px">% of Total MRR</th>';
   html += '</tr></thead><tbody>';
   // Render in REVERSE phase order so Closed Won is at the top (like the investor screenshot).
@@ -3114,9 +3118,10 @@ function renderPipelineOverview() {
     html += '<b style="color:var(--navy)">' + esc(p.short) + '</b>';
     html += '</td>';
     html += '<td style="text-align:right;padding:12px 14px;font-weight:600">' + stat.deals.length + '</td>';
-    html += '<td style="text-align:right;padding:12px 14px">' + stat.hc.toLocaleString() + '</td>';
+    html += '<td style="text-align:right;padding:12px 14px">' + stat.hc.toLocaleString('en-US') + '</td>';
     html += '<td style="text-align:right;padding:12px 14px;font-weight:700">' + fmt$k(stat.mrr) + '</td>';
     html += '<td style="text-align:right;padding:12px 14px;font-weight:700;color:var(--navy)">' + fmt$k(stat.arr) + '</td>';
+    html += '<td style="text-align:right;padding:12px 14px;font-weight:700;color:var(--navy)">' + (stat.tcv > 0 ? fmt$k(stat.tcv) : '—') + '</td>';
     html += '<td style="text-align:right;padding:12px 14px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + dot + ';margin-right:8px"></span><b>' + (pct * 100).toFixed(1) + '%</b></td>';
     html += '</tr>';
   });
@@ -3136,7 +3141,7 @@ function renderPipelineOverview() {
     html += '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + dot + '"></span>';
     html += '<span style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700">Phase ' + p.id + '</span>';
     html += '<b style="color:var(--navy);font-size:14px">' + esc(p.short) + '</b>';
-    html += '<span style="color:var(--muted);font-size:11.5px">' + stat.deals.length + ' deals · ' + stat.hc.toLocaleString() + ' HC · ' + fmt$k(stat.mrr) + ' MRR · ' + fmt$k(stat.arr) + ' ARR</span>';
+    html += '<span style="color:var(--muted);font-size:11.5px">' + stat.deals.length + ' deals · ' + stat.hc.toLocaleString('en-US') + ' HC · ' + fmt$k(stat.mrr) + ' MRR · ' + fmt$k(stat.arr) + ' ARR' + (stat.tcv > 0 ? ' · ' + fmt$k(stat.tcv) + ' TCV' : '') + '</span>';
     html += '<span style="margin-left:auto;font-size:11px;color:var(--muted)">' + (expanded ? '▾' : '▸') + '</span>';
     html += '</div>';
 
@@ -3158,6 +3163,7 @@ function renderPipelineOverview() {
         html += '<th style="text-align:right;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">$/HC</th>';
         html += '<th style="text-align:right;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Total MRR</th>';
         html += '<th style="text-align:right;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">Total ARR</th>';
+        html += '<th style="text-align:right;padding:9px 12px;font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">TCV</th>';
         html += '</tr></thead><tbody>';
 
         var groupLabels = { super: { label: 'SUPER DEAL', range: '+100 HC',  bg:'#0A1928', color:'white' },
@@ -3172,12 +3178,14 @@ function renderPipelineOverview() {
           var groupHC  = arr.reduce(function(s,d){return s+dealHcForRollup(d);},0);
           var groupMRR = arr.reduce(function(s,d){return s+dealMRR(d);},0);
           var groupARR = arr.reduce(function(s,d){return s+dealARR(d);},0);
+          var groupTCV = arr.reduce(function(s,d){return s+(d.tcv||0);},0);
           html += '<tr class="pl-total" style="background:' + g.bg + ';color:' + g.color + '">';
           html += '<td colspan="2" style="padding:8px 12px"><span style="padding:3px 9px;background:rgba(255,255,255,.18);border-radius:14px;font-size:10px;font-weight:700;letter-spacing:.4px;margin-right:8px">' + g.label + '</span>' + arr.length + ' DEAL' + (arr.length > 1 ? 'S' : '') + ' · ' + g.range + '</td>';
-          html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + groupHC.toLocaleString() + '</td>';
+          html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + groupHC.toLocaleString('en-US') + '</td>';
           html += '<td style="text-align:right;padding:8px 12px">' + (groupHC > 0 ? fmt$k(groupMRR/groupHC) : '—') + '</td>';
           html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + fmt$k(groupMRR) + '</td>';
           html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + fmt$k(groupARR) + '</td>';
+          html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + (groupTCV > 0 ? fmt$k(groupTCV) : '—') + '</td>';
           html += '</tr>';
           arr.forEach(function(d) {
             rowNum++;
@@ -3197,6 +3205,7 @@ function renderPipelineOverview() {
             html += '<td style="text-align:right;padding:8px 12px">' + (perHead > 0 ? fmt$k(perHead) : '—') + '</td>';
             html += '<td style="text-align:right;padding:8px 12px;font-weight:700">' + fmt$k(mrr) + '</td>';
             html += '<td style="text-align:right;padding:8px 12px;font-weight:700;color:var(--navy)">' + fmt$k(mrr * 12) + '</td>';
+            html += '<td style="text-align:right;padding:8px 12px;font-weight:700;color:var(--navy)">' + (d.tcv > 0 ? fmt$k(d.tcv) : '—') + '</td>';
             html += '</tr>';
           });
         });
@@ -3204,10 +3213,11 @@ function renderPipelineOverview() {
         // Summary row
         html += '<tr class="pl-total" style="background:#3a6fb2;color:white;font-weight:700">';
         html += '<td colspan="2" style="padding:10px 12px;text-transform:uppercase;letter-spacing:.4px;font-size:11px">Summary</td>';
-        html += '<td style="text-align:right;padding:10px 12px">' + stat.hc.toLocaleString() + '</td>';
+        html += '<td style="text-align:right;padding:10px 12px">' + stat.hc.toLocaleString('en-US') + '</td>';
         html += '<td style="text-align:right;padding:10px 12px">' + (stat.hc > 0 ? fmt$k(stat.mrr/stat.hc) : '—') + '</td>';
         html += '<td style="text-align:right;padding:10px 12px">' + fmt$k(stat.mrr) + '</td>';
         html += '<td style="text-align:right;padding:10px 12px">' + fmt$k(stat.arr) + '</td>';
+        html += '<td style="text-align:right;padding:10px 12px">' + (stat.tcv > 0 ? fmt$k(stat.tcv) : '—') + '</td>';
         html += '</tr>';
         html += '</tbody></table>';
       }
@@ -3231,7 +3241,7 @@ function renderPipelineOverview() {
          + '<div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;color:' + dot + '">● ' + esc(label) + '</div>'
          + '<div style="font-size:10.5px;color:var(--muted);margin-top:1px">' + esc(sub) + '</div>'
          + '<div style="font-size:24px;font-weight:900;margin-top:8px;color:var(--navy)">' + arr.length + ' <span style="font-size:12px;color:var(--muted);font-weight:400">deals</span></div>'
-         + '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + hc.toLocaleString() + ' HC · ' + fmt$k(mrr) + ' MRR · ' + fmt$k(mrr*12) + ' ARR</div>'
+         + '<div style="font-size:11px;color:var(--muted);margin-top:4px">' + hc.toLocaleString('en-US') + ' HC · ' + fmt$k(mrr) + ' MRR · ' + fmt$k(mrr*12) + ' ARR</div>'
          + '</div>';
   }
   html += '<div style="margin:6px 0 10px"><b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px;display:inline-flex;align-items:center;gap:8px"><span style="display:inline-block;width:18px;height:2px;background:#3a6fb2"></span>Deal Age Segmentation — Likelihood to Close by Creation Date</b></div>';
@@ -4705,11 +4715,11 @@ function renderForecastAccuracy() {
         return Object.values(s.perDeal).reduce(function(t,p){ return t + ((p.adjRev && p.adjRev[h]) || 0); }, 0);
       });
       var statusBadge = s.locked
-        ? '<span class="pill pill-green" style="font-size:10px" title="Locked by ' + esc(s.lockedBy || '—') + ' on ' + new Date(s.lockedAt || s.takenAt).toLocaleString() + '">🔒 LOCKED</span>'
+        ? '<span class="pill pill-green" style="font-size:10px" title="Locked by ' + esc(s.lockedBy || '—') + ' on ' + new Date(s.lockedAt || s.takenAt).toLocaleString('en-US') + '">🔒 LOCKED</span>'
         : '<span class="pill pill-gray" style="font-size:10px">auto</span>';
       html += '<tr><td><b>' + monthLabel(s.snapshotMonth) + '</b></td>';
       html += '<td>' + statusBadge + (s.locked && s.lockedBy ? ' <span style="color:var(--muted);font-size:10.5px">· ' + esc(s.lockedBy) + '</span>' : '') + '</td>';
-      html += '<td style="color:var(--muted);font-size:11px">' + new Date(s.takenAt).toLocaleString() + '</td>';
+      html += '<td style="color:var(--muted);font-size:11px">' + new Date(s.takenAt).toLocaleString('en-US') + '</td>';
       html += '<td>' + Object.keys(s.perDeal).length + '</td>';
       html += '<td class="num">' + fmt$k(sum[0]) + '</td>';
       html += '<td class="num">' + fmt$k(sum[1]) + '</td>';
@@ -5095,7 +5105,7 @@ function trendSectionHtml(opts) {
   html += '<div style="font-size:24px;font-weight:900;color:var(--navy)">' + last.dealsForecasted + '</div>';
   html += deltaCell(first.dealsForecasted, last.dealsForecasted) + '</div>';
   html += '<div class="card" style="padding:12px 14px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total HC (3-mo)</div>';
-  html += '<div style="font-size:24px;font-weight:900;color:var(--navy)">' + last.totalHC.toLocaleString() + '</div>';
+  html += '<div style="font-size:24px;font-weight:900;color:var(--navy)">' + last.totalHC.toLocaleString('en-US') + '</div>';
   html += deltaCell(first.totalHC, last.totalHC) + '</div>';
   html += '<div class="card" style="padding:12px 14px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Adj. Revenue (3-mo)</div>';
   html += '<div style="font-size:24px;font-weight:900;color:var(--navy)">' + fmt$k(last.totalAdjRev) + '</div>';
@@ -5163,7 +5173,7 @@ function renderForecastTrend() {
   html += '<div style="font-size:26px;font-weight:900;color:var(--navy)">' + last.dealsForecasted + '</div>';
   html += deltaCell(first.dealsForecasted, last.dealsForecasted) + '</div>';
   html += '<div class="card" style="padding:14px 16px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Headcount (3-mo)</div>';
-  html += '<div style="font-size:26px;font-weight:900;color:var(--navy)">' + last.totalHC.toLocaleString() + '</div>';
+  html += '<div style="font-size:26px;font-weight:900;color:var(--navy)">' + last.totalHC.toLocaleString('en-US') + '</div>';
   html += deltaCell(first.totalHC, last.totalHC) + '</div>';
   html += '<div class="card" style="padding:14px 16px"><div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Adj. Revenue (3-mo)</div>';
   html += '<div style="font-size:26px;font-weight:900;color:var(--navy)">' + fmt$k(last.totalAdjRev) + '</div>';
@@ -5191,7 +5201,7 @@ function renderForecastTrend() {
     html += '<td style="color:var(--muted);font-size:11px">' + monthLabel(s.anchorMonth) + '</td>';
     html += '<td style="color:var(--muted);font-size:11px">' + esc(s.takenBy || '—') + '</td>';
     html += '<td class="num">' + s.dealsForecasted + '</td>';
-    html += '<td class="num">' + s.totalHC.toLocaleString() + '</td>';
+    html += '<td class="num">' + s.totalHC.toLocaleString('en-US') + '</td>';
     html += '<td class="num">' + fmt$k(s.totalAdjRev) + '</td>';
     html += '<td></td></tr>';
   });
@@ -5358,7 +5368,7 @@ function openTrendDealsModal(pointIndex) {
   // KPI strip
   html += '<div style="display:flex;gap:14px;margin-bottom:12px;flex-wrap:wrap">';
   html += '<div style="padding:8px 14px;background:#f6f9fc;border-radius:6px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Deals</div><div style="font-size:18px;font-weight:900">' + snap.dealsForecasted + '</div></div>';
-  html += '<div style="padding:8px 14px;background:#f6f9fc;border-radius:6px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Total HC (3-mo)</div><div style="font-size:18px;font-weight:900">' + (snap.totalHC || 0).toLocaleString() + '</div></div>';
+  html += '<div style="padding:8px 14px;background:#f6f9fc;border-radius:6px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Total HC (3-mo)</div><div style="font-size:18px;font-weight:900">' + (snap.totalHC || 0).toLocaleString('en-US') + '</div></div>';
   html += '<div style="padding:8px 14px;background:#fdf6e6;border-radius:6px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:.4px">Adj. Revenue (3-mo)</div><div style="font-size:18px;font-weight:900;color:var(--navy)">' + fmt$k(snap.totalAdjRev || 0) + '</div></div>';
   html += '</div>';
 
@@ -5483,8 +5493,8 @@ function renderSuperDeals() {
   var totalPhase1 = progs.reduce(function(s,p){ return s + (p.phase1 || 0); }, 0);
   html += '<div class="stat-grid">';
   html += statCard('Super-Deal Programs', progs.length, 'Aureum-tier accounts', 'aureum');
-  html += statCard('Total Peak HC', totalPeak.toLocaleString(), 'Across all programs', 'aureum');
-  html += statCard('Phase 1 HC', Math.round(totalPhase1).toLocaleString(), 'First-phase ramp', 'gold');
+  html += statCard('Total Peak HC', totalPeak.toLocaleString('en-US'), 'Across all programs', 'aureum');
+  html += statCard('Phase 1 HC', Math.round(totalPhase1).toLocaleString('en-US'), 'First-phase ramp', 'gold');
   html += '</div>';
 
   // ── Qualitative program table (mirrors Excel Super-Deals tab) ──
@@ -5517,8 +5527,8 @@ function renderSuperDeals() {
   if (!progs.length) html += '<tr><td colspan="14" class="empty">No deals with 100+ headcount yet. Build headcount on a deal in <b>Aureum Demand Forecast</b> (or sync from Zoho) and it appears here automatically.</td></tr>';
   // Totals
   html += '<tr class="totals-row" style="background:var(--navy);color:white;font-weight:700"><td style="color:white">SUB-TOTAL (' + progs.length + ')</td>';
-  html += '<td class="num" style="color:white">' + totalPeak.toLocaleString() + '</td>';
-  html += '<td class="num" style="color:var(--gold)">' + Math.round(totalPhase1).toLocaleString() + '</td>';
+  html += '<td class="num" style="color:white">' + totalPeak.toLocaleString('en-US') + '</td>';
+  html += '<td class="num" style="color:var(--gold)">' + Math.round(totalPhase1).toLocaleString('en-US') + '</td>';
   html += '<td colspan="11"></td></tr>';
   html += '</tbody></table></div>';
   html += '<div class="legend"><span style="font-style:italic">All dropdowns are editable and auto-save per client. <b>Peak HC</b> = total across the client\'s 100+ deals · <b>Phase 1</b> = first wave of the linked deal · click the client to open that deal in Zoho. Use the ✎ button to add notes.</span></div></div>';
@@ -5707,9 +5717,9 @@ function renderActiveCustomers() {
   html += '</div>';
   html += '<div class="toolbar">' + searchBox('active', 'Search deal, client, BDE…') + msDropdown('active', 'bde', 'BDE', bdes) + msDropdown('active', 'status', 'Status', ['Aureum Active Account','Active Client','Expanding']);
   html += '<span class="spacer"></span><button class="btn btn-ghost btn-sm" onclick="setAllActiveExpanded(' + (anyOpen ? 'false' : 'true') + ')">' + (anyOpen ? '▸ Collapse all' : '▾ Expand all') + '</button></div>';
-  html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#fff8e1;border-radius:4px;border-left:3px solid var(--gold)">Grouped by <b>client</b> — click a client row (or ▸) to expand its deals. <b># Deals</b>, total <b>HC</b> and <b>Monthly $</b> show on the client line. <b style="color:var(--navy)">·z</b> on a deal\'s HC = value from the Zoho <code>Headcounts</code> field (no monthly HC entered yet).</div>';
+  html += '<div style="font-size:11px;color:var(--muted);margin:0 4px 6px;padding:6px 10px;background:#fff8e1;border-radius:4px;border-left:3px solid var(--gold)">Grouped by <b>client</b> — click a client row (or ▸) to expand its deals. <b># Deals</b>, total <b>HC</b> and <b>Monthly MRR $</b> show on the client line. <b style="color:var(--navy)">·z</b> on a deal\'s HC = value from the Zoho <code>Headcounts</code> field (no monthly HC entered yet).</div>';
   html += '<div class="card" style="padding:6px"><div class="scroll-x"><table class="grid-tbl"><thead><tr>';
-  html += '<th>Client</th><th class="num"># Deals</th><th class="num">HC (current)</th><th class="num">Monthly $</th><th>Status</th><th>Deal</th><th>Stage</th><th class="num">MRR $/Head</th><th class="num">Contrib. Margin %</th>';
+  html += '<th>Client</th><th class="num"># Deals</th><th class="num">HC (current)</th><th class="num">Monthly MRR $</th><th>Status</th><th>Deal</th><th>Stage</th><th class="num">MRR $/Head</th><th class="num">Contrib. Margin %</th>';
   html += '</tr></thead><tbody>';
   var grand = { hc: 0, monthly$: 0, deals: 0 };
   clients.forEach(function(c, ci) {
@@ -6575,7 +6585,7 @@ function renderSettings() {
   html += '<div class="card" style="background:linear-gradient(135deg,#fff8e1 0%, #fdf6e6 100%);border-left:4px solid var(--gold)">';
   html += '<div class="card-header"><span class="card-title">Guided tour</span><span class="card-sub">A 12-step walk-through of every module — useful for new team members or as a refresher</span></div>';
   html += '<div style="display:flex;align-items:center;gap:12px;padding:4px 4px 10px">';
-  html += '<div style="flex:1;font-size:12px;color:var(--muted)">' + (tourFlag ? (tourFlag === 'skipped' ? 'You skipped the tour on first sign-in.' : 'Last completed ' + new Date(tourFlag).toLocaleString()) : 'Not taken yet.') + '</div>';
+  html += '<div style="flex:1;font-size:12px;color:var(--muted)">' + (tourFlag ? (tourFlag === 'skipped' ? 'You skipped the tour on first sign-in.' : 'Last completed ' + new Date(tourFlag).toLocaleString('en-US')) : 'Not taken yet.') + '</div>';
   html += '<button class="btn btn-gold btn-sm" onclick="startOnboarding()">↻ Replay tour</button>';
   html += '</div></div>';
 
@@ -6592,14 +6602,14 @@ function renderSettings() {
     html += '<div style="font-size:11px;color:var(--muted);max-width:420px">Used when a deal has no per-deal $/head override and no Zoho MRR to derive from. Months 4–12 are adjusted per deal (× stage win % and forecast margin) — the same method as Overview, Summary and Aureum.</div>';
     html += '</div>';
   } else {
-    html += '<div style="font-size:12.5px;color:var(--navy)">Default $/head <b>$' + Math.round(getDefaultPricePerHead()).toLocaleString() + '</b>. <span style="color:var(--muted)">Only a manager can change this.</span></div>';
+    html += '<div style="font-size:12.5px;color:var(--navy)">Default $/head <b>$' + Math.round(getDefaultPricePerHead()).toLocaleString('en-US') + '</b>. <span style="color:var(--muted)">Only a manager can change this.</span></div>';
   }
   html += '</div>';
 
   html += '<div class="card"><div class="card-header"><span class="card-title">Zoho CRM Integration</span></div>';
   html += '<div style="font-size:12.5px;color:var(--muted);line-height:1.6">';
   html += 'Status: <b style="color:' + (getZohoToken() ? 'var(--success)' : 'var(--danger)') + '">' + (getZohoToken() ? 'Connected' : 'Disconnected') + '</b>';
-  if (lastSync) html += ' &middot; Last sync: ' + new Date(lastSync).toLocaleString();
+  if (lastSync) html += ' &middot; Last sync: ' + new Date(lastSync).toLocaleString('en-US');
   html += '<br><br>To enable: register an OAuth app at <code>api-console.zoho.com</code>, add the redirect URI <code>' + esc(ZOHO_REDIRECT) + '</code>, and replace <code>REPLACE_WITH_ZOHO_CLIENT_ID</code> in <code>index.html</code>.';
   html += '<br><br><b>Field mapping</b> (from Zoho Deals module):<br>';
   html += '<ul style="padding-left:22px;margin-top:6px"><li><code>Deal_Name</code> → Deal Name</li><li><code>Account_Name</code> → Client</li><li><code>Stage</code> → Stage (normalized)</li><li><code>MRR</code> → MRR Zoho (falls back to <code>Amount</code> if blank)</li><li><code>Headcounts</code> → Total Headcount</li><li><code>Target_Margin_Band</code> → Margin %</li><li><code>Probability</code> → Adjusted Win Rate</li><li><code>Closing_Date</code> → First Billable / Activation Month</li><li><code>Description</code> → Commercial Description (margin signal)</li></ul>';

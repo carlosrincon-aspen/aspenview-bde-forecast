@@ -225,6 +225,22 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-01 (PM-2) — Mike-call punch-list · batch 1: Pipeline TCV + en-US number format + Monthly MRR label
+From Carlos↔Michael call. **Michael has the final word on Horizon; internal guardrail = map & save ALL manual adjustments (drives the lockdown/version work).** This batch = the unblocked, low-risk items; the rest of the punch-list is tracked below. JS validated (`node --check`); column counts reconcile (Pipeline 7 cols).
+
+**1) TCV column added to Pipeline.** Juliana confirmed the Zoho Deals field is displayed as **TCV** with API name **`TCV`** — `ZOHO_TCV_FIELD` was already `'TCV'`, so `d.tcv` already syncs. Surfaced it: a **Total Pipeline TCV** KPI card + a **TCV** column in the Phase Breakdown table, the collapsed phase summary line, and the Deal Breakdown (size-band subtotals + per-deal + summary rows). Shows `—` when a deal has no TCV; **populates after the next Zoho sync**. Rationale (Michael): ARR = MRR×12 assumes 12 months, but contracts can be 3/6/18 mo, so TCV can be higher/lower than ARR. Coordinate the pipeline-report definition with Julie/Alejandra.
+
+**2) Number formatting → en-US everywhere.** All 29 no-arg `.toLocaleString()` calls now use `'en-US'`, so thousands use a **comma** (2,600) not a locale period (2.600). Michael flagged Pipeline total headcount showing "2.6"; the browser locale (Spanish) was the cause. Fixes it app-wide (English deliverables / US audience).
+
+**3) Active Customers — Actuals:** the "Monthly $" column is relabeled **"Monthly MRR $"** (it's monthly MRR, per Michael).
+
+**Mike-call punch-list — still to do (Michael's asks):**
+- **(A) Forecast lifecycle / lockdown (core):** push to Zoho ONLY at the monthly **lockdown**, in ONE step (Claude refuses a lockdown unless it also pushes); update Zoho **once a month**. A tracked **lockdown version per month** ("July forecast, locked June 30") is what accuracy is measured against; add a **lockdown-vs-current** view. Between lockdowns, save versions freely (many/day) — dates, margins, HC, close dates all saved — **without** pushing. Every save MUST persist every changed field (dates+margins were not saving — *now covered by the schemaV3 capture fix*). **Don wants to drop the automatic daily update** (fears it overrides his work) — Michael: double-edged → **decision pending** (touches `ensureDailyBackupVersion`). Procedure: Carlos emails Don (CC Michael) to lock the recovered dates as the July-made-in-June forecast; nothing was ever locked down yet.
+- **(B) Overview:** add out-year columns (2027 / 2028; 2028=0) so the 63-in-forecast reconciles (43 next-3-mo + 13 rest-26 + ~7 in 27); resolve **Average vs Total** inconsistency (is the 3-mo first column the 3-mo total or the monthly avg? label says "Average MRR") and verify the Full-Year-2026 line math; confirm 26/27 = strictly NEW business (2028 = +1.6% growth). Replace **"Rolling three-month window" with "Current Quarter" month-by-month** (Jul/Aug/Sep — rolling loses visibility of the current month); relabel "3-month total" → "Q3 total", roll to Q4 after Q3. Add a **Current Quarter** summary column in front of the 3-mo total (for the sales "win the quarter" tracking, separate from John Scott's financial forecast).
+- **(D) Summary → "Financial Model":** rename (it's the CFO/John Scott financial forecast), **move to far right** of the tab row (right of Settings), and **lock the forecast numbers** — only **PMFF** is editable there (CFO input only).
+- **(E) Pipeline:** TCV done ↑; number format done ↑.
+- **(F) Concern:** deal count dropping (322→317 in the week) — investigate why deals disappear.
+
 ### 2026-07-01 (PM) — Backup/restore integrity: protect ALL manually-entered data (Aureum + Summary)
 Carlos asked to guarantee that **no path can lose any manually-entered data**, that a Zoho Sync keeps everything (hand-set dates, margins, etc.), and that **backups protect absolutely everything including the Summary (PMFF) and Aureum manual inputs**. Full read-audit of every deal-write/rebuild path; closed 5 gaps. JS validated (`node --check`). **KEY LESSON: the daily backup and the JSON export were NOT complete — they silently dropped Summary PMFF + Super-Deal assessments; and two merge/reconcile paths dropped per-deal overrides.**
 
