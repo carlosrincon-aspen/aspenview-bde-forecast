@@ -2043,14 +2043,14 @@ function ensureMonthlySnapshot() {
 // they represent what the BDE explicitly committed to, vs. auto-snapshots which are
 // just samples. Re-locking the same month overwrites the previous lock with the
 // current numbers and stamps the new locker.
-function lockForecast(monthKey) {
+function lockForecast(monthKey, silent) {
   monthKey = monthKey || getAnchorMonth() || currentMonthKey();
   var snaps = getSnapshots();
   var deals = getDeals();
   var existing = snaps.find(function(s){ return s.snapshotMonth === monthKey; });
   var lockedBy = (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'anon';
   if (existing) {
-    if (existing.locked && !confirm(monthLabel(monthKey) + ' is already locked by ' + (existing.lockedBy || '—') + ' on ' + new Date(existing.lockedAt || existing.takenAt).toLocaleString('en-US') + '.\n\nRe-lock with the current numbers? This overwrites the previous lock.')) return;
+    if (existing.locked && !silent && !confirm(monthLabel(monthKey) + ' is already locked by ' + (existing.lockedBy || '—') + ' on ' + new Date(existing.lockedAt || existing.takenAt).toLocaleString('en-US') + '.\n\nRe-lock with the current numbers? This overwrites the previous lock.')) return;
     existing.takenAt = new Date().toISOString();
     existing.perDeal = buildPerDealSnapshot(deals, monthKey);
     existing.locked  = true;
@@ -2068,8 +2068,10 @@ function lockForecast(monthKey) {
   }
   setSnapshots(snaps);
   logActivity('Forecast', 'Lock month forecast', monthKey + ' · stamped by ' + lockedBy);
-  alert('🔒 OFFICIAL lock for ' + monthLabel(monthKey) + '.\n\nThis is now the version accuracy is measured against (M+0 / M+1 / M+2). It does NOT push to Zoho — that\'s a separate step. You can Unlock to revise if needed.');
+  if (silent) return true;   // the caller (lock+push flow) shows one combined message
+  alert('🔒 OFFICIAL lock for ' + monthLabel(monthKey) + '.\n\nThis is now the version accuracy is measured against (M+0 / M+1 / M+2). You can Unlock to revise if needed.');
   renderTab();
+  return true;
 }
 // Re-open an official lock for revision (Don/Michael: "give us a way to unlock"). Keeps the
 // snapshot's numbers but marks it not-locked, so it no longer counts toward accuracy until re-locked.
@@ -3271,17 +3273,118 @@ function formatClosingDate(s) {
 }
 
 // Bottom-bar actions on Aureum (Michael's flow: review totals → lock → push, all on one screen).
-function aureumLockForecast() {
-  // Official lock only — does NOT prompt to push to Zoho (Don/Michael: don't push until the
-  // final lock + Finance review; pushing is a deliberate separate step).
-  lockForecast(getAnchorMonth());
+// ── Monthly LOCKDOWN → push to Zoho, in ONE step (Michael's model) ──────────────────────────────
+// The month is locked AND the forecast is pushed to Zoho together — the once-a-month Zoho update.
+// We push ONLY the fields Don adjusts by hand in Aureum that DIFFER from Zoho (never overwrite a
+// field Don didn't touch): forecast close date, Fcst HC, Fcst MRR (= HC × $/head) + Fcst ARR,
+// Win %, and the forecast contribution margin. $/head has no standalone Zoho field — it's carried
+// by MRR/ARR. Runs across the Forecast-only set (inForecast, excluding Closed Won).
+function forecastPushDiff(d) {
+  var out = { fields: {}, bits: [], any: false };
+  var _has = function(v){ return v !== undefined && v !== null && v !== ''; };
+  var fcstHC = d.totalHC || sumMonths(d.monthlyHC || {}) || 0;
+  // Fcst HC → Headcounts
+  if (fcstHC > 0 && Math.abs(fcstHC - (d.zoho_totalHC || 0)) > 0.5) {
+    out.fields[ZOHO_HC_FIELD] = fcstHC; out.bits.push('HC ' + (d.zoho_totalHC || 0) + '→' + fcstHC); out.any = true;
+  }
+  // Fcst close date → Closing_Date (only when Don set one, and it differs)
+  if (_has(d.forecastClosingDate)) {
+    var newC = String(d.forecastClosingDate).slice(0, 10), oldC = String(d.closingDate || '').slice(0, 10);
+    if (newC && newC !== oldC) { out.fields.Closing_Date = newC; out.bits.push('Close ' + (oldC || '—') + '→' + newC); out.any = true; }
+  }
+  // Fcst MRR (HC × $/head) → MRR ; Fcst ARR → ARR
+  var fcstMRR = fcstHC * pricePerHead(d);
+  if (fcstMRR > 0 && Math.abs(fcstMRR - (d.pricing || 0)) > 0.5) {
+    out.fields[ZOHO_MRR_FIELD] = Math.round(fcstMRR); out.bits.push('MRR ' + fmt$k(d.pricing || 0) + '→' + fmt$k(fcstMRR)); out.any = true;
+  }
+  var fcstARR = fcstMRR * 12;
+  if (fcstARR > 0 && Math.abs(fcstARR - (d.arr || 0)) > 0.5) {
+    out.fields[ZOHO_ARR_FIELD] = Math.round(fcstARR); out.bits.push('ARR ' + fmt$k(d.arr || 0) + '→' + fmt$k(fcstARR)); out.any = true;
+  }
+  // Win % → Probability (only a manual override)
+  if (_has(d.winRateAdj)) {
+    var pWin = Math.round(parseFloat(d.winRateAdj) * 100);
+    var zWin = (d.zoho_winRateAdj !== null && d.zoho_winRateAdj !== undefined) ? Math.round(d.zoho_winRateAdj * 100) : null;
+    if (zWin === null || pWin !== zWin) { out.fields.Probability = pWin; out.bits.push('Win ' + (zWin !== null ? zWin + '%' : '—') + '→' + pWin + '%'); out.any = true; }
+  }
+  // Fcst contribution margin → Target_Margin_Band (only when Don set an actual/forecast margin — not a stage default)
+  var donMargin = null, am = actualMarginFor(d);
+  if (am !== null && !isNaN(am)) donMargin = am;
+  else { var fm = forecastMarginFor(d); if (fm !== null && !isNaN(fm)) donMargin = fm; }
+  if (donMargin !== null) {
+    var pMar = Math.round(donMargin * 100);
+    var zMar = _has(d.zohoMargin) ? Math.round(parseFloat(d.zohoMargin) * 100) : null;
+    if (zMar === null || pMar !== zMar) { out.fields[ZOHO_MARGIN_FIELD] = pMar + '%'; out.bits.push('Margin ' + (zMar !== null ? zMar + '%' : '—') + '→' + pMar + '%'); out.any = true; }
+  }
+  return out;
 }
-function aureumPushToZoho() {
+function lockAndPushForecast() {
+  if (!canEdit()) return denyEdit();
   var anchor = getAnchorMonth();
-  var snap = getSnapshots().find(function(s){ return s.snapshotMonth === anchor; });
-  if (!snap || !snap.locked) { alert('Lock the forecast first — click “🔒 Lock ' + monthLabel(anchor) + ' forecast”, then push changes to Zoho.'); return; }
-  pushApprovedToZoho();   // existing push (handles Zoho token + WRITE scope; messages if not enabled)
+  var token = getZohoToken();
+  if (!token) { alert('Connect Zoho first (click the Zoho pill in the header).\n\nThe monthly Lock also pushes the forecast to Zoho in one step, so it needs an active Zoho connection.'); return; }
+  var withDiffs = [];
+  forecastDeals().forEach(function(d){ if (!d.zohoId) return; var diff = forecastPushDiff(d); if (diff.any) withDiffs.push({ d: d, diff: diff }); });
+
+  var preview = withDiffs.slice(0, 6).map(function(x){ return '  • ' + x.d.dealName + ': ' + x.diff.bits.join(', '); }).join('\n');
+  var more = withDiffs.length > 6 ? '\n  … and ' + (withDiffs.length - 6) + ' more' : '';
+  var msg = 'Lock ' + monthLabel(anchor) + ' as the OFFICIAL forecast AND push to Zoho?\n\n'
+    + '• Locks this month — the version accuracy is measured against.\n'
+    + '• Pushes ' + withDiffs.length + ' forecast deal(s) whose manual values differ from Zoho (close date, HC, MRR, ARR, win %, contribution margin — only the differing fields).\n'
+    + '• This is the once-a-month Zoho update.\n\n'
+    + (withDiffs.length ? preview + more + '\n\n' : '')
+    + 'A safety version is saved first, so this is reversible. Proceed?';
+  if (!confirm(msg)) return;
+
+  _pushVersion('Auto-save before ' + monthLabel(anchor) + ' lockdown + Zoho push');   // reversible
+  lockForecast(anchor, true);   // silent lock — one combined message below
+
+  if (!withDiffs.length) {
+    alert('🔒 ' + monthLabel(anchor) + ' locked as the official forecast.\n\nNo forecast deals had manual values that differ from Zoho, so nothing needed pushing.');
+    renderTab();
+    return;
+  }
+
+  var deals = getDeals();
+  var pushed = 0, failed = 0, errors = [], done = 0;
+  withDiffs.forEach(function(x){
+    zohoPatchDeal(token, x.d.zohoId, x.diff.fields, function(err){
+      done++;
+      if (err) { failed++; errors.push((x.d.dealName || x.d.zohoId) + ' — ' + err.message); }
+      else {
+        pushed++;
+        // Sync the Zoho-side values on the live deal so the diff clears and a later Sync won't "revert".
+        var f = x.diff.fields, live = deals.find(function(dd){ return dd.zohoId === x.d.zohoId; }) || x.d;
+        if (f[ZOHO_HC_FIELD]     !== undefined) live.zoho_totalHC    = f[ZOHO_HC_FIELD];
+        if (f.Closing_Date       !== undefined) live.closingDate     = f.Closing_Date;
+        if (f[ZOHO_MRR_FIELD]    !== undefined) live.pricing         = f[ZOHO_MRR_FIELD];
+        if (f[ZOHO_ARR_FIELD]    !== undefined) live.arr             = f[ZOHO_ARR_FIELD];
+        if (f.Probability        !== undefined) live.zoho_winRateAdj = f.Probability / 100;
+        if (f[ZOHO_MARGIN_FIELD] !== undefined) live.zohoMargin      = parseFloat(f[ZOHO_MARGIN_FIELD]) / 100;
+        live.pushedAt = new Date().toISOString();
+        live.pushedBy = (currentUser && currentUser.name) || '';
+      }
+      if (done === withDiffs.length) {
+        setDeals(deals);
+        var m = '🔒 ' + monthLabel(anchor) + ' locked + pushed to Zoho.\n\n' + pushed + ' deal(s) updated in Zoho.';
+        if (failed) {
+          m += '\n\n' + failed + ' failed:\n' + errors.slice(0, 5).join('\n');
+          if (errors.length > 5) m += '\n…and ' + (errors.length - 5) + ' more';
+          if (/401|INVALID_TOKEN|OAUTH_SCOPE|INVALID_OAUTH|forbidden|403/i.test(errors.join(' ')))
+            m += '\n\n⚠ The Zoho OAuth app may be missing Deals.WRITE scope, or you need to re-authorize (Zoho pill → Disconnect → Connect → Accept).';
+          else if (/INVALID_DATA|MANDATORY_NOT_FOUND|invalid|not present|no such|field/i.test(errors.join(' ')))
+            m += '\n\n⚠ A field name may be wrong. Confirm the Zoho API names (Closing_Date / Headcounts / MRR / ARR / Probability / Target_Margin_Band).';
+        }
+        logActivity('Zoho', 'Lockdown push', monthLabel(anchor) + ' · ' + pushed + ' updated · ' + failed + ' failed');
+        alert(m);
+        renderTab();
+      }
+    });
+  });
 }
+// Back-compat aliases (kept so nothing that referenced the old names breaks):
+function aureumLockForecast() { lockAndPushForecast(); }
+function aureumPushToZoho()   { lockAndPushForecast(); }
 // Download the forecast to a spreadsheet (CSV → opens in Excel) for Finance/John. READ-ONLY:
 // builds a file from the current data, never changes anything. Deal rows + monthly build +
 // the gross and adjusted (×win, ×margin) summary rows.
@@ -3923,11 +4026,10 @@ function renderAureumGrid() {
   if (aLocked) {
     html += '<span style="color:#9ecbff;font-size:11.5px;border-left:1px solid #34506e;padding-left:12px" title="Locked by ' + esc((aSnap && aSnap.lockedBy) || '—') + '">🔒 ' + monthLabel(anchor) + ' locked</span>';
     html += '<button class="btn btn-ghost btn-sm" style="color:#ffd9a8;border-color:#34506e" onclick="unlockForecast()" title="Re-open the official forecast for revision (kept, but not measured until re-locked)">🔓 Unlock</button>';
-    html += '<button class="btn btn-ghost btn-sm" style="color:#cdd7e3;border-color:#34506e" onclick="aureumLockForecast()" title="Re-lock with the current numbers">Re-lock</button>';
+    html += '<button class="btn btn-gold btn-sm" style="border-left:1px solid #34506e" onclick="lockAndPushForecast()" title="Re-lock this month with the current numbers and push the changed fields to Zoho">🔒 Re-lock ' + monthLabel(anchor) + ' → Zoho</button>';
   } else {
-    html += '<button class="btn btn-gold btn-sm" style="border-left:1px solid #34506e;margin-left:4px" onclick="aureumLockForecast()" title="OFFICIAL lock — the version accuracy is measured against. Use only at the end, right before Finance. Does NOT push to Zoho.">🔒 Official lock ' + monthLabel(anchor) + '</button>';
+    html += '<button class="btn btn-gold btn-sm" style="border-left:1px solid #34506e;margin-left:4px" onclick="lockAndPushForecast()" title="OFFICIAL monthly lock — in ONE step it locks the version accuracy is measured against AND pushes the forecast to Zoho (the once-a-month update): forecast close date, HC, MRR, ARR, win %, contribution margin — only the fields that differ from Zoho.">🔒 Lock ' + monthLabel(anchor) + ' → Zoho</button>';
   }
-  html += '<button class="btn btn-ghost btn-sm" style="color:#cdd7e3;border-color:#34506e" onclick="aureumPushToZoho()" title="Push to Zoho — a separate final step, only after the official lock + Finance review. Requires Zoho WRITE scope.">↗ Push to Zoho</button>';
   html += '</div>';
 
   document.getElementById('mainContent').innerHTML = html;
