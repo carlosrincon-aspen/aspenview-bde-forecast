@@ -225,6 +225,9 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-01 (PM-9) — Deals & Accounts table is collapsible
+Carlos: click the title to minimize/expand — not always fixed open. `togglePhaseTable()` stores `aureum_phase_table_open` (local, NOT synced — per-browser view pref, survives reloads). **Default collapsed**; the collapsed header shows a caret (▸/▾) + a compact summary ("N deals · M accounts — click to expand") so it's still useful shut. Body (table + Recruitment-or-higher line) renders only when open. `version.txt`→`-phase-table-collapsible`.
+
 ### 2026-07-01 (PM-8) — Deals & Accounts table: no white-hover on TOTAL + respects Forecast-only
 Two Carlos fixes on the new Aureum phase table:
 - **TOTAL row no longer flashes white on hover** (recurring Carlos gripe). Root cause: global CSS `tr:hover td { background:#fafbfc }` (line 109) paints the cell over the row bg. Fix = give the TOTAL `<tr>` the existing **`pl-total`** class, which has `tr.pl-total:hover td { background:transparent }` (line 111) so the navy row bg shows through. Same pattern used for the Pipeline/Aureum total bars.

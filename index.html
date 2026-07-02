@@ -3704,6 +3704,9 @@ function aureumTotals(ds, monthsY1, monthsY2) {
   });
   return tot;
 }
+// Collapsible: click the header to minimize/expand (Carlos). Preference is per-browser (local, not
+// synced) so it sticks across reloads without changing anyone else's view. Default collapsed.
+function togglePhaseTable(){ save('aureum_phase_table_open', !load('aureum_phase_table_open', false)); renderTab(); }
 // Deals & Accounts by phase (Don: "deal count can be misleading — how many ACCOUNTS is that?").
 // A compact, easy-to-read stage distribution on the Aureum tab: per phase → # deals, % of deals,
 // and # unique accounts (clients). Independent of the phase-filter pills / forecast-only toggle —
@@ -3716,8 +3719,17 @@ function phaseDealsAccountsTableHtml(allDeals, forecastOnly) {
   function acctCount(list){ var s = {}; list.forEach(function(d){ s[(d.client || '—').trim().toLowerCase()] = 1; }); return Object.keys(s).length; }
   var totalAccts = acctCount(phased);
   var dotColors = { 1:'#5a6a7a', 2:'#1d4a86', 3:'#E8B84B', 4:'#2e7d32', 5:'#00838f' };
+  var open = load('aureum_phase_table_open', false);   // collapsible; default collapsed (Carlos)
   var html = '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">';
-  html += '<div style="padding:10px 16px;border-bottom:1px solid var(--border);background:#f6f9fc;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Deals &amp; Accounts by Phase</b>' + (forecastOnly ? '<span class="pill pill-gold" style="font-size:9px">Forecast only</span>' : '<span style="font-size:10px;color:var(--muted)">all deals</span>') + '<span style="font-size:11px;color:var(--muted)">Deal count can be misleading — one account can carry several deals. % = share of deals.</span></div>';
+  html += '<div onclick="togglePhaseTable()" title="Click to ' + (open ? 'collapse' : 'expand') + '" style="padding:10px 16px;' + (open ? 'border-bottom:1px solid var(--border);' : '') + 'background:#f6f9fc;display:flex;align-items:center;gap:10px;flex-wrap:wrap;cursor:pointer">';
+  html += '<span style="color:var(--muted);font-size:11px;width:10px;display:inline-block">' + (open ? '▾' : '▸') + '</span>';
+  html += '<b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Deals &amp; Accounts by Phase</b>';
+  html += forecastOnly ? '<span class="pill pill-gold" style="font-size:9px">Forecast only</span>' : '<span style="font-size:10px;color:var(--muted)">all deals</span>';
+  html += open
+    ? '<span style="font-size:11px;color:var(--muted)">Deal count can be misleading — one account can carry several deals. % = share of deals.</span>'
+    : '<span style="font-size:11px;color:var(--muted)"><b style="color:var(--navy)">' + totalDeals + '</b> deals · <b style="color:var(--navy)">' + totalAccts + '</b> accounts — click to expand</span>';
+  html += '</div>';
+  if (open) {
   html += '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--navy);color:white">';
   html += '<th style="text-align:left;padding:9px 14px">Phase</th><th class="num" style="padding:9px 14px">Deals</th><th class="num" style="padding:9px 14px">% of Deals</th><th class="num" style="padding:9px 14px" title="Unique client accounts in this phase">Accounts</th></tr></thead><tbody>';
   PHASES.forEach(function(p, i){
@@ -3736,6 +3748,7 @@ function phaseDealsAccountsTableHtml(allDeals, forecastOnly) {
   html += '</tbody></table>';
   var recPlus = phased.filter(function(d){ var pp = phaseForDeal(d); return pp >= 2 && pp <= 5; });
   html += '<div style="padding:8px 16px;font-size:11.5px;color:var(--navy);background:#fff8e1;border-top:1px solid var(--border)"><b>Recruitment or higher (Phase 2+):</b> ' + recPlus.length + ' deals across <b>' + acctCount(recPlus) + '</b> accounts.</div>';
+  }
   html += '</div>';
   return html;
 }

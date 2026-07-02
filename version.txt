@@ -1,1 +1,1 @@
-2026-07-01T-aureum-phase-table-hover-fcst
+2026-07-01T-phase-table-collapsible
