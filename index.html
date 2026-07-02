@@ -3704,6 +3704,39 @@ function aureumTotals(ds, monthsY1, monthsY2) {
   });
   return tot;
 }
+// Deals & Accounts by phase (Don: "deal count can be misleading — how many ACCOUNTS is that?").
+// A compact, easy-to-read stage distribution on the Aureum tab: per phase → # deals, % of deals,
+// and # unique accounts (clients). Independent of the phase-filter pills / forecast-only toggle —
+// always the full picture of what's mapped to a phase (Closed Lost / unmapped excluded).
+function phaseDealsAccountsTableHtml(allDeals) {
+  var phased = allDeals.filter(function(d){ return phaseForDeal(d); });
+  var totalDeals = phased.length;
+  function acctCount(list){ var s = {}; list.forEach(function(d){ s[(d.client || '—').trim().toLowerCase()] = 1; }); return Object.keys(s).length; }
+  var totalAccts = acctCount(phased);
+  var dotColors = { 1:'#5a6a7a', 2:'#1d4a86', 3:'#E8B84B', 4:'#2e7d32', 5:'#00838f' };
+  var html = '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">';
+  html += '<div style="padding:10px 16px;border-bottom:1px solid var(--border);background:#f6f9fc;display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="color:var(--navy);font-size:12px;text-transform:uppercase;letter-spacing:.4px">Deals &amp; Accounts by Phase</b><span style="font-size:11px;color:var(--muted)">Deal count can be misleading — one account can carry several deals. % = share of deals.</span></div>';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:var(--navy);color:white">';
+  html += '<th style="text-align:left;padding:9px 14px">Phase</th><th class="num" style="padding:9px 14px">Deals</th><th class="num" style="padding:9px 14px">% of Deals</th><th class="num" style="padding:9px 14px" title="Unique client accounts in this phase">Accounts</th></tr></thead><tbody>';
+  PHASES.forEach(function(p, i){
+    var list = phased.filter(function(d){ return phaseForDeal(d) === p.id; });
+    var pct  = totalDeals ? (list.length / totalDeals * 100) : 0;
+    var dot  = dotColors[p.id] || '#5a6a7a';
+    var bg   = i % 2 === 0 ? 'white' : '#f9fbfd';
+    html += '<tr style="background:' + bg + ';border-bottom:1px solid var(--border)">';
+    html += '<td style="padding:9px 14px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + dot + ';margin-right:8px;vertical-align:middle"></span><span style="font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;margin-right:8px">Phase ' + p.id + '</span><b style="color:var(--navy)">' + esc(p.short) + '</b></td>';
+    html += '<td class="num" style="padding:9px 14px;font-weight:700">' + list.length + '</td>';
+    html += '<td class="num" style="padding:9px 14px">' + pct.toFixed(1) + '%</td>';
+    html += '<td class="num" style="padding:9px 14px;font-weight:700;color:var(--navy)">' + acctCount(list) + '</td>';
+    html += '</tr>';
+  });
+  html += '<tr style="background:#13233b;color:white;font-weight:700"><td style="padding:9px 14px">TOTAL</td><td class="num" style="padding:9px 14px">' + totalDeals + '</td><td class="num" style="padding:9px 14px">100%</td><td class="num" style="padding:9px 14px">' + totalAccts + '</td></tr>';
+  html += '</tbody></table>';
+  var recPlus = phased.filter(function(d){ var pp = phaseForDeal(d); return pp >= 2 && pp <= 5; });
+  html += '<div style="padding:8px 16px;font-size:11.5px;color:var(--navy);background:#fff8e1;border-top:1px solid var(--border)"><b>Recruitment or higher (Phase 2+):</b> ' + recPlus.length + ' deals across <b>' + acctCount(recPlus) + '</b> accounts.</div>';
+  html += '</div>';
+  return html;
+}
 function renderAureumGrid() {
   var deals  = getDeals();
   var f      = filterScope('aureum');
@@ -3774,6 +3807,9 @@ function renderAureumGrid() {
   html += '</div>';
   html += '<div style="font-size:11px;color:var(--muted);max-width:230px">Turn on the filter, then pick which phases enter the forecast. Closed Won is captured in cash flow, not forecasted.</div>';
   html += '</div></div>';
+
+  // Deals & Accounts by phase (Don's ask) — accounts vs deals so the count isn't misleading.
+  html += phaseDealsAccountsTableHtml(deals);
 
   html += '<div class="toolbar">';
   html += searchBox('aureum', 'Search deal, client, BDE…');

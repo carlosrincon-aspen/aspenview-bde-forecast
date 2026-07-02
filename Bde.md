@@ -225,6 +225,10 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-01 (PM-7) — Don's ask: Deals & Accounts by Phase table (on Aureum, NOT Pipeline)
+Don: "how many accounts do we have at each stage vs deals? We have 64 deals at Recruitment or higher — but how many accounts? Deal count can be misleading." We didn't have account (unique-client) counts anywhere. **Carlos's call: put it on the Aureum tab, NOT Pipeline — Pipeline is the investor view of the whole pipeline and must stay untouched (no fcst mixing).** (First draft mistakenly edited Pipeline; fully reverted.)
+- New **`phaseDealsAccountsTableHtml(deals)`** rendered on Aureum, right under the phase-filter pills (easy to read, above the grid): per phase → **# Deals · % of Deals · # Accounts (unique clients)** + a TOTAL row + a highlighted **"Recruitment or higher (Phase 2+): N deals across M accounts"** line (Don's exact example). Counts the full phased set (Closed Lost / unmapped excluded), independent of the phase-filter pills / forecast-only toggle so it's always the full picture. Accounts normalized by lowercased client name. JS validated; `version.txt`→`-aureum-deals-accounts`. Pipeline tab untouched.
+
 ### 2026-07-01 (PM-6) — Mike-call B + D + F (Overview quarter view, Summary→Financial Model, deal-count tracking)
 Closed the rest of the Mike-call punch-list. JS validated. `version.txt`→`-overview-quarter-financialmodel`.
 - **(D) Summary → "Financial Model".** Renamed the tab and **moved it to the FAR RIGHT** of the tab row (after Settings) — `TABS` reordered, id kept `summary` (no routing changes). Heading now "Financial Model — Forecast Summary Statistics"; subtitle states **all forecast numbers are locked (read-only); only the PMFF is editable** (already enforced by `canEditPmff` — PMFF is the only input; the rest are computed).
