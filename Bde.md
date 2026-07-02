@@ -225,6 +225,11 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-01 (PM-8) — Deals & Accounts table: no white-hover on TOTAL + respects Forecast-only
+Two Carlos fixes on the new Aureum phase table:
+- **TOTAL row no longer flashes white on hover** (recurring Carlos gripe). Root cause: global CSS `tr:hover td { background:#fafbfc }` (line 109) paints the cell over the row bg. Fix = give the TOTAL `<tr>` the existing **`pl-total`** class, which has `tr.pl-total:hover td { background:transparent }` (line 111) so the navy row bg shows through. Same pattern used for the Pipeline/Aureum total bars.
+- **Table now respects the "Forecast only" toggle:** `phaseDealsAccountsTableHtml(deals, f.forecastOnly)` — when on, counts only forecast deals (inForecast, Closed Won excluded), same rule as the grid; header shows a "Forecast only" / "all deals" badge. Don can forecast several deals per account and each still adds MRR/HC separately, so % stays share-of-deals. JS validated; `version.txt`→`-aureum-phase-table-hover-fcst`.
+
 ### 2026-07-01 (PM-7) — Don's ask: Deals & Accounts by Phase table (on Aureum, NOT Pipeline)
 Don: "how many accounts do we have at each stage vs deals? We have 64 deals at Recruitment or higher — but how many accounts? Deal count can be misleading." We didn't have account (unique-client) counts anywhere. **Carlos's call: put it on the Aureum tab, NOT Pipeline — Pipeline is the investor view of the whole pipeline and must stay untouched (no fcst mixing).** (First draft mistakenly edited Pipeline; fully reverted.)
 - New **`phaseDealsAccountsTableHtml(deals)`** rendered on Aureum, right under the phase-filter pills (easy to read, above the grid): per phase → **# Deals · % of Deals · # Accounts (unique clients)** + a TOTAL row + a highlighted **"Recruitment or higher (Phase 2+): N deals across M accounts"** line (Don's exact example). Counts the full phased set (Closed Lost / unmapped excluded), independent of the phase-filter pills / forecast-only toggle so it's always the full picture. Accounts normalized by lowercased client name. JS validated; `version.txt`→`-aureum-deals-accounts`. Pipeline tab untouched.
