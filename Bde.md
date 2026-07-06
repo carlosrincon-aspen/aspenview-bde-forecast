@@ -225,6 +225,13 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-01 (PM-10) — Concurrency conflict guard (Risk 1 mitigation)
+Closes the biggest silent-data-loss window without the full per-deal-write refactor. **Found while auditing:** the existing `onSnapshot` blindly applied a teammate's remote state over local (`FB_SYNCED_KEYS.forEach(save(k,data[k]))`) — so a teammate's save could **wipe your in-progress unsaved edits**. Fix:
+- Track **`_pendingLocalEdits`** (set in `fbSchedulePush` on a genuine local edit; cleared in `fbPushNow` on save success).
+- In `onSnapshot`, if a teammate's change arrives **while `_pendingLocalEdits` is true**: do NOT overwrite local, **cancel the pending push** (so it can't auto-overwrite theirs either), and show a red **conflict banner** — "⚠ {who} just saved while you have unsaved edits" with **↻ Reload (take theirs)** / **Keep mine (override)**. `_conflictActive` blocks auto-push until the user chooses (`conflictReload` = reload; `conflictKeepMine` = push local over theirs + log).
+- When there are NO local edits, remote changes still apply live as before (keeps everyone fresh → kills the stale-load case).
+- Remaining (unchanged): a truly simultaneous sub-second double-save can still last-write-win; full fix = per-deal Firestore writes. JS validated; `version.txt`→`-conflict-guard`.
+
 ### 2026-07-01 (PM-9) — Deals & Accounts table is collapsible
 Carlos: click the title to minimize/expand — not always fixed open. `togglePhaseTable()` stores `aureum_phase_table_open` (local, NOT synced — per-browser view pref, survives reloads). **Default collapsed**; the collapsed header shows a caret (▸/▾) + a compact summary ("N deals · M accounts — click to expand") so it's still useful shut. Body (table + Recruitment-or-higher line) renders only when open. `version.txt`→`-phase-table-collapsible`.
 

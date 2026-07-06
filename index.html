@@ -939,6 +939,11 @@ var fbApp = null, fbAuth = null, fbDb = null, fbDocRef = null;
 var fbReady = false;          // true after initial fetch completes
 var fbSuppressPush = false;   // true while applying remote updates (avoid echo loop)
 var fbPushTimer = null;
+// Concurrency conflict guard: true when this user has local edits not yet confirmed-saved to
+// Firestore. If a teammate's save arrives while this is true, we DON'T blindly overwrite the
+// user's work (that used to be a silent data-loss path) — we pause and let them choose.
+var _pendingLocalEdits = false;
+var _conflictActive = false;  // true while the conflict banner is up (blocks auto-push until resolved)
 var fbInitTried = false;
 
 function fbInit() {
@@ -1015,6 +1020,15 @@ function fbInitDataSync() {
       if (!snap.exists) return;
       var data = snap.data();
       if (data.updatedBy && fbAuth.currentUser && data.updatedBy === fbAuth.currentUser.email) return;
+      // CONFLICT GUARD: a teammate just saved. If WE have unsaved local edits, do NOT blindly
+      // overwrite them (that was a silent data-loss path — remote clobbered in-progress work).
+      // Cancel our pending push so it can't auto-overwrite their save either, and let the user
+      // choose: reload (take theirs) or keep + override.
+      if (_pendingLocalEdits) {
+        if (fbPushTimer) { clearTimeout(fbPushTimer); fbPushTimer = null; }
+        showConflictBanner(data.updatedBy || 'A teammate');
+        return;
+      }
       fbSuppressPush = true;
       FB_SYNCED_KEYS.forEach(function(k) { if (data[k] !== undefined) save(k, data[k]); });
       fbSuppressPush = false;
@@ -1033,6 +1047,8 @@ function fbInitDataSync() {
 }
 function fbSchedulePush() {
   if (!fbReady || !fbDocRef || fbSuppressPush) return;
+  _pendingLocalEdits = true;        // genuine local edit (remote applies set fbSuppressPush, so skip)
+  if (_conflictActive) return;      // a conflict is unresolved — don't auto-push over a teammate; wait for the user's choice
   if (fbPushTimer) clearTimeout(fbPushTimer);
   setFbPill('syncing', 'Sync · Saving…');
   fbPushTimer = setTimeout(fbPushNow, 800);
@@ -1043,11 +1059,34 @@ function fbPushNow() {
   var payload = { updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: (fbAuth.currentUser && fbAuth.currentUser.email) || '' };
   FB_SYNCED_KEYS.forEach(function(k) { payload[k] = load(k, null); });
   fbDocRef.set(payload, { merge: false }).then(function() {
+    _pendingLocalEdits = false;   // our edits are now safely saved to Firestore
     setFbPill('on', 'Sync · Live');
   }).catch(function(err) {
     console.error('Firestore push failed:', err);
     setFbPill('off', 'Sync · Error');
   });
+}
+// Concurrency conflict banner — shown when a teammate saves while this user has unsaved edits.
+// Lets the user choose instead of silently losing either side's work.
+function showConflictBanner(byWhom) {
+  _conflictActive = true;
+  if (document.getElementById('conflictBanner')) return;
+  var b = document.createElement('div');
+  b.id = 'conflictBanner';
+  b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:100001;background:#c0392b;color:#fff;padding:12px 18px;text-align:center;font-family:inherit;font-size:13px;font-weight:700;box-shadow:0 -2px 12px rgba(0,0,0,.3)';
+  b.innerHTML = '⚠ ' + esc(byWhom) + ' just saved changes while you have unsaved edits. To avoid overwriting each other:' +
+    '<button onclick="conflictReload()" style="margin-left:10px;padding:6px 14px;border:none;border-radius:6px;background:#fff;color:#0C1A28;font-weight:700;cursor:pointer;font-family:inherit">↻ Reload (take theirs)</button>' +
+    '<button onclick="conflictKeepMine()" style="margin-left:8px;padding:6px 14px;border:1px solid #fff;border-radius:6px;background:transparent;color:#fff;font-weight:700;cursor:pointer;font-family:inherit">Keep mine (override)</button>';
+  document.body.appendChild(b);
+}
+function _clearConflictBanner() { var b = document.getElementById('conflictBanner'); if (b && b.parentNode) b.parentNode.removeChild(b); }
+function conflictReload() { location.reload(); }   // discard my unsaved edits, take the teammate's version
+function conflictKeepMine() {
+  // The user's explicit choice: push my current local state, overriding the teammate's save.
+  _clearConflictBanner();
+  _conflictActive = false;
+  try { logActivity('Sync', 'Conflict resolved — kept mine', 'user overrode a concurrent save'); } catch(e){}
+  fbPushNow();
 }
 function fbSignOut() {
   if (fbAuth) { try { fbAuth.signOut(); } catch(e) {} }
