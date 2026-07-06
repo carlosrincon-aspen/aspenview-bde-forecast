@@ -1322,43 +1322,56 @@ function fetchAllZohoDeals(token, cb) {
   var all = [];
   // Resilient: if a custom field API name is wrong, Zoho rejects the whole query — so on a
   // page-1 field error we retry with base fields only (sync still works; extras just stay blank).
-  function fetchPage(page, fields, triedFallback) {
-    zohoGet(token, '/Deals?fields=' + fields + '&per_page=200&page=' + page, function(err, d) {
+  // Cursor pagination: Zoho only allows the first 2000 records via classic &page=N. Past that it
+  // returns DISCRETE_PAGINATION_LIMIT_EXCEEDED and requires &page_token=. So we prefer the
+  // next_page_token cursor (works past 2000); if Zoho ever omits it, we fall back to &page but stop
+  // cleanly at 2000 instead of erroring.
+  function fetchPage(pageNum, pageToken, fields, triedFallback) {
+    var pageParam = pageToken ? ('&page_token=' + encodeURIComponent(pageToken)) : ('&page=' + pageNum);
+    zohoGet(token, '/Deals?fields=' + fields + '&per_page=200' + pageParam, function(err, d) {
       if (err) {
-        if (!triedFallback && page === 1 && /invalid|not present|no such|field/i.test(err.message || '')) {
+        if (!triedFallback && !pageToken && /invalid|not present|no such|field/i.test(err.message || '')) {
           console.warn('Deals fetch failed with extra fields (' + EXTRA + '); retrying with base fields. ' + err.message);
           window._zohoFieldWarning = 'Could not read fields: ' + EXTRA + '. Check the API names in Settings. Sync used base fields only.';
-          return fetchPage(1, ZOHO_BASE_FIELDS, true);
+          return fetchPage(1, null, ZOHO_BASE_FIELDS, true);
         }
         return cb(err);
       }
       var batch = (d && d.data) || [];
       all = all.concat(batch);
-      var moreRecords = d && d.info && d.info.more_records;
-      if (!moreRecords || batch.length === 0) return cb(null, all);
-      if (page >= 50) return cb(null, all); // safety stop at 10,000 deals
-      fetchPage(page + 1, fields, triedFallback);
+      var info = (d && d.info) || {};
+      if (!info.more_records || batch.length === 0) return cb(null, all);
+      if (all.length >= 20000) return cb(null, all);   // safety stop
+      if (info.next_page_token) return fetchPage(pageNum + 1, info.next_page_token, fields, triedFallback);   // cursor — past 2000 OK
+      if ((pageNum + 1) * 200 <= 2000) return fetchPage(pageNum + 1, null, fields, triedFallback);            // classic, under the limit
+      return cb(null, all);   // no token and would exceed 2000 → stop cleanly (no 400 spam)
     });
   }
   window._zohoFieldWarning = '';
-  fetchPage(1, FIELDS_FULL, false);
+  fetchPage(1, null, FIELDS_FULL, false);
 }
 
 // Paginate the Accounts module and build a map: normalized account name → Account_Status.
 function fetchAllZohoAccounts(token, cb) {
   var all = [];
-  function fetchPage(page) {
-    zohoGet(token, '/Accounts?fields=Account_Name,Account_Status&per_page=200&page=' + page, function(err, d) {
+  // Cursor pagination (see fetchAllZohoDeals): AspenView has >2000 Accounts, so classic &page=
+  // hits Zoho's DISCRETE_PAGINATION_LIMIT_EXCEEDED at page 11. Prefer next_page_token; fall back to
+  // &page but stop at 2000 rather than erroring.
+  function fetchPage(pageNum, pageToken) {
+    var pageParam = pageToken ? ('&page_token=' + encodeURIComponent(pageToken)) : ('&page=' + pageNum);
+    zohoGet(token, '/Accounts?fields=Account_Name,Account_Status&per_page=200' + pageParam, function(err, d) {
       if (err) return cb(err);
       var batch = (d && d.data) || [];
       all = all.concat(batch);
-      var more = d && d.info && d.info.more_records;
-      if (!more || batch.length === 0) return cb(null, all);
-      if (page >= 50) return cb(null, all);
-      fetchPage(page + 1);
+      var info = (d && d.info) || {};
+      if (!info.more_records || batch.length === 0) return cb(null, all);
+      if (all.length >= 20000) return cb(null, all);   // safety stop
+      if (info.next_page_token) return fetchPage(pageNum + 1, info.next_page_token);   // cursor — past 2000 OK
+      if ((pageNum + 1) * 200 <= 2000) return fetchPage(pageNum + 1, null);            // classic, under the limit
+      return cb(null, all);   // no token and would exceed 2000 → stop cleanly (no 400 spam)
     });
   }
-  fetchPage(1);
+  fetchPage(1, null);
 }
 
 function syncZohoDeals() {
