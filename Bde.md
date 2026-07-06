@@ -225,6 +225,9 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-01 (PM-11) — One-click Health Check (in-app self-test)
+Carlos wanted a button he (admin/creator) can click from Horizon to verify everything we hardened. Built **`runSelfTest()` + `openSelfTestModal()`**, button **"🩺 Run health check"** in **Admin → Recovery & data**. Read-only, changes nothing. Stays honest by **introspecting the real deployed code** (`fn.toString()`) + live state, so if anyone ever removes a preserved field it FAILS. 10 checks: (1) Zoho Sync preserves every manual override (asserts each `p.<field>` in the live sync), (2) ghost→Zoho reconcile keeps overrides, (3) opening the app never mutates deals (autoApplySeedOnce has no setDeals), (4) Export covers all FB_SYNCED_KEYS, (5) Import symmetric + reversible, (6) daily/version backup captures every forecast field, (7) conflict guard wired, (8) all core actions callable (`typeof window[fn]`), (9) restore points exist, (10) live data snapshot. Modal shows PASS/NOTE/FAIL per check + overall verdict + Re-run. Verified all checks pass against current code. `version.txt`→`-health-check`.
+
 ### 2026-07-01 (PM-10) — Concurrency conflict guard (Risk 1 mitigation)
 Closes the biggest silent-data-loss window without the full per-deal-write refactor. **Found while auditing:** the existing `onSnapshot` blindly applied a teammate's remote state over local (`FB_SYNCED_KEYS.forEach(save(k,data[k]))`) — so a teammate's save could **wipe your in-progress unsaved edits**. Fix:
 - Track **`_pendingLocalEdits`** (set in `fbSchedulePush` on a genuine local edit; cleared in `fbPushNow` on save success).

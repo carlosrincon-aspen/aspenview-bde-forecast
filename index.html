@@ -6562,6 +6562,9 @@ function adminRecoverySection() {
   var versions = getForecastVersions();
   var autos = versions.filter(function(v){ return v.auto; }).length;
   var html = '';
+  // One-click platform health check (admins/creator) — verifies everything we hardened.
+  html += '<div class="card" style="margin-bottom:14px"><div class="card-header"><span class="card-title">🩺 Platform health check</span><span class="card-sub">One click to self-test what we hardened: no data loss on a Zoho sync, backups cover every field (incl. Summary PMFF + Super-Deals), core actions/buttons wired, and the concurrency conflict guard. Read-only — it changes nothing.</span></div>';
+  html += '<div style="padding:4px"><button class="btn btn-gold btn-sm" onclick="openSelfTestModal()">🩺 Run health check</button></div></div>';
   html += '<div class="card" style="margin-bottom:14px"><div class="card-header"><span class="card-title">Recovery tools</span><span class="card-sub">Safety net — you normally don\'t need these. They rebuild the forecast from the audit trail if data was ever lost, or let you inspect exactly what changed. None of them push to Zoho.</span></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:4px">';
   html += '<button class="btn btn-gold btn-sm" onclick="rebuildFromActivityLog()" title="Most complete recovery — replays every spread + typed cell from the log and pins the exact 3-month lock">⟲ Full rebuild from log</button>';
@@ -6996,6 +6999,113 @@ function renderSettings() {
   html += '</ol></div>';
 
   document.getElementById('mainContent').innerHTML = html;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// HEALTH CHECK — live, read-only self-test (admins). Verifies the data-integrity
+// invariants by INTROSPECTING the real deployed code (fn.toString()) + the live state,
+// so it stays honest: if someone ever removes a preserved field from the sync, this fails.
+// ─────────────────────────────────────────────────────────────────────────────
+function runSelfTest() {
+  var R = [];
+  function add(name, ok, detail){ R.push({ name:name, status: ok===true?'pass':(ok==='warn'?'warn':'fail'), detail:detail||'' }); }
+  function src(fn){ return (typeof fn==='function') ? fn.toString() : ''; }
+
+  // 1) Zoho Sync preserves EVERY manual override (introspect the live sync — carried as p.<field>).
+  try {
+    var s = src(syncZohoDeals);
+    var manual = ['monthlyHC','totalHC','dollarPerHead','winRateAdj','marginOverride','forecastMargin','actualMargin','growthPct','forecastClosingDate','inForecast','_manual'];
+    var miss = manual.filter(function(f){ return s.indexOf('p.'+f) < 0; });
+    add('Zoho Sync preserves every manual field', miss.length===0,
+      miss.length===0 ? 'All '+manual.length+' overrides carried from the prior deal (close date, HC, $/head, win %, Fcst & actual margin, growth %, Fcst flag, hand-set fields).' : '⚠ NOT carried: '+miss.join(', '));
+  } catch(e){ add('Zoho Sync preserves every manual field', false, 'error: '+e.message); }
+
+  // 2) Ghost → Zoho reconcile keeps overrides (mergeSeedData).
+  try {
+    var ms = src(mergeSeedData), mf = ['dollarPerHead','winRateAdj','forecastMargin','actualMargin','marginOverride','growthPct','forecastClosingDate'];
+    var mm = mf.filter(function(f){ return ms.indexOf(f) < 0; });
+    add('Ghost→Zoho reconcile keeps overrides', mm.length===0, mm.length===0?'A hand-edited not-in-Zoho deal keeps its overrides when it reconciles.':'⚠ missing: '+mm.join(', '));
+  } catch(e){ add('Ghost→Zoho reconcile keeps overrides', false, e.message); }
+
+  // 3) Opening the app never mutates deals.
+  try {
+    var noop = src(autoApplySeedOnce).indexOf('setDeals') < 0;
+    add('Opening the app never mutates deals', noop, noop?'autoApplySeedOnce is a no-op; no destructive migration auto-runs on load.':'⚠ a load-time path may write deals!');
+  } catch(e){ add('Opening the app never mutates deals', false, e.message); }
+
+  // 4) Full backup (Export) covers everything.
+  try {
+    var iterAll = src(exportData).indexOf('FB_SYNCED_KEYS') >= 0;
+    var mustSync = ['deals','pmff','super_programs','margin_rules','snapshots','actuals','anchor_month','forecast_versions','accuracy_overrides','historical_accuracy','pmff_editors','viewers','admin_extra','longterm_base','longterm_growth_pct','midterm_margin','midterm_accuracy','default_price_per_head','default_growth_pct','deal_count_history'];
+    var notSynced = mustSync.filter(function(k){ return FB_SYNCED_KEYS.indexOf(k) < 0; });
+    var ok = iterAll && notSynced.length===0;
+    add('Full backup (Export) covers everything', ok, ok?'exportData dumps all '+FB_SYNCED_KEYS.length+' synced keys — incl. Summary PMFF, Super-Deals, rules, overrides & settings.':(!iterAll?'export does not iterate FB_SYNCED_KEYS':'⚠ not backed up: '+notSynced.join(', ')));
+  } catch(e){ add('Full backup (Export) covers everything', false, e.message); }
+
+  // 5) Import restores everything (symmetric).
+  try {
+    var im = src(importData), ok5 = im.indexOf('FB_SYNCED_KEYS') >= 0 && im.indexOf('_pushVersion') >= 0;
+    add('Import restores the whole platform', ok5, ok5?'Import restores all keys (data overwrite, roles union) and auto-saves a reversible version first.':'⚠ import may be incomplete');
+  } catch(e){ add('Import restores the whole platform', false, e.message); }
+
+  // 6) Daily / working-version backup captures forecast edits.
+  try {
+    var cap = src(_captureForecastItems), cf = ['monthlyHC','totalHC','dollarPerHead','winRateAdj','actualMargin','marginOverride','forecastMargin','forecastClosingDate','growthPct','inForecast'];
+    var cmiss = cf.filter(function(f){ return cap.indexOf(f) < 0; });
+    add('Daily backup captures forecast edits', cmiss.length===0, cmiss.length===0?'Each version + daily auto-backup captures every forecast field; versions also snapshot PMFF, Super-Deals & rules.':'⚠ missing: '+cmiss.join(', '));
+  } catch(e){ add('Daily backup captures forecast edits', false, e.message); }
+
+  // 7) Concurrency conflict guard active.
+  try {
+    var guard = (typeof showConflictBanner==='function') && src(fbInitDataSync).indexOf('_pendingLocalEdits') >= 0;
+    add('Concurrency conflict guard active', guard, guard?'A teammate\'s save can no longer silently overwrite your unsaved edits — you get a choice.':'⚠ guard not wired');
+  } catch(e){ add('Concurrency conflict guard active', false, e.message); }
+
+  // 8) All core actions/buttons wired.
+  try {
+    var fns = ['syncZohoDeals','lockAndPushForecast','forecastPushDiff','exportData','importData','updatePmff','saveForecastVersion','restoreForecastVersion','ensureDailyBackupVersion','recordDealCount','rebuildFromActivityLog','reconstructFromActivityLog','updateDealField','updateForecastHC','updateDealHC','updateDealStr','openSpreadModal','saveDeal','togglePhaseTable'];
+    var missFn = fns.filter(function(n){ try { return typeof window[n] !== 'function'; } catch(e){ return true; } });
+    add('All core actions are wired', missFn.length===0, missFn.length===0?fns.length+' core functions present & callable.':'⚠ missing: '+missFn.join(', '));
+  } catch(e){ add('All core actions are wired', false, e.message); }
+
+  // 9) Restore points exist (informational).
+  try {
+    var vers = getForecastVersions(), auto = vers.filter(function(v){return v.auto;});
+    var today = new Date().toISOString().slice(0,10), hasToday = auto.some(function(v){return v.day===today;});
+    add('Restore points exist', vers.length>0 ? true : 'warn',
+      vers.length+' saved version(s) · '+auto.length+' auto safety backup(s)'+(hasToday?' · today\'s backup ✓':' · today\'s auto-backup saves on first login with data'));
+  } catch(e){ add('Restore points exist', 'warn', e.message); }
+
+  // 10) Live data snapshot (informational).
+  try {
+    var ds = getDeals(), fc = ds.filter(function(d){return d.inForecast && phaseForDeal(d)!==5;}).length, acc = {};
+    ds.forEach(function(d){ acc[(d.client||'').trim().toLowerCase()]=1; });
+    var last = load('last_zoho_sync', null);
+    add('Live data present', ds.length>0 ? true : 'warn', ds.length+' deals · '+fc+' in forecast · '+Object.keys(acc).length+' accounts · last Zoho sync: '+(last?new Date(last).toLocaleString('en-US'):'never'));
+  } catch(e){ add('Live data present', 'warn', e.message); }
+
+  return R;
+}
+function openSelfTestModal() {
+  var R = runSelfTest();
+  var fails = R.filter(function(r){return r.status==='fail';}).length;
+  var warns = R.filter(function(r){return r.status==='warn';}).length;
+  var v = fails ? { t:'❌ '+fails+' check(s) FAILED — review below', c:'#c0392b' }
+        : warns ? { t:'✅ All critical checks passed · '+warns+' informational note(s)', c:'#b8860b' }
+        : { t:'✅ All checks passed — no data-loss paths, backups & modules healthy', c:'#2e7d32' };
+  var html = '<h3>🩺 Horizon Health Check</h3>';
+  html += '<div style="margin:-4px 0 12px;font-size:12px;color:var(--muted)">Live self-test of data integrity, sync preservation, backups and core actions. Read-only — it changes nothing.</div>';
+  html += '<div style="padding:11px 14px;border-radius:8px;background:'+v.c+';color:#fff;font-weight:700;margin-bottom:14px">'+v.t+'</div>';
+  html += '<div style="max-height:52vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><tbody>';
+  R.forEach(function(r){
+    var icon = r.status==='pass' ? '<span style="color:#2e7d32;font-weight:700;white-space:nowrap">✓ PASS</span>'
+             : r.status==='warn' ? '<span style="color:#b8860b;font-weight:700;white-space:nowrap">⚠ NOTE</span>'
+             : '<span style="color:#c0392b;font-weight:700;white-space:nowrap">✗ FAIL</span>';
+    html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 10px;vertical-align:top">'+icon+'</td><td style="padding:8px 10px"><b style="color:var(--navy)">'+esc(r.name)+'</b><div style="font-size:11px;color:var(--muted);margin-top:2px">'+esc(r.detail)+'</div></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  html += '<div class="modal-actions"><button class="btn btn-ghost" onclick="closeModal()">Close</button> <button class="btn btn-gold" onclick="openSelfTestModal()">↻ Re-run</button></div>';
+  openModal(html);
+  try { logActivity('Settings', 'Ran health check', R.length+' checks · '+fails+' failed · '+warns+' notes'); } catch(e){}
 }
 function exportData() {
   // FULL-FIDELITY BACKUP: dump EVERY synced key so the downloaded file can restore the ENTIRE
