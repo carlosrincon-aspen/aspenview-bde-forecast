@@ -5957,7 +5957,7 @@ function renderFulfillmentView() {
       });
       h += '<td class="num num-bold">' + tot + '</td></tr>';
     });
-    h += '<tr style="background:var(--navy);color:white;font-weight:700"><td colspan="3" style="color:white">Total HC</td>';
+    h += '<tr class="pl-total" style="background:var(--navy);color:white;font-weight:700"><td colspan="3" style="color:white">Total HC</td>';
     hcTot.forEach(function(v){ h += '<td class="num" style="color:white">' + v + '</td>'; });
     h += '<td class="num" style="color:var(--gold)">' + hcTot.reduce(function(s,v){return s+v;},0) + '</td></tr>';
     h += '</tbody></table></div></div>';
@@ -5999,7 +5999,7 @@ function renderMRRForecast() {
     sums.forEach(function(v, i){ grand[i] += v; html2 += '<td class="num">' + (v ? fmt$k(v) : '—') + '</td>'; });
     html2 += '<td class="num num-bold">' + fmt$k(tot) + '</td></tr>';
   });
-  html2 += '<tr style="background:var(--navy);color:white;font-weight:700"><td style="color:white">TOTAL</td>';
+  html2 += '<tr class="pl-total" style="background:var(--navy);color:white;font-weight:700"><td style="color:white">TOTAL</td>';
   grand.forEach(function(v){ html2 += '<td class="num" style="color:white">' + fmt$k(v) + '</td>'; });
   html2 += '<td class="num" style="color:var(--gold)">' + fmt$k(grand.reduce(function(s,v){return s+v;},0)) + '</td></tr>';
   html2 += '</tbody></table></div></div>';
@@ -6098,7 +6098,7 @@ function renderActiveCustomers() {
     }
   });
   // Grand total
-  html += '<tr style="background:var(--navy);color:white;font-weight:700"><td style="color:white">TOTAL (' + clients.length + ' clients)</td>';
+  html += '<tr class="pl-total" style="background:var(--navy);color:white;font-weight:700"><td style="color:white">TOTAL (' + clients.length + ' clients)</td>';
   html += '<td class="num" style="color:white">' + grand.deals + '</td>';
   html += '<td class="num" style="color:white">' + grand.hc + '</td>';
   html += '<td class="num" style="color:var(--gold)">' + fmt$k(grand.monthly$) + '</td>';
