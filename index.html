@@ -1397,6 +1397,7 @@ function fetchAllZohoAccounts(token, cb) {
 }
 
 function syncZohoDeals() {
+  if (blockStale('Sync from Zoho')) return;   // out-of-date tab must never sync (it can overwrite saved data)
   var token = getZohoToken();
   if (!token) { alert('Connect Zoho first.'); return; }
   var btn = document.getElementById('zohoSyncBtn');
@@ -3449,6 +3450,7 @@ function forecastPushDiff(d) {
 }
 function lockAndPushForecast() {
   if (!canEdit()) return denyEdit();
+  if (blockStale('Lock → Push to Zoho')) return;   // out-of-date tab must never lock/push
   var anchor = getAnchorMonth();
   var token = getZohoToken();
   if (!token) { alert('Connect Zoho first (click the Zoho pill in the header).\n\nThe monthly Lock also pushes the forecast to Zoho in one step, so it needs an active Zoho connection.'); return; }
@@ -6256,6 +6258,7 @@ function revertPlayground(idx) {
 // If scope is missing, Zoho returns 401/INVALID_OAUTH/OAUTH_SCOPE_MISMATCH and we surface clearly.
 function pushApprovedToZoho() {
   if (!canEdit()) return denyEdit();
+  if (blockStale('Push to Zoho')) return;   // out-of-date tab must never push
   var token = getZohoToken();
   if (!token) { alert('Connect Zoho first (click the Zoho pill in the header).'); return; }
   var deals = getDeals();
@@ -7237,6 +7240,7 @@ document.getElementById('modalOverlay').addEventListener('click', function(e) { 
 // this makes sure everyone gets nudged to reload after each deploy, without anyone chasing people.)
 // Bump version.txt on every deploy for this to fire.
 var _appVersion = null;
+var _updateAvailable = false;   // true once a NEWER version has been deployed than the one this tab loaded
 function _fetchAppVersion(cb) {
   try {
     fetch('version.txt?cb=' + new Date().getTime(), { cache: 'no-store' })
@@ -7245,22 +7249,36 @@ function _fetchAppVersion(cb) {
       .catch(function(){ cb(null); });
   } catch (e) { cb(null); }
 }
+function _markStale() { _updateAvailable = true; showUpdateBanner(); }
 function showUpdateBanner() {
   if (document.getElementById('updateBanner')) return;
   var b = document.createElement('div');
   b.id = 'updateBanner';
-  b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:100000;background:#FEC219;color:#0C1A28;padding:12px 18px;text-align:center;font-family:inherit;font-size:13px;font-weight:700;box-shadow:0 -2px 12px rgba(0,0,0,.25)';
-  b.innerHTML = '🔄 A new version of Horizon is available — refresh to load it (working in a stale tab can revert data). ' +
-    '<button onclick="location.reload()" style="margin-left:10px;padding:6px 16px;border:none;border-radius:6px;background:#0C1A28;color:#fff;font-weight:700;cursor:pointer;font-family:inherit">Refresh now</button>';
+  b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:100000;background:#c0392b;color:#fff;padding:12px 18px;text-align:center;font-family:inherit;font-size:13px;font-weight:700;box-shadow:0 -2px 12px rgba(0,0,0,.3)';
+  b.innerHTML = '⛔ A new version of Horizon is available — <b>Sync &amp; Push to Zoho are disabled until you refresh</b> (an out-of-date tab can overwrite saved data). ' +
+    '<button onclick="location.reload()" style="margin-left:10px;padding:6px 16px;border:none;border-radius:6px;background:#fff;color:#0C1A28;font-weight:700;cursor:pointer;font-family:inherit">Refresh now</button>';
   document.body.appendChild(b);
+}
+// HARD GUARD: refuse any Zoho write / data-clobbering action from an out-of-date tab. Carlos's
+// standing rule — an out-of-date tab must NOT be able to Sync or Push (that's how Don's data got
+// wiped). Returns true (and blocks) when stale; also re-checks version.txt so the flag stays fresh.
+function blockStale(action) {
+  _fetchAppVersion(function(v){ if (v && _appVersion && v !== _appVersion) _markStale(); });   // refresh the flag for next time
+  if (_updateAvailable) {
+    _markStale();
+    try { logActivity('Sync', 'Blocked — stale tab', action + ' blocked; refresh required'); } catch(e){}
+    alert('⛔ ' + action + ' is disabled.\n\nA newer version of Horizon is available. Refresh the page first (Ctrl+Shift+R).\n\nWorking in an out-of-date tab can overwrite saved data — this safeguard is why nobody\'s forecast gets wiped again.');
+    return true;
+  }
+  return false;
 }
 function initVersionCheck() {
   _fetchAppVersion(function(v){ if (v) _appVersion = v; });   // remember the version we loaded with
   function check() {
     if (document.hidden) return;
-    _fetchAppVersion(function(v){ if (v && _appVersion && v !== _appVersion) showUpdateBanner(); });
+    _fetchAppVersion(function(v){ if (v && _appVersion && v !== _appVersion) _markStale(); });
   }
-  setInterval(check, 180000);               // re-check every 3 minutes
+  setInterval(check, 60000);                // re-check every 60s (snappier, so the block engages fast)
   window.addEventListener('focus', check);  // and whenever the tab regains focus
 }
 // ─────────────────────────────────────────────────────────────────────────────

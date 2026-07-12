@@ -225,6 +225,9 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-06 — HARD BLOCK: out-of-date tab cannot Sync or Push to Zoho
+Carlos's standing rule after Don's repeated wipes: don't just show a refresh banner — **disable Sync & Push entirely on a stale tab.** Added `_updateAvailable` flag (set by `_markStale()` when version.txt differs from the version this tab loaded) + `blockStale(action)` guard. Guards at the top of `syncZohoDeals`, `lockAndPushForecast`, `pushApprovedToZoho` — each `if (blockStale(...)) return;` with a clear "⛔ disabled — refresh first" alert (also logs the block). Version poll dropped 180s→60s + on focus; banner is now red and says "Sync & Push are disabled until you refresh". Fail-open only if version.txt can't be read (never a false block). NOTE: this protects going FORWARD — a tab must first load THIS version to have the guard; once loaded, any future deploy blocks its Sync/Push until refresh. Combined with the per-key merge push (a stale tab can't clobber `deals` via housekeeping anyway), this closes the wipe vector. `version.txt`→`-block-sync-when-stale`.
+
 ### 2026-07-06 — Audit load/recover limit 1000/1500 → 8000
 When Carlos searched the full audit for "Warner Bros" → 0 matches: the viewer only loaded the newest 1000 events and the recover button read 1500 — 2 weeks of team activity pushed Don's older close-date edits out of the window. Bumped `loadFullActivityHistory` and `recoverCloseDatesFromAudit` limits to **8000** so 2-week-old edits are reachable/recoverable. If a deal's date is STILL not in the audit (never logged, or older than 8000 events), Don just re-enters it once — and with the per-key push root fix it now sticks. `version.txt`→`-audit-limit-8000`.
 
