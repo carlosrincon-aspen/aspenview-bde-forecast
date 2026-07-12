@@ -944,6 +944,12 @@ var fbPushTimer = null;
 // user's work (that used to be a silent data-loss path) — we pause and let them choose.
 var _pendingLocalEdits = false;
 var _conflictActive = false;  // true while the conflict banner is up (blocks auto-push until resolved)
+// ROOT-CAUSE FIX (2026-07-06): only push the keys THIS client actually changed, not the whole state.
+// Before, every push (even the login daily-backup / trend-snapshot) rewrote the ENTIRE `deals` array
+// from local with merge:false — so any client with slightly-stale deals clobbered everyone's forecast,
+// reverting Don's manual close dates back to Zoho's 2030 placeholder. Now each push writes ONLY its
+// dirty keys with merge:true, so an idle/stale client can never overwrite `deals` it didn't touch.
+var _dirtyKeys = {};
 var fbInitTried = false;
 
 function fbInit() {
@@ -1013,7 +1019,7 @@ function fbInitDataSync() {
       ensureWeeklyTrendSnapshot();
       ensureDailyBackupVersion();   // automatic daily restore point — never lose data again
       initPresence();               // live editing-presence banner (isolated; safe if the rule is absent)
-      fbPushNow();
+      fbPushAll();                  // first time only: create the doc with ALL keys
       renderTab();
     }
     fbDocRef.onSnapshot(function(snap) {
@@ -1052,6 +1058,7 @@ function fbInitDataSync() {
 var NON_EDIT_KEYS = ['trend_snapshots','forecast_versions','deal_count_history','last_zoho_sync','error_log','activity_log','known_users'];
 function fbSchedulePush(k) {
   if (!fbReady || !fbDocRef || fbSuppressPush) return;
+  if (k !== undefined) _dirtyKeys[k] = true;   // remember exactly which key changed → push only that
   if (k === undefined || NON_EDIT_KEYS.indexOf(k) < 0) _pendingLocalEdits = true;   // only genuine forecast/data edits arm the guard
   if (_conflictActive) return;      // a conflict is unresolved — don't auto-push over a teammate; wait for the user's choice
   if (fbPushTimer) clearTimeout(fbPushTimer);
@@ -1060,16 +1067,26 @@ function fbSchedulePush(k) {
 }
 function fbPushNow() {
   if (!fbReady || !fbDocRef) return;
+  var keys = Object.keys(_dirtyKeys).filter(function(k){ return FB_SYNCED_KEYS.indexOf(k) >= 0; });
+  if (!keys.length) return;   // nothing changed locally → DON'T push (this is what stops a stale/idle client from re-writing deals it never touched)
   touchPresence();   // mark "I'm actively editing" so others get the live coordination banner
+  // Write ONLY the changed keys, and MERGE — so keys this client didn't touch (e.g. someone else's
+  // `deals` edit) are left intact in Firestore instead of being overwritten with our stale copy.
   var payload = { updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: (fbAuth.currentUser && fbAuth.currentUser.email) || '' };
-  FB_SYNCED_KEYS.forEach(function(k) { payload[k] = load(k, null); });
-  fbDocRef.set(payload, { merge: false }).then(function() {
+  keys.forEach(function(k) { payload[k] = load(k, null); });
+  _dirtyKeys = {};   // consume the dirty set (a failed write is retried by the next edit's schedule)
+  fbDocRef.set(payload, { merge: true }).then(function() {
     _pendingLocalEdits = false;   // our edits are now safely saved to Firestore
     setFbPill('on', 'Sync · Live');
   }).catch(function(err) {
     console.error('Firestore push failed:', err);
     setFbPill('off', 'Sync · Error');
   });
+}
+// Push EVERY synced key (used once to create the doc, or to force a full re-sync).
+function fbPushAll() {
+  FB_SYNCED_KEYS.forEach(function(k){ _dirtyKeys[k] = true; });
+  fbPushNow();
 }
 // Concurrency conflict banner — shown when a teammate saves while this user has unsaved edits.
 // Lets the user choose instead of silently losing either side's work.
