@@ -950,6 +950,12 @@ var _conflictActive = false;  // true while the conflict banner is up (blocks au
 // reverting Don's manual close dates back to Zoho's 2030 placeholder. Now each push writes ONLY its
 // dirty keys with merge:true, so an idle/stale client can never overwrite `deals` it didn't touch.
 var _dirtyKeys = {};
+// SERVER-SIDE STALE-WRITE GATE: every Firestore write to dashboard/state stamps this version.
+// A Firestore security rule rejects any write whose _wv is below this number — so an out-of-date
+// tab (old code, no _wv or a lower one) is PHYSICALLY unable to write/clobber, regardless of whether
+// the user refreshes. Bump this (and the rule's threshold) whenever a future change must lock out
+// older clients from writing. Reads are always allowed, so stale tabs still display data.
+var WRITE_VERSION = 20260706;
 var fbInitTried = false;
 
 function fbInit() {
@@ -1072,7 +1078,7 @@ function fbPushNow() {
   touchPresence();   // mark "I'm actively editing" so others get the live coordination banner
   // Write ONLY the changed keys, and MERGE — so keys this client didn't touch (e.g. someone else's
   // `deals` edit) are left intact in Firestore instead of being overwritten with our stale copy.
-  var payload = { updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: (fbAuth.currentUser && fbAuth.currentUser.email) || '' };
+  var payload = { updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: (fbAuth.currentUser && fbAuth.currentUser.email) || '', _wv: WRITE_VERSION };
   keys.forEach(function(k) { payload[k] = load(k, null); });
   _dirtyKeys = {};   // consume the dirty set (a failed write is retried by the next edit's schedule)
   fbDocRef.set(payload, { merge: true }).then(function() {
