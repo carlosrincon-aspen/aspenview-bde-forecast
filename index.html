@@ -6807,7 +6807,7 @@ function _activityFilterBox(tableId) {
 // matches to current deals by normalized name, and writes it back. Saves a reversible version first.
 function recoverCloseDatesFromAudit() {
   if (!fbDb || !fbAuth || !fbAuth.currentUser) { uiAlert('Connect / sign in to Firestore first, then try again.'); return; }
-  fbDb.collection('activity_archive').orderBy('ts', 'desc').limit(1500).get().then(function(snap) {
+  fbDb.collection('activity_archive').orderBy('ts', 'desc').limit(8000).get().then(function(snap) {
     var latest = {};   // normName -> { name, date }  (first seen = newest, since ordered desc)
     snap.forEach(function(doc) {
       var e = doc.data();
@@ -6888,7 +6888,7 @@ function loadFullActivityHistory() {
   }
   box.innerHTML = '<div class="empty">Loading full audit trail…</div>';
   try { box.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
-  fbDb.collection('activity_archive').orderBy('ts', 'desc').limit(1000).get().then(function(snap) {
+  fbDb.collection('activity_archive').orderBy('ts', 'desc').limit(8000).get().then(function(snap) {
     var evs = [];
     snap.forEach(function(d) { evs.push(d.data()); });
     if (!evs.length) {
