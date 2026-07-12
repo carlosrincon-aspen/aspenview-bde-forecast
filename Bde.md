@@ -225,6 +225,9 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-06 — Health Check watches the doc size (early warning on the 1 MB limit)
+Carlos: want ongoing visibility so today's size failure can never surprise us again. Added a **"Firestore doc size within 1 MB"** check to `runSelfTest()` — sums all synced keys, shows `≈ N KB of 1024 KB (%)` + the biggest keys, green <750KB / amber 750-950KB / red >950KB, with what-to-do text. Also added a live **Document size: N KB / 1024 KB** readout + a **"🗜 Compact versions now"** button (`compactVersionsNow()`) in Admin → Recovery & data → Backups & versions (one-click prune if it ever creeps up; forecast data untouched). Versions auto-compact on load so it should stay green. `version.txt`→`-healthcheck-docsize`.
+
 ### 2026-07-06 — Version labels monotonic (compaction side-effect: new save showed "v6")
 After compaction pruned old versions, `_nextVersionLabel()` (which used the COUNT of manual versions + 1) recycled low numbers — a new save labeled "v6" sitting next to v22, risking duplicates/confusion. Data was always fine (cosmetic). Fixed: label = highest existing `vN` number + 1 (regex over labels), so it's always monotonic regardless of pruning. `version.txt`→`-version-label-monotonic`.
 

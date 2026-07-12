@@ -6642,8 +6642,22 @@ function adminRecoverySection() {
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:4px;align-items:center">';
   html += '<span style="font-size:12px;color:var(--muted)"><b style="color:var(--navy)">' + versions.length + '</b> saved versions · <b style="color:var(--navy)">' + autos + '</b> automatic safety backups</span>';
   html += '<button class="btn btn-ghost btn-sm" onclick="openVersionsModal()">🗂 Open versions</button>';
+  // Document-size guard (today's failure): show current size + one-click compaction if it ever creeps up.
+  var _docKb = 0; FB_SYNCED_KEYS.forEach(function(k){ _docKb += (localStorage.getItem('bde_' + k) || '').length; });
+  _docKb = Math.round(_docKb / 1024);
+  var _sizeColor = _docKb > 927 ? '#c0392b' : (_docKb > 732 ? '#b8860b' : '#2e7d32');
+  html += '<span style="font-size:12px;color:var(--muted);border-left:1px solid var(--border);padding-left:12px">Document size: <b style="color:' + _sizeColor + '">' + _docKb + ' KB</b> / 1024 KB</span>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="compactVersionsNow()" title="Trim old working versions so the shared document stays well under Firestore\'s 1 MB limit. Your forecast data is untouched — only old restore points beyond the most recent are pruned.">🗜 Compact versions now</button>';
   html += '</div></div>';
   return html;
+}
+function compactVersionsNow() {
+  var before = 0; FB_SYNCED_KEYS.forEach(function(k){ before += (localStorage.getItem('bde_' + k) || '').length; });
+  compactForecastVersions();
+  var after = 0; FB_SYNCED_KEYS.forEach(function(k){ after += (localStorage.getItem('bde_' + k) || '').length; });
+  try { logActivity('Admin', 'Compact versions', Math.round(before/1024) + 'KB → ' + Math.round(after/1024) + 'KB'); } catch(e){}
+  alert('Compacted.\n\nDocument size: ' + Math.round(before/1024) + ' KB → ' + Math.round(after/1024) + ' KB (Firestore limit is 1024 KB).\n\nOnly old working versions beyond the most recent were pruned — your forecast data (deals, dates, HC, margins) is untouched.');
+  renderTab();
 }
 
 function adminTeamSection(users, emails) {
@@ -7146,6 +7160,23 @@ function runSelfTest() {
     var last = load('last_zoho_sync', null);
     add('Live data present', ds.length>0 ? true : 'warn', ds.length+' deals · '+fc+' in forecast · '+Object.keys(acc).length+' accounts · last Zoho sync: '+(last?new Date(last).toLocaleString('en-US'):'never'));
   } catch(e){ add('Live data present', 'warn', e.message); }
+
+  // 11) Firestore document size — TODAY'S FAILURE. The whole state lives in one doc capped at 1 MB
+  // by Firestore; once it crosses that, EVERY save fails silently. Watch the headroom so it never
+  // surprises us again. Versions auto-compact on load, so this should stay green.
+  try {
+    var LIMIT = 1048576, total = 0, big = [];
+    FB_SYNCED_KEYS.forEach(function(k){ var s = (localStorage.getItem('bde_' + k) || '').length; total += s; if (s > 40000) big.push(k + ' ' + Math.round(s/1024) + 'KB'); });
+    var kb = Math.round(total/1024), pct = Math.round(total/LIMIT*100);
+    big.sort(function(a,b){ return parseInt(b.match(/(\d+)KB/)[1]) - parseInt(a.match(/(\d+)KB/)[1]); });
+    var st = total > 950000 ? false : (total > 750000 ? 'warn' : true);
+    var msg = '≈ ' + kb + ' KB of 1024 KB (' + pct + '%). ' +
+      (st === true ? 'Healthy headroom — auto-compaction keeps it here.' :
+       st === 'warn' ? '⚠ Getting close — hard-refresh (auto-compacts) or use "Compact versions now" in Recovery.' :
+       '⛔ NEAR/OVER the 1 MB limit — saves may fail. Run "Compact versions now" in Admin → Recovery & data immediately.') +
+      (big.length ? ' Biggest: ' + big.join(', ') + '.' : '');
+    add('Firestore doc size within 1 MB', st, msg);
+  } catch(e){ add('Firestore doc size within 1 MB', 'warn', e.message); }
 
   return R;
 }
