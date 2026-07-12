@@ -1010,6 +1010,7 @@ function fbInitDataSync() {
       purgeDemoTrendSnapshots();
       ensureWeeklyTrendSnapshot();
       ensureDailyBackupVersion();   // automatic daily restore point — never lose data again
+      compactForecastVersions();    // self-heal: shrink an oversized versions list so the doc fits under 1 MB again
       initPresence();               // live editing-presence banner (isolated; safe if the rule is absent)
       renderTab();
     } else {
@@ -2352,6 +2353,24 @@ function openForecastAuditModal() {
 // Firestore document stays small.
 function getForecastVersions()  { return load('forecast_versions', []); }
 function setForecastVersions(v) { save('forecast_versions', v); }
+// Keep the single Firestore state doc well under its 1 MB limit. Each saved version snapshots ALL
+// deals, so versions are the main growth driver — when the doc crosses 1 MB, EVERY write fails
+// ("Document ... exceeds 1,048,576 bytes") and changes silently stop saving. So: strip the heavy
+// per-version Summary/Super/margin-rule copies (those live in their own synced keys anyway), then
+// drop the OLDEST versions until the set is safely small. Runs on load (self-heal) + after each save.
+function compactForecastVersions() {
+  var v = getForecastVersions();
+  if (!v.length) return;
+  var before = JSON.stringify(v);
+  v.forEach(function(x){ delete x.pmff; delete x.superPrograms; delete x.marginRules; });   // slim (recoverable from live keys)
+  v.sort(function(a, b){ return (a.savedAt < b.savedAt) ? 1 : -1; });   // newest first
+  var BUDGET = 350000;   // ~350 KB budget for ALL versions → leaves ~650 KB for deals/activity/etc under 1 MB
+  while (v.length > 3 && JSON.stringify(v).length > BUDGET) v.pop();    // drop the oldest until it fits (keep >= 3)
+  var manual = v.filter(function(x){ return !x.auto; }).slice(0, 8);    // backstop caps
+  var autos  = v.filter(function(x){ return x.auto; }).slice(0, 4);
+  v = manual.concat(autos).sort(function(a, b){ return (a.savedAt < b.savedAt) ? 1 : -1; });
+  if (JSON.stringify(v) !== before) setForecastVersions(v);
+}
 function _dealKey(d) { return d.zohoId || d.dealName || ''; }
 function _captureForecastItems() {
   var items = {};
@@ -2385,14 +2404,12 @@ function _pushVersion(note) {
     savedBy: (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'auto',
     note: (note || '').trim(),
     anchor: getAnchorMonth(),
-    schemaV: 3,   // v2: +forecastMargin/forecastClosingDate · v3: +marginOverride, +Summary PMFF, +Super-Deal assessments, +margin rules (2026-07-01)
+    schemaV: 3,   // captures forecast per-deal fields; heavy Summary/Super/rules are NOT stored per-version (doc-size)
     items: _captureForecastItems(),
-    pmff: getPmff(),                 // Summary manual input (CFO/CEO) — so a restore point covers Summary too
-    superPrograms: getSuperPrograms(),// Super-Deal qualitative assessments + notes
-    marginRules: getMarginRules(),   // stage Win%/Margin% rules
     summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) }
   });
   setForecastVersions(versions);
+  compactForecastVersions();   // keep the Firestore doc under its 1 MB limit
   return label;
 }
 function saveForecastVersion() {
@@ -2421,20 +2438,13 @@ function ensureDailyBackupVersion() {
     savedBy: 'auto-backup',
     note: 'Automatic daily safety backup',
     anchor: getAnchorMonth(),
-    schemaV: 3,   // v2: +forecastMargin/forecastClosingDate · v3: +marginOverride, +Summary PMFF, +Super-Deal assessments, +margin rules (2026-07-01)
+    schemaV: 3,   // captures forecast per-deal fields; heavy Summary/Super/rules are NOT stored per-version (doc-size)
     items: _captureForecastItems(),
-    pmff: getPmff(),                 // Summary manual input (CFO/CEO)
-    superPrograms: getSuperPrograms(),// Super-Deal qualitative assessments + notes
-    marginRules: getMarginRules(),   // stage Win%/Margin% rules
     summary: { deals: forecastDeals().length, fcstHC: getDeals().reduce(function(s,d){ return s + (d.totalHC || 0); }, 0) },
     auto: true, day: today
   });
-  var autos = versions.filter(function(v){ return v.auto; });
-  if (autos.length > 10) {
-    var drop = autos.slice(0, autos.length - 10).map(function(v){ return v.id; });
-    versions = versions.filter(function(v){ return drop.indexOf(v.id) < 0; });
-  }
   setForecastVersions(versions);
+  compactForecastVersions();   // strip heavy fields + prune old versions to keep the doc < 1 MB
   console.log('Auto-backup version saved for ' + today);
 }
 function restoreForecastVersion(id) {
