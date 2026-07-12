@@ -225,6 +225,9 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-06 — Version labels monotonic (compaction side-effect: new save showed "v6")
+After compaction pruned old versions, `_nextVersionLabel()` (which used the COUNT of manual versions + 1) recycled low numbers — a new save labeled "v6" sitting next to v22, risking duplicates/confusion. Data was always fine (cosmetic). Fixed: label = highest existing `vN` number + 1 (regex over labels), so it's always monotonic regardless of pruning. `version.txt`→`-version-label-monotonic`.
+
 ### 2026-07-06 — 🔴 THE REAL ROOT CAUSE: Firestore doc hit the 1 MB limit → all writes failed
 The console finally showed it: `Document dashboard/state cannot be written because its size (1,089,578 bytes) exceeds 1,048,576 bytes`. **This — not (only) stale tabs — is why changes kept vanishing:** once the single state doc crossed 1 MB, EVERY push failed, so edits (restore, close dates, HC) saved locally but never reached Firestore; the next refresh loaded the last-successful (smaller/older) doc → work "disappeared." The restore showed 55 dates locally but its push failed → refresh = 2/317.
 **Bloat driver:** `forecast_versions` — each saved version snapshots ALL ~317 deals, and there were ~22 (v1…v22 + autos). Worse, the 2026-07-01 change stored PMFF+Super-Deals+marginRules in EVERY version, inflating each. That tipped it over 1 MB.

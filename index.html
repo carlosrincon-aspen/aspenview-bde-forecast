@@ -2391,7 +2391,17 @@ function _captureForecastItems() {
   return items;
 }
 // Next manual-version label (v1, v2, …) — auto-backups don't consume a number.
-function _nextVersionLabel() { return 'v' + (getForecastVersions().filter(function(v){ return !v.auto; }).length + 1); }
+// Next manual version label = highest existing v-number + 1 (NOT a count — counting broke when
+// compaction pruned old versions, recycling low numbers like "v6" next to "v22"). Always monotonic.
+function _nextVersionLabel() {
+  var max = 0;
+  getForecastVersions().forEach(function(v){
+    if (v.auto) return;
+    var m = /^v(\d+)$/.exec(String(v.label || '').trim());
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  });
+  return 'v' + (max + 1);
+}
 // Push a version without prompting — used by Save version and as an auto safety-save before any
 // recovery action (so every recover/reconstruct is reversible).
 function _pushVersion(note) {
