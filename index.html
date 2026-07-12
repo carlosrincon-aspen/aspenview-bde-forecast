@@ -7266,8 +7266,11 @@ function blockStale(action) {
   _fetchAppVersion(function(v){ if (v && _appVersion && v !== _appVersion) _markStale(); });   // refresh the flag for next time
   if (_updateAvailable) {
     _markStale();
+    // Flush the user's in-progress edits to the shared state NOW, so refreshing loses NOTHING —
+    // they'll see their work exactly as they left it and just Sync/Push after the refresh.
+    if (!_conflictActive) { if (fbPushTimer) { clearTimeout(fbPushTimer); fbPushTimer = null; } fbPushNow(); }
     try { logActivity('Sync', 'Blocked — stale tab', action + ' blocked; refresh required'); } catch(e){}
-    alert('⛔ ' + action + ' is disabled.\n\nA newer version of Horizon is available. Refresh the page first (Ctrl+Shift+R).\n\nWorking in an out-of-date tab can overwrite saved data — this safeguard is why nobody\'s forecast gets wiped again.');
+    alert('⛔ ' + action + ' is disabled — a newer version of Horizon is available.\n\n✅ Your changes are already saved to the platform — you will NOT lose anything. Just refresh (Ctrl+Shift+R): you\'ll see your work exactly as you left it, then you can Sync / Push.\n\n(An out-of-date tab can overwrite data, so this action is blocked as a safeguard.)');
     return true;
   }
   return false;

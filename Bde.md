@@ -225,6 +225,9 @@ Every user action logged to Firestore: HC edits, MRR/Win/Margin edits, Fcst/Supe
 
 Append a new entry per session. Format: `YYYY-MM-DD — session summary` followed by bullets of what changed.
 
+### 2026-07-06 — Stale-block never loses in-progress edits (flush before blocking)
+Carlos asked: if I edit my forecast on an out-of-date tab, then hit Sync and get the block, do I lose my work? Answer: NO — edits auto-save to the shared Firestore state as you type (only Sync/Push are blocked, not editing). Hardened it anyway: `blockStale()` now FLUSHES any pending push (`fbPushNow`) before showing the block, so even an edit made <1s before is saved. Alert reworded: "✅ Your changes are already saved — you will NOT lose anything. Refresh, you'll see your work exactly as you left it, then Sync/Push." (Flush skipped if a conflict banner is active, so it never overrides a teammate.) `version.txt`→`-block-flush-no-loss`.
+
 ### 2026-07-06 — HARD BLOCK: out-of-date tab cannot Sync or Push to Zoho
 Carlos's standing rule after Don's repeated wipes: don't just show a refresh banner — **disable Sync & Push entirely on a stale tab.** Added `_updateAvailable` flag (set by `_markStale()` when version.txt differs from the version this tab loaded) + `blockStale(action)` guard. Guards at the top of `syncZohoDeals`, `lockAndPushForecast`, `pushApprovedToZoho` — each `if (blockStale(...)) return;` with a clear "⛔ disabled — refresh first" alert (also logs the block). Version poll dropped 180s→60s + on focus; banner is now red and says "Sync & Push are disabled until you refresh". Fail-open only if version.txt can't be read (never a false block). NOTE: this protects going FORWARD — a tab must first load THIS version to have the guard; once loaded, any future deploy blocks its Sync/Push until refresh. Combined with the per-key merge push (a stale tab can't clobber `deals` via housekeeping anyway), this closes the wipe vector. `version.txt`→`-block-sync-when-stale`.
 
