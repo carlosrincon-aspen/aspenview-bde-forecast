@@ -6628,7 +6628,12 @@ function adminRecoverySection() {
   var html = '';
   // One-click platform health check (admins/creator) — verifies everything we hardened.
   html += '<div class="card" style="margin-bottom:14px"><div class="card-header"><span class="card-title">🩺 Platform health check</span><span class="card-sub">One click to self-test what we hardened: no data loss on a Zoho sync, backups cover every field (incl. Summary PMFF + Super-Deals), core actions/buttons wired, and the concurrency conflict guard. Read-only — it changes nothing.</span></div>';
-  html += '<div style="padding:4px"><button class="btn btn-gold btn-sm" onclick="openSelfTestModal()">🩺 Run health check</button></div></div>';
+  var lastHc = load('last_health_check', null);
+  html += '<div style="padding:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><button class="btn btn-gold btn-sm" onclick="openSelfTestModal()">🩺 Run health check</button>'
+        + '<span style="font-size:12px;color:var(--navy);font-weight:600;white-space:nowrap">'
+        + '<span style="color:var(--gold);font-size:15px;vertical-align:-1px">←</span> '
+        + ((lastHc && lastHc.at) ? 'Last run: '+new Date(lastHc.at).toLocaleString('en-US')+(lastHc.by ? ' <span style="color:var(--muted);font-weight:400">· '+esc(lastHc.by)+'</span>' : '') : '<span style="color:var(--muted);font-weight:400">Not run yet on this browser</span>')
+        + '</span></div></div>';
   html += '<div class="card" style="margin-bottom:14px"><div class="card-header"><span class="card-title">Recovery tools</span><span class="card-sub">Safety net — you normally don\'t need these. They rebuild the forecast from the audit trail if data was ever lost, or let you inspect exactly what changed. None of them push to Zoho.</span></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding:4px">';
   html += '<button class="btn btn-gold btn-sm" onclick="rebuildFromActivityLog()" title="Most complete recovery — replays every spread + typed cell from the log and pins the exact 3-month lock">⟲ Full rebuild from log</button>';
@@ -7184,11 +7189,21 @@ function openSelfTestModal() {
   var R = runSelfTest();
   var fails = R.filter(function(r){return r.status==='fail';}).length;
   var warns = R.filter(function(r){return r.status==='warn';}).length;
+  // Stamp when this check ran, so there's a record of "last run" up top (and on the Settings card).
+  // Read the PREVIOUS stamp before overwriting, to also show when it was last run before now.
+  // Local per-browser key — NOT in FB_SYNCED_KEYS, so it never syncs / touches the 1 MB state doc.
+  var prevHc = load('last_health_check', null);
+  var nowHc = new Date();
+  save('last_health_check', { at: nowHc.toISOString(), by: (currentUser && currentUser.email) || '' });
   var v = fails ? { t:'❌ '+fails+' check(s) FAILED — review below', c:'#c0392b' }
         : warns ? { t:'✅ All critical checks passed · '+warns+' informational note(s)', c:'#b8860b' }
         : { t:'✅ All checks passed — no data-loss paths, backups & modules healthy', c:'#2e7d32' };
   var html = '<h3>🩺 Horizon Health Check</h3>';
-  html += '<div style="margin:-4px 0 12px;font-size:12px;color:var(--muted)">Live self-test of data integrity, sync preservation, backups and core actions. Read-only — it changes nothing.</div>';
+  html += '<div style="margin:-4px 0 10px;font-size:12px;color:var(--navy)">Last run: <b>'+nowHc.toLocaleString('en-US')+'</b>'
+        + ((currentUser && currentUser.email) ? ' · by '+esc(currentUser.email) : '')
+        + ((prevHc && prevHc.at) ? ' <span style="color:var(--muted)">· previous run '+new Date(prevHc.at).toLocaleString('en-US')+'</span>' : '')
+        + '</div>';
+  html += '<div style="margin:0 0 12px;font-size:12px;color:var(--muted)">Live self-test of data integrity, sync preservation, backups and core actions. Read-only — it changes nothing.</div>';
   html += '<div style="padding:11px 14px;border-radius:8px;background:'+v.c+';color:#fff;font-weight:700;margin-bottom:14px">'+v.t+'</div>';
   html += '<div style="max-height:52vh;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px"><tbody>';
   R.forEach(function(r){
