@@ -4465,39 +4465,43 @@ function renderAureumGrid() {
   html += '</div>';
   var aSnap = getSnapshots().find(function(s){ return s.snapshotMonth === anchor; });
   var aLocked = !!(aSnap && aSnap.locked);
-  // ── BIG Monthly Lockdown panel (Michael & Don are 67–70 — must be large & unmistakable). Only
-  //    Michael Durham and Don Kelly can sign; BOTH must sign to lock and BOTH must remove to reopen. ──
+  // ── Monthly Lockdown panel: named signers (Michael + Don only). NORMAL platform sizing with SOLID,
+  //    high-contrast buttons (the old ghost buttons were near-invisible on the dark bar). Only they can
+  //    sign; BOTH sign to lock, BOTH remove to reopen. ──
   var _myEmail = ((currentUser && currentUser.email) || '').toLowerCase();
   var _hasSignoffs = aSnap && aSnap.signoffs && Object.keys(aSnap.signoffs).length > 0;
   var _legacyLock = aLocked && !_hasSignoffs;
-  var _BIG = 'padding:13px 24px;font-size:16px;font-weight:800;border-radius:9px;border:none;cursor:pointer;font-family:inherit;';
-  html += '<div style="margin-top:16px;padding:18px 20px;background:#0A1928;border:2px solid var(--gold);border-radius:12px">';
-  html += '<div style="color:var(--gold);font-size:16px;font-weight:800;letter-spacing:.5px;margin-bottom:14px">🔒 MONTHLY LOCKDOWN — ' + monthLabel(anchor) + '</div>';
+  var _btnBase = 'padding:6px 12px;font-size:12px;font-weight:700;border-radius:6px;border:none;cursor:pointer;font-family:inherit;';
+  var _btnGold  = _btnBase + 'background:#e8b84b;color:#0A1928;';
+  var _btnBlue  = _btnBase + 'background:#33506e;color:#fff;';
+  var _btnGreen = _btnBase + 'background:#2e7d32;color:#fff;';
+  html += '<div style="margin-top:14px;padding:12px 14px;background:#0A1928;border:1px solid var(--gold);border-radius:8px">';
+  html += '<div style="color:var(--gold);font-size:12px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">🔒 Monthly Lockdown — ' + monthLabel(anchor) + '</div>';
   if (_legacyLock) {
-    html += '<div style="color:#9ecbff;font-size:15px;font-weight:700;margin-bottom:14px">🔒 ' + monthLabel(anchor) + ' is locked (legacy single lock by ' + esc(aSnap.lockedBy || '—') + ').</div>';
-    html += '<button style="' + _BIG + 'background:#e8b84b;color:#0A1928" onclick="unlockForecast()">🔓 Unlock ' + monthLabel(anchor) + '</button>';
+    html += '<div style="color:#9ecbff;font-size:12.5px;font-weight:700;margin-bottom:10px">🔒 ' + monthLabel(anchor) + ' is locked (legacy single lock by ' + esc(aSnap.lockedBy || '—') + ').</div>';
+    html += '<button style="' + _btnGold + '" onclick="unlockForecast()">🔓 Unlock ' + monthLabel(anchor) + '</button>';
   } else {
     LOCK_SIGNERS.forEach(function(sg){
       var so = aSnap && aSnap.signoffs && aSnap.signoffs[sg.email];
-      html += '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid #1c3250">';
-      html += '<span style="min-width:190px;color:#fff;font-size:16px;font-weight:700">' + esc(sg.name) + '</span>';
-      if (so) html += '<span style="font-size:15px;font-weight:800;color:#7fe08a">✅ SIGNED</span> <span style="color:#7fa8d8;font-size:12px">' + new Date(so.at).toLocaleDateString('en-US') + '</span>';
-      else    html += '<span style="font-size:15px;font-weight:800;color:#ffb84d">⬜ NOT SIGNED YET</span>';
+      html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid #1c3250">';
+      html += '<span style="min-width:150px;color:#fff;font-size:13px;font-weight:700">' + esc(sg.name) + '</span>';
+      if (so) html += '<span style="font-size:12.5px;font-weight:700;color:#7fe08a">✅ Signed</span> <span style="color:#7fa8d8;font-size:11px">' + new Date(so.at).toLocaleDateString('en-US') + '</span>';
+      else    html += '<span style="font-size:12.5px;font-weight:700;color:#ffb84d">⬜ Not signed yet</span>';
       if (_myEmail === sg.email) {
-        if (so) html += '<button style="' + _BIG + 'background:transparent;color:#ffd9a8;border:2px solid #6a5330;margin-left:auto" onclick="removeSignoff()">✍ Remove my sign-off</button>';
-        else    html += '<button style="' + _BIG + 'background:#e8b84b;color:#0A1928;margin-left:auto" onclick="addSignoff()">🔒 Add my sign-off</button>';
+        if (so) html += '<button style="' + _btnBlue + 'margin-left:auto" onclick="removeSignoff()">✍ Remove my sign-off</button>';
+        else    html += '<button style="' + _btnGold + 'margin-left:auto" onclick="addSignoff()">🔒 Add my sign-off</button>';
       }
       html += '</div>';
     });
     if (aLocked) {
-      html += '<div style="margin-top:14px;padding:13px 16px;background:#173a1f;border-radius:8px;color:#aef0bd;font-size:16px;font-weight:800">✅ OFFICIALLY LOCKED — both signed. To reopen, BOTH ' + LOCK_SIGNERS.map(function(sg){ return sg.name; }).join(' & ') + ' must remove their sign-off.</div>';
+      html += '<div style="margin-top:10px;padding:8px 12px;background:#173a1f;border-radius:6px;color:#aef0bd;font-size:12.5px;font-weight:700">✅ Officially locked — both signed. To reopen, BOTH ' + LOCK_SIGNERS.map(function(sg){ return sg.name; }).join(' & ') + ' must remove their sign-off.</div>';
     } else {
       var _waiting = LOCK_SIGNERS.filter(function(sg){ return !(aSnap && aSnap.signoffs && aSnap.signoffs[sg.email]); }).map(function(sg){ return sg.name; });
-      html += '<div style="margin-top:14px;padding:13px 16px;background:#3a2e17;border-radius:8px;color:#ffd9a8;font-size:15px;font-weight:700">🔓 NOT LOCKED YET — waiting for ' + _waiting.join(' & ') + ' to sign.</div>';
+      html += '<div style="margin-top:10px;padding:8px 12px;background:#3a2e17;border-radius:6px;color:#ffd9a8;font-size:12.5px;font-weight:700">🔓 Not locked yet — waiting for ' + _waiting.join(' & ') + ' to sign.</div>';
     }
-    if (!isLockSigner(_myEmail)) html += '<div style="margin-top:10px;color:#7fa8d8;font-size:13px">Only Michael Durham and Don Kelly can sign the lockdown. (You can still Push to Zoho below.)</div>';
+    if (!isLockSigner(_myEmail)) html += '<div style="margin-top:8px;color:#7fa8d8;font-size:11.5px">Only Michael Durham and Don Kelly can sign the lockdown. (You can still Push to Zoho below.)</div>';
   }
-  html += '<div style="margin-top:14px"><button style="' + _BIG + 'background:transparent;color:#aef0bd;border:2px solid #2e7d32" onclick="pushForecastToZoho()">↗ Push forecast to Zoho (monthly update)</button></div>';
+  html += '<div style="margin-top:10px"><button style="' + _btnGreen + '" onclick="pushForecastToZoho()">↗ Push to Zoho (monthly update)</button></div>';
   html += '</div>';
   html += '<div style="position:sticky;bottom:0;z-index:20;margin-top:12px;padding:12px 16px;background:linear-gradient(90deg,#0A1928,#1c3250);border-radius:8px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;box-shadow:0 -3px 12px rgba(0,0,0,.18)">';
   html += '<span style="color:white;font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Forecast bottom line</span>';
