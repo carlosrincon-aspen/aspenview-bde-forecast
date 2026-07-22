@@ -4552,15 +4552,20 @@ function updateForecastHC(idx, value) {
   var total = parseInt(value); if (isNaN(total) || total < 0) total = 0;
   var oldTotal = d.totalHC || 0;
   d.totalHC = total;
-  // Michael's default: when the deal has NO monthly build yet, drop the FULL headcount into the month
-  // AFTER the (forecast) close date automatically — no need to open Spread. If Don already built the
-  // months by hand, leave them (he can still override / spread). Only one month is seeded.
-  if (total > 0 && sumMonths(d.monthlyHC || {}) === 0) {
-    var _anchor = getAnchorMonth();
-    var _closeM = dealCloseMonthKeyEff(d);
-    var _startM = _closeM ? monthKeyAfter(_closeM, 1) : _anchor;
-    if (!_startM || _startM < _anchor || _startM > monthKeyAfter(_anchor, 24)) _startM = _anchor;
-    d.monthlyHC = {}; d.monthlyHC[_startM] = total;
+  // Don's ask (verified live): whenever the Fcst HC CHANGES, drop the full new number into the month
+  // AFTER the (forecast) close date — every time, not only when the months were empty. He then spreads
+  // it across months by hand if he wants. Only repopulates on a real change (re-typing the same number
+  // never wipes an existing spread); setting it to 0/blank clears the build.
+  if (total !== oldTotal) {
+    if (total > 0) {
+      var _anchor = getAnchorMonth();
+      var _closeM = dealCloseMonthKeyEff(d);
+      var _startM = _closeM ? monthKeyAfter(_closeM, 1) : _anchor;
+      if (!_startM || _startM < _anchor || _startM > monthKeyAfter(_anchor, 24)) _startM = _anchor;
+      d.monthlyHC = {}; d.monthlyHC[_startM] = total;
+    } else {
+      d.monthlyHC = {};
+    }
   }
   setDeals(deals);
   logActivity('Forecast', 'Edit Fcst HC', d.dealName + ': ' + oldTotal + ' → ' + total);
