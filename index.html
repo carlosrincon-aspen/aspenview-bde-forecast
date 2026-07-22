@@ -6202,7 +6202,7 @@ function renderSuperDeals() {
   var flagged = getDeals().filter(isSuperDeal);
   var html = '';
   html += '<div class="page-title"><div><h1>Super-Deals</h1><div class="sub">Auto-derived from deals with 100+ total headcount (Michael\'s rule) · disruptive growth treated as a separate cash-flow lane</div></div>';
-  html += '<button class="btn btn-ghost btn-sm" onclick="syncZohoDeals()">↻ Sync from Zoho</button></div>';
+  html += '</div>';
   html += '<div style="margin:0 0 14px;padding:8px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy)">The program list below is built automatically from every deal with <b>100+ total headcount</b>. Peak HC, Phase 1 and Activation come from the deals; the qualitative assessments are yours to set and they persist per client.</div>';
 
   var totalPeak = progs.reduce(function(s,p){ return s + (p.peakHC || 0); }, 0);
@@ -6693,8 +6693,8 @@ function renderPlayground() {
   var pendingCount  = edited.length - approvedCount;
 
   var html = '';
-  html += '<div class="page-title"><div><h1>Playground — Zoho vs Manual</h1><div class="sub">Zoho is the source of truth. Edit freely in Aureum; review your scenario here, approve what you want, then push it back to Zoho.</div></div>';
-  html += '<button class="btn btn-gold btn-sm" onclick="pushApprovedToZoho()" title="Push approved playground edits back to Zoho — needs Zoho WRITE scope">↗ Push approved to Zoho</button></div>';
+  html += '<div class="page-title"><div><h1>Playground — Zoho vs Manual</h1><div class="sub">Zoho is the source of truth. Edit freely in Aureum; review here what differs from Zoho. Pushing to Zoho is done in one place — the ↗ Push to Zoho step in Aureum Demand Forecast.</div></div>';
+  html += '</div>';
 
   html += '<div class="stat-grid">';
   html += statCard('Deals with edits', edited.length, 'Differences vs Zoho', edited.length ? 'gold' : 'good');
@@ -6768,7 +6768,7 @@ function renderCleanup() {
 
   var html = '';
   html += '<div class="page-title"><div><h1>Cleanup</h1><div class="sub">Account-centric matching: for each not-in-Zoho deal we show ALL Zoho deals from the same account (active + Closed Lost) so you can pick the right one.</div></div>';
-  html += '<button class="btn btn-ghost btn-sm" onclick="syncZohoDeals()">↻ Sync from Zoho</button></div>';
+  html += '</div>';
 
   html += '<div class="stat-grid">';
   html += statCard('Not in Zoho', ghosts.length, 'Excel-only / unmatched deals', ghosts.length ? 'gold' : 'good');
@@ -7228,7 +7228,6 @@ function adminActivitySection(activity) {
   var html = '';
   html += '<div class="card"><div class="card-header"><span class="card-title"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#2e7d32;animation:pulse 1.6s infinite;vertical-align:middle;margin-right:6px"></span>Activity Stream</span><span class="card-sub">Last ' + Math.min(activity.length, 50) + ' events · live view</span>';
   html += ' <button class="btn btn-ghost btn-sm" style="margin-left:10px" onclick="loadFullActivityHistory()" title="Load the complete, uncapped audit trail from Firestore (the permanent record — beyond the last 200 shown here)">📜 Load full history</button>';
-  if (typeof canGovern === 'function' && canGovern()) html += ' <button class="btn btn-gold btn-sm" onclick="recoverCloseDatesFromAudit()" title="One-time recovery: re-apply Don\'s forecast close dates from the permanent audit trail (an older sync wiped them; now fixed). Saves a reversible version first; nothing is pushed to Zoho.">↩ Restore forecast close dates</button>';
   html += '</div>';
   // Results render here, directly under the header/button (NOT below the 50-row table, where it
   // would be off-screen). Empty until the button is clicked.
