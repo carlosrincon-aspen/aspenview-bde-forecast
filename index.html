@@ -2200,6 +2200,60 @@ function unlockForecast(monthKey) {
   logActivity('Forecast', 'Unlock month forecast', monthKey + ' · by ' + s.unlockedBy);
   renderTab();
 }
+// ── Dual sign-off lockdown ("nuclear codes", Michael/Don) ──────────────────────────────────────
+// A month is OFFICIALLY locked (snap.locked = true, what accuracy measures against) only when TWO
+// DISTINCT people have signed off. Any admin can sign. To REOPEN, BOTH signers must remove their
+// sign-off — one person alone can neither lock nor unlock. Push to Zoho is a SEPARATE step.
+// Legacy single-person locks (no `signoffs`) are grandfathered as locked and use the legacy Unlock.
+function _getOrCreateSnap(monthKey) {
+  var snaps = getSnapshots();
+  var s = snaps.find(function(x){ return x.snapshotMonth === monthKey; });
+  if (!s) { s = { snapshotMonth: monthKey, takenAt: new Date().toISOString(), locked: false, perDeal: buildPerDealSnapshot(getDeals(), monthKey) }; snaps.push(s); }
+  return { snaps: snaps, s: s };
+}
+function addSignoff(monthKey) {
+  if (!canEdit()) return denyEdit();
+  if (blockStale('Sign off the lockdown')) return;
+  monthKey = monthKey || getAnchorMonth();
+  var email = ((currentUser && currentUser.email) || 'anon').toLowerCase();
+  var name  = (currentUser && currentUser.name) || (currentUser && currentUser.email) || 'anon';
+  var g = _getOrCreateSnap(monthKey), s = g.s;
+  s.signoffs = s.signoffs || {};
+  if (s.signoffs[email]) { alert('You already signed off ' + monthLabel(monthKey) + '. It needs a SECOND person to sign for the official lock.'); return; }
+  s.signoffs[email] = { by: name, at: new Date().toISOString() };
+  var n = Object.keys(s.signoffs).length, justLocked = false;
+  if (!s.locked && n >= 2) {
+    s.locked = true;
+    s.lockedAt = new Date().toISOString();
+    s.lockedBy = Object.keys(s.signoffs).map(function(k){ return s.signoffs[k].by; }).join(' + ');
+    s.perDeal = buildPerDealSnapshot(getDeals(), monthKey);   // capture the committed forecast at full lock
+    justLocked = true;
+  }
+  setSnapshots(g.snaps);
+  logActivity('Forecast', 'Sign off lockdown', monthLabel(monthKey) + ' · ' + name + ' (' + n + ' of 2)');
+  if (justLocked) alert('✅ ' + monthLabel(monthKey) + ' is now OFFICIALLY LOCKED — both sign-offs in (' + s.lockedBy + ').\n\nAccuracy is measured against this version. To send the monthly Zoho update use "↗ Push to Zoho". To reopen, BOTH signers must remove their sign-off.');
+  else alert('✍ Your sign-off is recorded for ' + monthLabel(monthKey) + ' (' + n + ' of 2). It needs a SECOND person to sign for the official lock.');
+  renderTab();
+}
+function removeSignoff(monthKey) {
+  if (!canEdit()) return denyEdit();
+  monthKey = monthKey || getAnchorMonth();
+  var email = ((currentUser && currentUser.email) || 'anon').toLowerCase();
+  var snaps = getSnapshots();
+  var s = snaps.find(function(x){ return x.snapshotMonth === monthKey; });
+  if (!s || !s.signoffs || !s.signoffs[email]) { alert('You have not signed off ' + monthLabel(monthKey) + '.'); return; }
+  if (s.locked && !confirm('Remove your sign-off from ' + monthLabel(monthKey) + '?\n\nIt is officially locked. It stays locked until the OTHER signer also removes theirs — only then does it reopen for editing.')) return;
+  delete s.signoffs[email];
+  var n = Object.keys(s.signoffs).length, reopened = false;
+  if (s.locked && n === 0) { s.locked = false; s.unlockedAt = new Date().toISOString(); reopened = true; }   // both removed → reopen
+  setSnapshots(snaps);
+  logActivity('Forecast', 'Remove lockdown sign-off', monthLabel(monthKey) + ' · by ' + name_of(email) + ' · ' + n + ' left');
+  if (reopened) alert('🔓 ' + monthLabel(monthKey) + ' is now UNLOCKED — both sign-offs removed. Open for editing again.');
+  else if (s.locked) alert('Your sign-off was removed, but ' + monthLabel(monthKey) + ' stays LOCKED until the other signer (' + Object.keys(s.signoffs).map(function(k){ return s.signoffs[k].by; }).join(', ') + ') also removes theirs.');
+  else alert('Your pending sign-off for ' + monthLabel(monthKey) + ' was removed.');
+  renderTab();
+}
+function name_of(email) { return (currentUser && currentUser.name) || email; }
 // Recover the live forecast from a saved snapshot (locked or auto). Snapshots live in their own
 // `snapshots` key (untouched by the purge), so a locked forecast survives even if the live deals
 // were wiped. Restores the 3-month headcount build (m0/m1/m2) per deal and re-flags Fcst.
@@ -2390,8 +2444,10 @@ function compactSnapshots() {
   var snaps = getSnapshots();
   if (!snaps.length) return;
   var KEEP_UNLOCKED = 6;
-  var locked = snaps.filter(function(s){ return s.locked; });
-  var unlocked = snaps.filter(function(s){ return !s.locked; })
+  // Never prune a locked snapshot OR one that carries lockdown sign-offs (a pending 1-of-2 lock).
+  function _keepAlways(s){ return s.locked || (s.signoffs && Object.keys(s.signoffs).length > 0); }
+  var locked = snaps.filter(_keepAlways);
+  var unlocked = snaps.filter(function(s){ return !_keepAlways(s); })
     .sort(function(a, b){ return (a.takenAt < b.takenAt) ? 1 : -1; })   // newest first
     .slice(0, KEEP_UNLOCKED);
   if (locked.length + unlocked.length === snaps.length) return;         // nothing to drop
@@ -2475,8 +2531,9 @@ function saveForecastVersion() {
   var note = prompt('Save the current forecast as a working version (' + label + ').\n\nOptional note — what changed / what to review:', '');
   if (note === null) return;   // cancelled
   _pushVersion(note);
+  _restoredBanner = null;   // this is now the latest working version — clear any "restored" banner
   logActivity('Forecast', 'Save working version', label + (note ? ' · ' + note : ''));
-  alert('💾 Saved as ' + label + '. Keep revising and save again, or restore any version from “Versions”. Nothing was locked or pushed to Zoho.');
+  alert('💾 Saved as ' + label + ' — this is now the LATEST version, and the live forecast shows it. Keep revising and save again, or restore any version from “Versions”. Nothing was locked or pushed to Zoho.');
   renderTab();
 }
 // Automatic daily safety backup (Carlos: never lose data again). On login, once per day GLOBALLY,
@@ -2505,15 +2562,32 @@ function ensureDailyBackupVersion() {
   compactForecastVersions();   // strip heavy fields + prune old versions to keep the doc < 1 MB
   console.log('Auto-backup version saved for ' + today);
 }
+// Persistent "you are viewing a restored version" banner (Don/Michael #7). Local per-browser — set on
+// restore, cleared when you save a new version (that becomes the latest) or dismiss it.
+var _restoredBanner = null;
+function dismissRestoredBanner(){ _restoredBanner = null; renderTab(); }
+function restoredBannerHtml(){
+  if (!_restoredBanner) return '';
+  return '<div style="margin:0 0 14px;padding:10px 14px;background:#fff3cd;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:12.5px;color:var(--navy);display:flex;align-items:center;gap:12px">'
+    + '<span>↩ You restored <b>' + esc(_restoredBanner.label) + '</b> (saved ' + new Date(_restoredBanner.savedAt).toLocaleString('en-US') + '). This is now your <b>working forecast</b> — it is NOT the lockdown. Click <b>💾 Save version</b> to keep it as the latest.</span>'
+    + '<button class="btn btn-ghost btn-sm" style="margin-left:auto;white-space:nowrap" onclick="dismissRestoredBanner()">Dismiss</button></div>';
+}
 function restoreForecastVersion(id) {
   var v = getForecastVersions().find(function(x){ return x.id === id; });
   if (!v) return;
   var alsoSummary = (v.schemaV || 1) >= 3 ? '\n\nThis version also restores the Summary PMFF and Super-Deal assessments captured at that time.' : '';
   if (!confirm('Restore working version ' + v.label + ' (saved ' + new Date(v.savedAt).toLocaleString('en-US') + ' by ' + (v.savedBy || '—') + ')?\n\nThis loads that version\'s forecast back in so you can review / revise it. Your current unsaved edits will be replaced — save them first if you want to keep them.' + alsoSummary)) return;
   var deals = getDeals();
+  // Match each current deal to the version's saved item: exact key (zohoId or name) first, then a
+  // FUZZY normalized-name fallback so a renamed ghost still restores (Don: "it doesn't fully restore").
+  var byKey = v.items || {};
+  var normIndex = {};
+  Object.keys(byKey).forEach(function(k){ normIndex[normDealName(k)] = byKey[k]; });
+  var _rMatched = 0, _rUnmatched = [];
   deals.forEach(function(d){
-    var it = v.items[_dealKey(d)];
-    if (!it) return;
+    var it = byKey[_dealKey(d)] || normIndex[normDealName(d.dealName)] || (d.zohoId ? normIndex[normDealName(d.zohoId)] : null);
+    if (!it) { if (d.inForecast || (d.totalHC || 0) > 0) _rUnmatched.push(d.dealName || d.client || '?'); return; }
+    _rMatched++;
     d.monthlyHC = JSON.parse(JSON.stringify(it.monthlyHC || {}));
     d.totalHC = it.totalHC || 0;
     if (it.dollarPerHead === undefined) delete d.dollarPerHead; else d.dollarPerHead = it.dollarPerHead;
@@ -2542,9 +2616,13 @@ function restoreForecastVersion(id) {
     if (v.superPrograms) setSuperPrograms(v.superPrograms);
     if (v.marginRules)   setMarginRules(v.marginRules);
   }
-  logActivity('Forecast', 'Restore working version', v.label);
+  _restoredBanner = { label: v.label, savedAt: v.savedAt, at: new Date().toISOString() };   // persistent "you're viewing vN" banner (#7)
+  logActivity('Forecast', 'Restore working version', v.label + ' · ' + _rMatched + ' matched · ' + _rUnmatched.length + ' unmatched');
   closeModal();
-  alert('Restored ' + v.label + '. Revise as needed, then Save a new version, or apply the Official lock when you\'re ready for Finance.');
+  var _rep = 'Restored ' + v.label + ' — ' + _rMatched + ' deal(s) loaded back in.';
+  if (_rUnmatched.length) _rep += '\n\n⚠ ' + _rUnmatched.length + ' current forecast deal(s) had NO saved entry in this version (added since, or renamed) and were left as-is: ' + _rUnmatched.slice(0, 8).join(', ') + (_rUnmatched.length > 8 ? '…' : '');
+  _rep += '\n\nThis is now your working forecast (the banner at the top shows you are viewing ' + v.label + '). 💾 Save version to keep it as the latest.';
+  alert(_rep);
   renderTab();
 }
 function deleteForecastVersion(id) {
@@ -2985,6 +3063,7 @@ function renderOverview() {
   var anchorLocked = !!(anchorSnap && anchorSnap.locked);
 
   var html = '';
+  html += restoredBannerHtml();
   html += '<div class="page-title"><div><h1>Overview</h1><div class="sub">Anchor month: <b>' + monthLabel(anchor) + '</b> &middot; Current quarter + rolling horizons</div></div>';
   html += '<div style="display:flex;gap:8px;align-items:center"><label style="font-size:11px;color:var(--muted)">Anchor:</label>' + anchorSelectHtml() + ' ';
   // Locking is a SINGLE action, done from the action bar in Aureum Demand Forecast. Here we only
@@ -3613,9 +3692,69 @@ function lockAndPushForecast() {
     });
   });
 }
-// Back-compat aliases (kept so nothing that referenced the old names breaks):
-function aureumLockForecast() { lockAndPushForecast(); }
-function aureumPushToZoho()   { lockAndPushForecast(); }
+// Push the forecast to Zoho as a SEPARATE step (Michael/Don: the lockdown no longer auto-pushes).
+// Pushes only the fields Don changed by hand that DIFFER from Zoho, across the forecast-only set —
+// the once-a-month update. Warns (but allows) if the month isn't officially locked yet.
+function pushForecastToZoho() {
+  if (!canEdit()) return denyEdit();
+  if (blockStale('Push to Zoho')) return;
+  var anchor = getAnchorMonth();
+  var token = getZohoToken();
+  if (!token) { alert('Connect Zoho first (click the Zoho pill in the header).\n\nPushing sends the monthly forecast update to Zoho, so it needs an active Zoho connection.'); return; }
+  var snap = getSnapshots().find(function(s){ return s.snapshotMonth === anchor; });
+  var locked = !!(snap && snap.locked);
+  var withDiffs = [];
+  forecastDeals().forEach(function(d){ if (!d.zohoId) return; var diff = forecastPushDiff(d); if (diff.any) withDiffs.push({ d: d, diff: diff }); });
+  var preview = withDiffs.slice(0, 6).map(function(x){ return '  • ' + x.d.dealName + ': ' + x.diff.bits.join(', '); }).join('\n');
+  var more = withDiffs.length > 6 ? '\n  … and ' + (withDiffs.length - 6) + ' more' : '';
+  var warn = locked ? '' : '⚠ ' + monthLabel(anchor) + ' is NOT officially locked yet (it needs 2 sign-offs). You can push anyway, but the recommended flow is to lock first.\n\n';
+  var msg = warn + 'Push the forecast to Zoho (the once-a-month update)?\n\n'
+    + '• Pushes ' + withDiffs.length + ' forecast deal(s) whose manual values differ from Zoho (close date, HC, MRR, ARR, win %, contribution margin — only the differing fields).\n\n'
+    + (withDiffs.length ? preview + more + '\n\n' : '')
+    + 'A safety version is saved first, so this is reversible. Proceed?';
+  if (!confirm(msg)) return;
+  _pushVersion('Auto-save before ' + monthLabel(anchor) + ' Zoho push');   // reversible
+  if (!withDiffs.length) { alert('No forecast deals had manual values that differ from Zoho, so nothing needed pushing.'); renderTab(); return; }
+  var deals = getDeals();
+  var pushed = 0, failed = 0, errors = [], done = 0;
+  withDiffs.forEach(function(x){
+    zohoPatchDeal(token, x.d.zohoId, x.diff.fields, function(err){
+      done++;
+      if (err) { failed++; errors.push((x.d.dealName || x.d.zohoId) + ' — ' + err.message); }
+      else {
+        pushed++;
+        var f = x.diff.fields, live = deals.find(function(dd){ return dd.zohoId === x.d.zohoId; }) || x.d;
+        if (f[ZOHO_HC_FIELD]     !== undefined) live.zoho_totalHC    = f[ZOHO_HC_FIELD];
+        if (f.Closing_Date       !== undefined) live.closingDate     = f.Closing_Date;
+        if (f[ZOHO_MRR_FIELD]    !== undefined) live.pricing         = f[ZOHO_MRR_FIELD];
+        if (f[ZOHO_ARR_FIELD]    !== undefined) live.arr             = f[ZOHO_ARR_FIELD];
+        if (f.Probability        !== undefined) live.zoho_winRateAdj = f.Probability / 100;
+        if (f[ZOHO_MARGIN_FIELD] !== undefined) live.zohoMargin      = parseFloat(f[ZOHO_MARGIN_FIELD]) / 100;
+        live.pushedAt = new Date().toISOString();
+        live.pushedBy = (currentUser && currentUser.name) || '';
+      }
+      if (done === withDiffs.length) {
+        setDeals(deals);
+        var m = '↗ Pushed to Zoho.\n\n' + pushed + ' deal(s) updated in Zoho.';
+        if (failed) {
+          m += '\n\n' + failed + ' failed:\n' + errors.slice(0, 5).join('\n');
+          if (errors.length > 5) m += '\n…and ' + (errors.length - 5) + ' more';
+          if (/401|INVALID_TOKEN|OAUTH_SCOPE|INVALID_OAUTH|forbidden|403/i.test(errors.join(' ')))
+            m += '\n\n⚠ The Zoho OAuth app may be missing Deals.WRITE scope, or you need to re-authorize (Zoho pill → Disconnect → Connect → Accept).';
+          else if (/INVALID_DATA|MANDATORY_NOT_FOUND|invalid|not present|no such|field/i.test(errors.join(' ')))
+            m += '\n\n⚠ A field name may be wrong. Confirm the Zoho API names (Closing_Date / Headcounts / MRR / ARR / Probability / Target_Margin_Band).';
+        }
+        logActivity('Zoho', 'Forecast push', monthLabel(anchor) + ' · ' + pushed + ' updated · ' + failed + ' failed');
+        alert(m);
+        renderTab();
+      }
+    });
+  });
+}
+// Back-compat aliases (kept so nothing that referenced the old names breaks). Push is now separate,
+// so the push alias points at pushForecastToZoho; the old one-step lock+push stays defined but unused.
+function aureumLockForecast() { addSignoff(); }
+function aureumPushToZoho()   { pushForecastToZoho(); }
 // Download the forecast to a spreadsheet (CSV → opens in Excel) for Finance/John. READ-ONLY:
 // builds a file from the current data, never changes anything. Deal rows + monthly build +
 // the gross and adjusted (×win, ×margin) summary rows.
@@ -3962,6 +4101,7 @@ function renderAureumGrid() {
   var bdes = uniqueBdes(deals);
 
   var html = '';
+  html += restoredBannerHtml();
   html += '<div class="page-title"><div><h1>Aureum Demand Forecast (Pipeline + Active)</h1><div class="sub">The single input — one screen for <b>' + Y1 + ', ' + Y2 + ' &amp; ' + Y3 + '</b>. Spread ' + Y1 + '/' + Y2 + ' by month; ' + Y3 + ' by growth %. Lock &amp; push to Zoho at the bottom.</div></div>';
   html += '<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" id="zohoSyncBtn" onclick="syncZohoDeals()">↻ Sync from Zoho</button>';
   html += '<button class="btn btn-ghost btn-sm" onclick="downloadAureumCsv()" title="Download a FORMATTED Excel (.xls) — bold header, shaded totals. Opens in Excel; upload to Drive to open in Google Sheets with formatting. Read-only.">⬇ Download Excel</button>';
@@ -4315,7 +4455,7 @@ function renderAureumGrid() {
   // ── Workflow note + bottom action bar (sticky). Don/Michael: save & revise freely as working
   //    versions; the official lock is only for the end; push to Zoho is a separate final step. ──
   html += '<div style="margin-top:14px;padding:9px 14px;background:#fff8e1;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;font-size:11.5px;color:var(--navy);line-height:1.5">';
-  html += '<b>How to save your work:</b> 1) <b>💾 Save version</b> as often as you like (v1, v2…) — revise and re-save over days; nothing locks or touches Zoho. 2) <b>🗂 Versions</b> to restore an earlier one. 3) <b>🔒 Official lock</b> only at the very end, right before Finance — that\'s the version accuracy is measured against (you can 🔓 Unlock to revise). 4) <b>↗ Push to Zoho</b> is a separate final step after the lock.';
+  html += '<b>How to save your work:</b> 1) <b>💾 Save version</b> as often as you like (v1, v2…) — revise and re-save over days; the live forecast always shows your latest work. 2) <b>🗂 Versions</b> to restore an earlier one. 3) <b>🔒 Official lock needs TWO sign-offs</b> — you add yours, a second person adds theirs; only then is the month locked (the version accuracy is measured against). To reopen, BOTH remove their sign-off. 4) <b>↗ Push to Zoho</b> is a separate step — the once-a-month update.';
   html += '</div>';
   var aSnap = getSnapshots().find(function(s){ return s.snapshotMonth === anchor; });
   var aLocked = !!(aSnap && aSnap.locked);
@@ -4331,14 +4471,27 @@ function renderAureumGrid() {
   // Working versions: save / revise / save freely — NOT the official lock, never pushes to Zoho.
   html += '<button class="btn btn-gold btn-sm" onclick="saveForecastVersion()" title="Save the current forecast as a working version (v1, v2, …). Revise and save again anytime — nothing is locked or pushed to Zoho.">💾 Save version</button>';
   html += '<button class="btn btn-ghost btn-sm" style="color:#cdd7e3;border-color:#34506e" onclick="openVersionsModal()" title="Open saved working versions to restore or review">🗂 Versions (' + getForecastVersions().length + ')</button>';
-  // Official lock (the version accuracy is measured against) — only at the end, with Unlock to revise.
-  if (aLocked) {
-    html += '<span style="color:#9ecbff;font-size:11.5px;border-left:1px solid #34506e;padding-left:12px" title="Locked by ' + esc((aSnap && aSnap.lockedBy) || '—') + '">🔒 ' + monthLabel(anchor) + ' locked</span>';
-    html += '<button class="btn btn-ghost btn-sm" style="color:#ffd9a8;border-color:#34506e" onclick="unlockForecast()" title="Re-open the official forecast for revision (kept, but not measured until re-locked)">🔓 Unlock</button>';
-    html += '<button class="btn btn-gold btn-sm" style="border-left:1px solid #34506e" onclick="lockAndPushForecast()" title="Re-lock this month with the current numbers and push the changed fields to Zoho">🔒 Re-lock ' + monthLabel(anchor) + ' → Zoho</button>';
-  } else {
-    html += '<button class="btn btn-gold btn-sm" style="border-left:1px solid #34506e;margin-left:4px" onclick="lockAndPushForecast()" title="OFFICIAL monthly lock — in ONE step it locks the version accuracy is measured against AND pushes the forecast to Zoho (the once-a-month update): forecast close date, HC, MRR, ARR, win %, contribution margin — only the fields that differ from Zoho.">🔒 Lock ' + monthLabel(anchor) + ' → Zoho</button>';
+  // ── Official lockdown: DUAL sign-off (Michael's "nuclear codes"). Two DISTINCT people must sign for
+  //    the month to lock; to reopen, BOTH remove their sign-off. Push to Zoho is a SEPARATE step. ──
+  var _sigs = (aSnap && aSnap.signoffs) ? Object.keys(aSnap.signoffs) : [];
+  var _myEmail = ((currentUser && currentUser.email) || '').toLowerCase();
+  var _iSigned = !!(aSnap && aSnap.signoffs && aSnap.signoffs[_myEmail]);
+  var _legacyLock = aLocked && _sigs.length === 0;   // pre-dual-signoff single lock
+  var _sigNames = _sigs.map(function(k){ return aSnap.signoffs[k].by; }).join(' + ');
+  html += '<span style="border-left:1px solid #34506e;padding-left:12px;font-size:11.5px">';
+  if (aLocked)            html += '🔒 <b style="color:#9ecbff">' + monthLabel(anchor) + ' officially locked</b>' + (_sigNames ? ' <span style="color:#7fa8d8">(' + esc(_sigNames) + ')</span>' : ' <span style="color:#7fa8d8">(legacy)</span>');
+  else if (_sigs.length)  html += '✍ <b style="color:#ffd9a8">' + _sigs.length + ' of 2 signed</b> <span style="color:#7fa8d8">(' + esc(_sigNames) + ')</span> — needs a 2nd person';
+  else                    html += '<span style="color:#cdd7e3">' + monthLabel(anchor) + ' not locked — needs 2 sign-offs</span>';
+  html += '</span>';
+  if (_legacyLock) {
+    html += '<button class="btn btn-ghost btn-sm" style="color:#ffd9a8;border-color:#34506e" onclick="unlockForecast()" title="Re-open this legacy single-person lock for revision.">🔓 Unlock</button>';
+  } else if (_iSigned) {
+    html += '<button class="btn btn-ghost btn-sm" style="color:#ffd9a8;border-color:#34506e" onclick="removeSignoff()" title="Remove YOUR sign-off. If the month is locked, it stays locked until the other signer also removes theirs.">✍ Remove my sign-off</button>';
+  } else if (!aLocked) {
+    html += '<button class="btn btn-gold btn-sm" style="border-left:1px solid #34506e" onclick="addSignoff()" title="Add your sign-off to lock ' + monthLabel(anchor) + '. TWO distinct people must sign for the official lock (the version accuracy is measured against).">🔒 Add my sign-off</button>';
   }
+  // (locked + you are not one of the signers → no action; only the two signers can reopen it.)
+  html += '<button class="btn btn-ghost btn-sm" style="color:#aef0bd;border-color:#34506e" onclick="pushForecastToZoho()" title="Push the forecast to Zoho — the once-a-month update (only the fields that differ from Zoho). Separate from the lock.">↗ Push to Zoho</button>';
   html += '</div>';
 
   document.getElementById('mainContent').innerHTML = html;
