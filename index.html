@@ -1011,6 +1011,8 @@ function fbInitDataSync() {
       ensureWeeklyTrendSnapshot();
       ensureDailyBackupVersion();   // automatic daily restore point — never lose data again
       compactForecastVersions();    // self-heal: shrink an oversized versions list so the doc fits under 1 MB again
+      compactSnapshots();           // self-heal: drop OLD unlocked monthly snapshots (keeps all locked + recent)
+      compactTrendSnapshots();      // self-heal: strip heavy per-deal detail from old weekly trend snapshots
       initPresence();               // live editing-presence banner (isolated; safe if the rule is absent)
       renderTab();
     } else {
@@ -2138,6 +2140,7 @@ function ensureMonthlySnapshot() {
   var deals = getDeals();
   snaps.push({ snapshotMonth: key, takenAt: new Date().toISOString(), locked: false, perDeal: buildPerDealSnapshot(deals, key) });
   setSnapshots(snaps);
+  compactSnapshots();   // keep the doc bounded — drops only OLD unlocked samples, never a locked one
   logActivity('Forecast', 'Monthly snapshot', key + ' · ' + deals.length + ' deals');
 }
 // Don's "rubber stamp": creates or upgrades the snapshot for the given month to
@@ -2370,6 +2373,44 @@ function compactForecastVersions() {
   var autos  = v.filter(function(x){ return x.auto; }).slice(0, 4);
   v = manual.concat(autos).sort(function(a, b){ return (a.savedAt < b.savedAt) ? 1 : -1; });
   if (JSON.stringify(v) !== before) setForecastVersions(v);
+}
+// Bound the shared 1 MB Firestore doc: monthly `snapshots` add a full per-deal copy (~317 deals)
+// EVERY month and were never pruned — together with weekly trend snapshots, that is what crept the
+// doc back toward the 1 MB limit that caused the 2026-07-06 data loss. SAFETY: keep EVERY locked
+// snapshot (they drive accuracy and are what a BDE explicitly committed) plus the most recent
+// unlocked auto-samples; only OLD unlocked samples are dropped. Never touches deals / PMFF / data.
+function compactSnapshots() {
+  var snaps = getSnapshots();
+  if (!snaps.length) return;
+  var KEEP_UNLOCKED = 6;
+  var locked = snaps.filter(function(s){ return s.locked; });
+  var unlocked = snaps.filter(function(s){ return !s.locked; })
+    .sort(function(a, b){ return (a.takenAt < b.takenAt) ? 1 : -1; })   // newest first
+    .slice(0, KEEP_UNLOCKED);
+  if (locked.length + unlocked.length === snaps.length) return;         // nothing to drop
+  var kept = locked.concat(unlocked)
+    .sort(function(a, b){ return (a.snapshotMonth < b.snapshotMonth) ? -1 : 1; });
+  setSnapshots(kept);
+}
+// Weekly `trend_snapshots` each store a heavy per-deal drill-down list ('deals'). That list is only
+// needed for RECENT weeks (the click-to-drill modal + the week-over-week diff, which read the last
+// entries). Keep the lightweight headline totals for EVERY week (the trend line never loses history)
+// but strip the heavy per-deal list from entries older than the most recent KEEP_DETAIL weeks. The
+// drill-down already falls back to the current list (flagged "approximate") when a point has no
+// stored detail, so nothing breaks.
+function compactTrendSnapshots() {
+  var snaps = getTrendSnapshots();
+  if (!snaps.length) return;
+  var KEEP_DETAIL = 12;
+  var realSorted = snaps.filter(function(s){ return !s.isDemo; })
+    .sort(function(a, b){ return a.weekKey < b.weekKey ? -1 : (a.weekKey > b.weekKey ? 1 : 0); });
+  var keep = {};
+  realSorted.slice(-KEEP_DETAIL).forEach(function(s){ keep[s.weekKey] = 1; });
+  var changed = false;
+  snaps.forEach(function(s){
+    if (!s.isDemo && s.deals && !keep[s.weekKey]) { delete s.deals; changed = true; }
+  });
+  if (changed) setTrendSnapshots(snaps);
 }
 function _dealKey(d) { return d.zohoId || d.dealName || ''; }
 function _captureForecastItems() {
@@ -5385,6 +5426,7 @@ function ensureWeeklyTrendSnapshot() {
   // Keep ordered by weekKey for deterministic rendering.
   snaps.sort(function(a,b){ return a.weekKey < b.weekKey ? -1 : a.weekKey > b.weekKey ? 1 : 0; });
   setTrendSnapshots(snaps);
+  compactTrendSnapshots();   // keep the doc bounded — strips heavy detail from weeks older than the last 12
   logActivity('Forecast', 'Weekly trend snapshot', key + ' · ' + t.dealsForecasted + ' deals · ' + t.totalHC + ' HC');
 }
 function forceTrendSnapshot() {
