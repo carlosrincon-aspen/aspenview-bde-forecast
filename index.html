@@ -4546,6 +4546,9 @@ function updateDealStr(idx, field, value) {
   var oldV = d[field];
   if (value === '' || value === null || value === undefined) delete d[field];
   else d[field] = value;
+  // Don's ask: changing the forecast close date auto-moves the Fcst HC to the new month-after-close
+  // (same behavior as changing the Fcst HC). Only when a target is set — never wipes months otherwise.
+  if (field === 'forecastClosingDate' && String(oldV || '') !== String(value || '') && (d.totalHC || 0) > 0) _placeHcAfterClose(d);
   setDeals(deals);
   logActivity('Forecast', 'Edit ' + field, (d.dealName || '') + ': ' + (oldV || '—') + ' → ' + (value || '—'));
   renderTab();
@@ -4559,24 +4562,25 @@ function updateForecastHC(idx, value) {
   var total = parseInt(value); if (isNaN(total) || total < 0) total = 0;
   var oldTotal = d.totalHC || 0;
   d.totalHC = total;
-  // Don's ask (verified live): whenever the Fcst HC CHANGES, drop the full new number into the month
-  // AFTER the (forecast) close date — every time, not only when the months were empty. He then spreads
-  // it across months by hand if he wants. Only repopulates on a real change (re-typing the same number
-  // never wipes an existing spread); setting it to 0/blank clears the build.
-  if (total !== oldTotal) {
-    if (total > 0) {
-      var _anchor = getAnchorMonth();
-      var _closeM = dealCloseMonthKeyEff(d);
-      var _startM = _closeM ? monthKeyAfter(_closeM, 1) : _anchor;
-      if (!_startM || _startM < _anchor || _startM > monthKeyAfter(_anchor, 24)) _startM = _anchor;
-      d.monthlyHC = {}; d.monthlyHC[_startM] = total;
-    } else {
-      d.monthlyHC = {};
-    }
-  }
+  // Whenever the Fcst HC CHANGES, drop the full new number into the month after the (forecast) close
+  // date (Don then spreads by hand). Only on a real change — re-typing the same number never wipes an
+  // existing spread; 0/blank clears the build.
+  if (total !== oldTotal) _placeHcAfterClose(d);
   setDeals(deals);
   logActivity('Forecast', 'Edit Fcst HC', d.dealName + ': ' + oldTotal + ' → ' + total);
   renderTab();
+}
+// Shared helper: put the FULL Fcst HC (target) into the single month AFTER the effective close date.
+// Used when Don changes the Fcst HC AND when he changes the close date, so both behave identically.
+// Guards a placeholder/out-of-range close date by falling back to the anchor month. total 0 = clear.
+function _placeHcAfterClose(d) {
+  var total = d.totalHC || 0;
+  if (total <= 0) { d.monthlyHC = {}; return; }
+  var anchor = getAnchorMonth();
+  var closeM = dealCloseMonthKeyEff(d);
+  var startM = closeM ? monthKeyAfter(closeM, 1) : anchor;
+  if (!startM || startM < anchor || startM > monthKeyAfter(anchor, 24)) startM = anchor;
+  d.monthlyHC = {}; d.monthlyHC[startM] = total;
 }
 // Revert a deal's manual forecast edits back to the original Zoho baseline (Michael's "go back to
 // what was originally there"). Clears per-deal overrides + the monthly build; Zoho HC / Zoho $/head
