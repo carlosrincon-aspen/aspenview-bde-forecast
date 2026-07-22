@@ -4277,10 +4277,14 @@ function renderAureumGrid() {
     html += '<td class="num" style="color:var(--muted)" title="Headcount mapped on the Zoho deal (read-only)">' + (zohoHC || '—') + '</td>';
     var _built = sumMonths(d.monthlyHC || {});
     var _declHC = d.totalHC || 0;
-    var _hcMismatch = _declHC > 0 && _built > 0 && _built !== _declHC;   // months don't add up to Fcst HC
-    var _hcBadge = _hcMismatch ? '<div style="font-size:9px;color:#c62828;font-weight:700" title="The monthly build sums to ' + _built + ', but Fcst HC is ' + _declHC + ' — spread it so the months add up to the Fcst HC.">⚠ months=' + _built + '</div>' : '';
-    html += '<td class="num" style="background:#fff8e1">'   // highlighted — this is the KEY input (Michael)
-      + '<input class="margin" type="number" min="0" value="' + (fcstHC || '') + '" onchange="updateForecastHC(' + dealIdx + ', this.value)" placeholder="' + (zohoHC || 0) + '"' + (_hcMismatch ? ' style="border-color:var(--danger);background:#fdecea"' : '') + ' title="Total headcount forecast — the KEY input. When the months are empty, setting the close date + this number auto-fills the full HC in the month after close. Blank defaults to the Zoho headcount (' + (zohoHC || 0) + ')."></input>'
+    // Fcst HC is the fixed target; the tag tells Don if the months add up to it (no manual counting).
+    var _hcState = _declHC <= 0 ? 'none' : (_built === _declHC ? 'ok' : 'off');
+    var _hcBadge = '';
+    if (_hcState === 'ok')  _hcBadge = '<div style="font-size:9.5px;color:#1f8a4c;font-weight:700" title="All ' + _declHC + ' forecast headcount are placed across the months.">&#10003; ' + _built + ' of ' + _declHC + ' placed</div>';
+    if (_hcState === 'off') { var _diff = _built - _declHC; _hcBadge = '<div style="font-size:9.5px;color:#c62828;font-weight:700" title="You forecast ' + _declHC + ' but placed ' + _built + ' across the months — adjust the months until they add up to the Fcst HC.">&#9888; ' + _built + ' of ' + _declHC + ' &middot; ' + (_diff < 0 ? (-_diff) + ' short' : _diff + ' over') + '</div>'; }
+    var _hcInputStyle = _hcState === 'off' ? ' style="border-color:var(--danger);background:#fdecea"' : (_hcState === 'ok' ? ' style="border-color:var(--success);background:#E8F5E9"' : '');
+    html += '<td class="num" style="background:#fff8e1">'   // highlighted — this is the KEY input (Michael/Don)
+      + '<input class="margin" type="number" min="0" value="' + (fcstHC || '') + '"' + _hcInputStyle + ' onchange="updateForecastHC(' + dealIdx + ', this.value)" placeholder="' + (zohoHC || 0) + '" title="Total headcount you forecast for this deal — the KEY input (target). Setting it drops the full number into the month after close; spread it across months and the tag below tells you if it all adds up or you are short/over. Blank defaults to the Zoho headcount (' + (zohoHC || 0) + ')."></input>'
       + _hcBadge + '</td>';
     // Zoho $/head — read-only original (revert reference)
     html += '<td class="num" style="color:var(--muted)" title="Zoho rate = MRR ÷ Zoho HC (read-only — the original is never overwritten)">' + (zohoRate !== null ? fmt$k(zohoRate) : '—') + '</td>';
@@ -4527,9 +4531,12 @@ function updateDealHC(idx, monthKey, value) {
   var v = parseInt(value);
   if (!v || isNaN(v) || v <= 0) delete d.monthlyHC[monthKey];
   else d.monthlyHC[monthKey] = v;
-  d.totalHC = sumMonths(d.monthlyHC);
+  // Fcst HC is the fixed TARGET (Michael/Don): spreading across months must NOT change it. Instead the
+  // Fcst HC cell shows a live "✓ all placed / N short / N over" tag so Don never has to add up by hand.
+  // (Deals with no target set fall back to the month sum for the forecast math via `d.totalHC || sum`.)
   setDeals(deals);
   logActivity('Forecast', 'Edit HC', d.dealName + ' · ' + monthKey + ': ' + oldV + ' → ' + (d.monthlyHC[monthKey] || 0));
+  renderTab();
 }
 // String-valued per-deal field setter (e.g. forecastClosingDate) — updateDealField parses floats,
 // so dates/text need this. Blank clears the override. Re-renders (scroll preserved).
